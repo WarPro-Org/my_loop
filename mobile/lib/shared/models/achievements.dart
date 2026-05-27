@@ -1,5 +1,16 @@
-// 100 achievements with 1/2/3 star tiers (like Clash of Clans)
-// Each achievement has a name, description, 3 thresholds, and emoji
+/// Achievement definitions for the MyLoop gamification system.
+///
+/// Contains 100 achievements organized into categories: Territory (hex capture),
+/// Walking (distance/streaks), Social/Competitive (rankings/rivalry),
+/// Exploration (discovering areas), and Milestones (long-term goals).
+/// Each achievement has 3 star tiers inspired by Clash of Clans progression.
+library;
+
+/// Defines a single achievement with three progressive star tiers.
+///
+/// Players earn stars by reaching [tier1], [tier2], and [tier3] thresholds
+/// for the tracked [unit] (e.g., hexes, km, walks). The [emoji] and [name]
+/// are displayed in the profile achievements section.
 class Achievement {
   final String id;
   final String name;
@@ -21,7 +32,10 @@ class Achievement {
     required this.unit,
   });
 
-  // Get stars earned based on current progress
+  /// Calculates how many stars (0–3) the player has earned for this achievement.
+  ///
+  /// Compares [progress] against the three tier thresholds and returns the
+  /// highest tier reached.
   int getStars(int progress) {
     if (progress >= tier3) return 3;
     if (progress >= tier2) return 2;
@@ -30,7 +44,14 @@ class Achievement {
   }
 }
 
-// All 100 achievements
+/// The complete list of all 100 achievements available in the app.
+///
+/// Organized into 5 categories of 20 achievements each:
+/// - Territory (hex_1 – hex_20): Capturing and defending hexagons
+/// - Walking (walk_1 – walk_20): Distance, streaks, and walk patterns
+/// - Social/Competitive (social_1 – social_20): Rankings and rivalry
+/// - Exploration (explore_1 – explore_20): Discovering new places
+/// - Milestones (mile_1 – mile_20): Long-term progression goals
 const achievements = [
   // TERRITORY (1-20)
   Achievement(id: 'hex_1', name: 'Land Grabber', emoji: '⬡', description: 'Capture hexagons', tier1: 1, tier2: 50, tier3: 500, unit: 'hexes'),

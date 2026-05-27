@@ -1,10 +1,21 @@
+/// Avatar picker screen — post-signup player customization.
+///
+/// Allows new users to choose a display name, select an avatar emoji,
+/// and pick a player color before entering the main app. This data is
+/// sent to the backend to create their player profile.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
-// Player picks their avatar emoji and color after sign-up
+/// Screen where new players create their in-game identity.
+///
+/// Presents a name input, an emoji avatar grid, a color picker row, and
+/// a live preview of the combined avatar. On completion, registers the
+/// user via the API and navigates to the home screen.
 class AvatarPickerScreen extends StatefulWidget {
   const AvatarPickerScreen({super.key});
 
@@ -12,14 +23,15 @@ class AvatarPickerScreen extends StatefulWidget {
   State<AvatarPickerScreen> createState() => _AvatarPickerScreenState();
 }
 
+/// State for [AvatarPickerScreen] managing avatar, color, and name selection.
 class _AvatarPickerScreenState extends State<AvatarPickerScreen> {
   int _selectedAvatar = 0;
   int _selectedColor = 0;
   String _name = '';
 
-  // Available player colors
+  /// The 8 hex color options players can choose from for their avatar ring.
   static const _colors = [
-    '#58CC02', // green
+    '#00D4AA', // green
     '#1CB0F6', // blue
     '#FF4B4B', // red
     '#FF9600', // orange
@@ -29,6 +41,7 @@ class _AvatarPickerScreenState extends State<AvatarPickerScreen> {
     '#2ED8A3', // teal
   ];
 
+  /// Builds the scrollable form layout with name, avatar grid, colors, and CTA.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,7 +78,7 @@ class _AvatarPickerScreenState extends State<AvatarPickerScreen> {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: AppColors.green, width: 2),
+                    borderSide: const BorderSide(color: AppColors.primary, width: 2),
                   ),
                 ),
               ),
@@ -95,11 +108,11 @@ class _AvatarPickerScreenState extends State<AvatarPickerScreen> {
                       child: Container(
                         decoration: BoxDecoration(
                           color: isSelected
-                              ? AppColors.green.withValues(alpha: 0.15)
+                              ? AppColors.primary.withValues(alpha: 0.15)
                               : AppColors.white,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: isSelected ? AppColors.green : AppColors.greyLight,
+                            color: isSelected ? AppColors.primary : AppColors.greyLight,
                             width: isSelected ? 3 : 2,
                           ),
                         ),

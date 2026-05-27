@@ -2,22 +2,47 @@ namespace MyLoop.Api.Entities;
 
 using System.Text.Json;
 
-/// A single territory cell on the map. Each cell is a hexagon (~65m wide).
-/// The cell_id is an H3 index (64-bit integer) that uniquely identifies a hex on Earth.
-/// Whoever owns the cell, owns that piece of land.
+/// <summary>
+/// Represents a single hexagonal territory cell on the game map.
+/// Each cell corresponds to one H3 resolution-10 hexagon (~65m wide, ~4,234 m² area).
+/// The <see cref="CellId"/> is a 64-bit H3 index that uniquely identifies a hexagon on Earth.
+/// Ownership follows a "last-writer-wins" model — whoever claims it most recently owns it.
+/// </summary>
 public class TerritoryCell
 {
-    public long CellId { get; set; } // H3 index — the unique ID of this hex on the planet
-    public Guid OwnerId { get; set; } // who currently owns this hex
-    public Guid ClaimId { get; set; } // which claim captured this hex
+    /// <summary>H3 index (64-bit integer) — the globally unique identifier of this hexagon on the planet. Used as the primary key.</summary>
+    public long CellId { get; set; }
+
+    /// <summary>The user who currently owns this cell. Updated on each claim that covers this hex.</summary>
+    public Guid OwnerId { get; set; }
+
+    /// <summary>The claim that most recently captured this cell.</summary>
+    public Guid ClaimId { get; set; }
+
+    /// <summary>Timestamp when this cell was last claimed/stolen.</summary>
     public DateTime ClaimedAt { get; set; }
 
-    // The 6 corner points of this hex stored as JSON string: "[[lat,lng],[lat,lng],...]"
+    /// <summary>
+    /// The 6 (or 5) corner vertices of this hexagon, serialized as a JSON array of [lat, lng] pairs.
+    /// Used by the mobile client to render the hex polygon on the map.
+    /// </summary>
     public string BoundaryJson { get; set; } = "[]";
 
+    /// <summary>
+    /// Deserializes the stored boundary JSON back into a coordinate array.
+    /// </summary>
+    /// <returns>Array of [latitude, longitude] pairs representing the hex vertices.</returns>
     public double[][] GetBoundary() => JsonSerializer.Deserialize<double[][]>(BoundaryJson)!;
+
+    /// <summary>
+    /// Serializes a boundary coordinate array into JSON and stores it in <see cref="BoundaryJson"/>.
+    /// </summary>
+    /// <param name="boundary">Array of [latitude, longitude] pairs for the hex corners.</param>
     public void SetBoundary(double[][] boundary) => BoundaryJson = JsonSerializer.Serialize(boundary);
 
+    /// <summary>Navigation property to the user who owns this cell.</summary>
     public User? Owner { get; set; }
+
+    /// <summary>Navigation property to the claim that last captured this cell.</summary>
     public Claim? Claim { get; set; }
 }

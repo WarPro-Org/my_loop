@@ -1,11 +1,27 @@
+/// Leaderboard screen — displays player rankings in a Duolingo-league style.
+///
+/// Shows a podium visualization for the top 3 players and a scrollable
+/// list for remaining ranks. Currently uses mock data; will be powered
+/// by the `/api/leaderboard` endpoint.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
-// Leaderboard screen - shows daily rankings like Duolingo leagues
+/// ─────────────────────────────────────────────────────────────────────────────
+/// LEADERBOARD SCREEN
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// The leaderboard tab showing local area rankings.
+///
+/// Layout: header with title and scope label, top-3 podium visualization,
+/// then a scrollable list for ranks 4+. The current user's row is
+/// highlighted with a tinted background.
 class LeaderboardScreen extends StatelessWidget {
   const LeaderboardScreen({super.key});
 
+  /// Builds the vertical layout: header → podium → ranking list.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -38,11 +54,18 @@ class LeaderboardScreen extends StatelessWidget {
   }
 }
 
-// Shows top 3 players in a podium layout
+/// ─────────────────────────────────────────────────────────────────────────────
+/// TOP 3 PODIUM
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Podium visualization showing the top 3 players with medal emojis.
+///
+/// Arranged as: 2nd place (left) → 1st place (center, tallest) → 3rd place (right).
+/// Each podium column height reflects the player's relative rank.
 class _TopThreePodium extends StatelessWidget {
   // Mock data - will come from API later
   final _topPlayers = const [
-    {'name': 'Alex', 'avatar': 0, 'color': '#58CC02', 'cells': 142, 'rank': 1},
+    {'name': 'Alex', 'avatar': 0, 'color': '#00D4AA', 'cells': 142, 'rank': 1},
     {'name': 'Maya', 'avatar': 3, 'color': '#1CB0F6', 'cells': 98, 'rank': 2},
     {'name': 'Ravi', 'avatar': 5, 'color': '#FF9600', 'cells': 76, 'rank': 3},
   ];
@@ -90,6 +113,7 @@ class _TopThreePodium extends StatelessWidget {
   }
 }
 
+/// A single podium column: medal emoji, avatar, name, hex count, and colored bar.
 class _PodiumItem extends StatelessWidget {
   final int rank;
   final String name;
@@ -135,7 +159,14 @@ class _PodiumItem extends StatelessWidget {
   }
 }
 
-// List of remaining players below top 3
+/// ─────────────────────────────────────────────────────────────────────────────
+/// RANKING LIST
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Scrollable list of players ranked 4th and below.
+///
+/// Highlights the current user's row with a tinted primary-color background.
+/// Each row shows rank number, avatar, name, and hex count.
 class _RankingList extends StatelessWidget {
   // Mock data
   final _players = const [
@@ -143,7 +174,7 @@ class _RankingList extends StatelessWidget {
     {'name': 'Priya', 'avatar': 8, 'color': '#FF4B4B', 'cells': 42, 'rank': 5},
     {'name': 'Leo', 'avatar': 4, 'color': '#FFC800', 'cells': 38, 'rank': 6},
     {'name': 'Zara', 'avatar': 6, 'color': '#2ED8A3', 'cells': 31, 'rank': 7},
-    {'name': 'You', 'avatar': 1, 'color': '#58CC02', 'cells': 24, 'rank': 8},
+    {'name': 'You', 'avatar': 1, 'color': '#00D4AA', 'cells': 24, 'rank': 8},
   ];
 
   @override
@@ -159,7 +190,7 @@ class _RankingList extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
           decoration: BoxDecoration(
-            color: isMe ? AppColors.green.withValues(alpha: 0.08) : null,
+            color: isMe ? AppColors.primary.withValues(alpha: 0.08) : null,
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(
@@ -171,7 +202,7 @@ class _RankingList extends StatelessWidget {
                   '#${p['rank']}',
                   style: TextStyle(
                     fontWeight: FontWeight.w800,
-                    color: isMe ? AppColors.green : AppColors.grey,
+                    color: isMe ? AppColors.primary : AppColors.grey,
                   ),
                 ),
               ),
@@ -188,7 +219,7 @@ class _RankingList extends StatelessWidget {
                   p['name'] as String,
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
-                    color: isMe ? AppColors.green : AppColors.dark,
+                    color: isMe ? AppColors.primary : AppColors.dark,
                   ),
                 ),
               ),

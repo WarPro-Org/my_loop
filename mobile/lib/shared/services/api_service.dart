@@ -1,10 +1,21 @@
+/// HTTP client service for communicating with the MyLoop .NET backend.
+///
+/// Wraps [Dio] to provide typed methods for each API endpoint: user
+/// registration, territory queries, walk/claim submission, and
+/// leaderboard retrieval. Exposed as a Riverpod provider for DI.
+library;
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/models/user.dart';
 
-// API client for talking to the .NET backend
+/// Service class that encapsulates all HTTP communication with the backend.
+///
+/// Uses [Dio] with a configurable base URL (defaults to Android emulator
+/// localhost). Each public method maps 1:1 to a backend API endpoint and
+/// returns strongly-typed model objects.
 class ApiService {
   final Dio _dio;
 
@@ -15,7 +26,10 @@ class ApiService {
           receiveTimeout: const Duration(seconds: 10),
         ));
 
-  // Register a new user
+  /// Registers a new user account on the backend.
+  ///
+  /// Called after Firebase authentication and avatar selection. Returns
+  /// the created [AppUser] with its server-generated ID.
   Future<AppUser> register({
     required String firebaseUid,
     required String displayName,
@@ -31,7 +45,10 @@ class ApiService {
     return AppUser.fromJson(response.data);
   }
 
-  // Get territories in a bounding box (for map display)
+  /// Fetches all territory cells within a geographic bounding box.
+  ///
+  /// Used to populate the map view with colored hexagons showing which
+  /// players own which cells in the visible area.
   Future<List<TerritoryCell>> getTerritories({
     required double minLat,
     required double minLng,
@@ -48,7 +65,10 @@ class ApiService {
     return list.map((j) => TerritoryCell.fromJson(j)).toList();
   }
 
-  // Submit a completed walk/claim
+  /// Submits a completed walk path to the backend for territory claiming.
+  ///
+  /// The backend runs H3 hex resolution, loop detection, and territory
+  /// assignment. Returns a result map with captured cell count and details.
   Future<Map<String, dynamic>> submitClaim({
     required String userId,
     required List<List<double>> path,
@@ -60,7 +80,10 @@ class ApiService {
     return response.data as Map<String, dynamic>;
   }
 
-  // Get leaderboard
+  /// Retrieves the leaderboard for players near the given coordinates.
+  ///
+  /// Returns a ranked list of [LeaderboardEntry] objects sorted by
+  /// cell count descending.
   Future<List<LeaderboardEntry>> getLeaderboard({
     required double lat,
     required double lng,
@@ -74,7 +97,10 @@ class ApiService {
   }
 }
 
-// Riverpod provider for ApiService (single instance across the app)
+/// Riverpod provider exposing a singleton [ApiService] instance.
+///
+/// Inject via `ref.read(apiServiceProvider)` to access the API client
+/// from any widget or controller.
 final apiServiceProvider = Provider<ApiService>((ref) {
   return ApiService();
 });

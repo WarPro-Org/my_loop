@@ -1,3 +1,10 @@
+/// Journey screen — live map view for recording territory-capturing walks.
+///
+/// Displays a full-screen OpenStreetMap with the player's live GPS trail,
+/// current position marker, real-time stats (time, distance, GPS points),
+/// and start/stop controls. Integrates with [JourneyController] via Riverpod.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,17 +13,25 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
-// Journey screen - shows the map with live hex capture
-// User taps "Start" to begin walking, sees their path drawn in real-time
+/// ─────────────────────────────────────────────────────────────────────────────
+/// JOURNEY SCREEN — Full-screen map with overlay controls
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// The main journey recording screen with a layered Stack layout.
+///
+/// Uses a [Stack] to overlay the map, stats bar (top), and controls (bottom).
+/// Watches [journeyControllerProvider] to reactively update the UI as the
+/// player walks. Listens for errors and shows them via snackbar.
 class JourneyScreen extends ConsumerWidget {
   const JourneyScreen({super.key});
 
+  /// Builds the stacked layout: map → stats overlay → bottom controls.
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final journey = ref.watch(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
 
-    // Show error as snackbar when it changes
+    // Listen for error state changes and display as a snackbar
     ref.listen(journeyControllerProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -59,7 +74,15 @@ class JourneyScreen extends ConsumerWidget {
   }
 }
 
-// The map widget showing trail and hexes
+/// ─────────────────────────────────────────────────────────────────────────────
+/// MAP LAYER
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Full-screen interactive map showing OSM tiles, the walked polyline, and
+/// a pulsing current-position marker.
+///
+/// Centers on the player's current GPS position. Falls back to Delhi
+/// coordinates when GPS is not yet available.
 class _JourneyMap extends StatelessWidget {
   final JourneyState journey;
   const _JourneyMap({required this.journey});
@@ -94,7 +117,7 @@ class _JourneyMap extends StatelessWidget {
                 points: journey.path
                     .map((p) => LatLng(p[0], p[1]))
                     .toList(),
-                color: AppColors.green,
+                color: AppColors.primary,
                 strokeWidth: 4,
               ),
             ],
@@ -113,12 +136,12 @@ class _JourneyMap extends StatelessWidget {
                 height: 24,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: AppColors.green,
+                    color: AppColors.primary,
                     shape: BoxShape.circle,
                     border: Border.all(color: AppColors.white, width: 3),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.green.withValues(alpha: 0.3),
+                        color: AppColors.primary.withValues(alpha: 0.3),
                         blurRadius: 8,
                         spreadRadius: 2,
                       ),
@@ -133,7 +156,14 @@ class _JourneyMap extends StatelessWidget {
   }
 }
 
-// Stats bar shown during tracking (distance, time, points)
+/// ─────────────────────────────────────────────────────────────────────────────
+/// STATS OVERLAY
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Floating stats bar shown at the top during active tracking.
+///
+/// Displays elapsed time (MM:SS), distance walked (m or km), and the
+/// number of GPS points recorded so far.
 class _StatsBar extends StatelessWidget {
   final JourneyState journey;
   const _StatsBar({required this.journey});
@@ -187,6 +217,7 @@ class _StatsBar extends StatelessWidget {
   }
 }
 
+/// A single stat column (emoji + value + label) used in [_StatsBar].
 class _StatItem extends StatelessWidget {
   final String emoji;
   final String value;
@@ -216,7 +247,14 @@ class _StatItem extends StatelessWidget {
   }
 }
 
-// Bottom control panel (Start / Stop buttons)
+/// ─────────────────────────────────────────────────────────────────────────────
+/// BOTTOM CONTROLS
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Bottom panel with Start/Stop buttons depending on journey state.
+///
+/// In idle state, shows "START JOURNEY" with instructions.
+/// In tracking state, shows "STOP & CAPTURE" in red to end the walk.
 class _BottomControls extends StatelessWidget {
   final JourneyState journey;
   final JourneyController controller;

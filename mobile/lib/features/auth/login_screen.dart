@@ -1,3 +1,10 @@
+/// Login screen — the app's entry point for unauthenticated users.
+///
+/// Presents a Duolingo-inspired welcome page with a mascot emoji, app
+/// branding, and OAuth sign-in buttons (Google & Apple). On successful
+/// authentication, navigates to the avatar picker screen.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -5,11 +12,15 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
-// Login screen - first thing user sees
-// Duolingo style: big mascot emoji, simple message, one CTA button
+/// The initial login/welcome screen shown to unauthenticated users.
+///
+/// Follows a simple vertical layout: mascot, branding, spacer, CTA buttons,
+/// and legal text. Uses [ConsumerWidget] to access the auth service via
+/// Riverpod for sign-in operations.
 class LoginScreen extends ConsumerWidget {
   const LoginScreen({super.key});
 
+  /// Builds the full-screen login layout with branding and sign-in CTAs.
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
@@ -76,6 +87,10 @@ class LoginScreen extends ConsumerWidget {
     );
   }
 
+  /// Initiates Google OAuth sign-in flow.
+  ///
+  /// On success, navigates to `/avatar` for profile setup.
+  /// On failure, shows an error snackbar.
   Future<void> _signInWithGoogle(BuildContext context, WidgetRef ref) async {
     try {
       final authService = ref.read(authServiceProvider);
@@ -92,6 +107,10 @@ class LoginScreen extends ConsumerWidget {
     }
   }
 
+  /// Initiates Apple Sign-In flow.
+  ///
+  /// On success, navigates to `/avatar` for profile setup.
+  /// On failure, shows an error snackbar.
   Future<void> _signInWithApple(BuildContext context, WidgetRef ref) async {
     try {
       final authService = ref.read(authServiceProvider);

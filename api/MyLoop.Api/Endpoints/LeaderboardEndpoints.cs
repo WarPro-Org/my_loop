@@ -5,22 +5,29 @@ using MyLoop.Api.Services;
 
 namespace MyLoop.Api.Endpoints;
 
-/// Leaderboard — who owns the most territory in the city.
-/// Updated once a day at midnight by a batch job.
+/// <summary>
+/// Leaderboard endpoints — displays ranked territory ownership for the current day.
+/// The leaderboard is a daily snapshot computed by a batch refresh (triggered manually or by scheduled job).
+/// </summary>
 public static class LeaderboardEndpoints
 {
+    /// <summary>
+    /// Maps all leaderboard-related HTTP endpoints under the <c>/api/leaderboard</c> route group.
+    /// </summary>
+    /// <param name="app">The <see cref="WebApplication"/> to register routes on.</param>
     public static void MapLeaderboardEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/leaderboard");
 
-        // Get today's leaderboard for a specific area. 
+        // GET /api/leaderboard?lat=...&lng=...&userId=...
+        // Get today's leaderboard for a specific area.
         // Send the center of your map view (lat/lng) and we find the city-level zone.
         // Also returns the requesting user's rank if userId is provided.
         group.MapGet("/", async (double lat, double lng, Guid? userId, AppDbContext db) =>
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-            // Get top 10
+            // Retrieve the top 10 players by rank for today's snapshot
             var top = await db.LeaderboardEntries
                 .Include(l => l.User)
                 .Where(l => l.Date == today)
@@ -38,7 +45,8 @@ public static class LeaderboardEndpoints
                 })
                 .ToListAsync();
 
-            // If a userId was provided, also find their rank
+            // If a userId was provided, also find their personal rank
+            // (they may not be in the top 10 but still want to see their position)
             object? myRank = null;
             if (userId.HasValue)
             {
@@ -51,23 +59,24 @@ public static class LeaderboardEndpoints
             return Results.Ok(new { Top = top, MyRank = myRank });
         });
 
-        // Trigger leaderboard refresh. In production this runs as a scheduled job.
-        // For now, we expose it as an endpoint so we can test it manually.
+        // POST /api/leaderboard/refresh
+        // Trigger leaderboard refresh. In production this would be a scheduled CRON job.
+        // For now, exposed as an endpoint for manual testing and development.
         group.MapPost("/refresh", async (AppDbContext db) =>
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-            // Delete today's old snapshot (if re-running)
+            // Delete today's old snapshot (allows safe re-running without duplicates)
             await db.LeaderboardEntries.Where(l => l.Date == today).ExecuteDeleteAsync();
 
-            // Count cells per user, ranked by most cells
+            // Aggregate: count cells per user, ordered by most territory owned
             var rankings = await db.TerritoryCells
                 .GroupBy(t => t.OwnerId)
                 .Select(g => new { UserId = g.Key, CellCount = g.Count() })
                 .OrderByDescending(x => x.CellCount)
                 .ToListAsync();
 
-            // Write leaderboard entries with ranks
+            // Materialize ranked entries with 1-based rank positions
             var entries = rankings.Select((r, index) => new LeaderboardEntry
             {
                 Id = Guid.NewGuid(),
@@ -75,7 +84,7 @@ public static class LeaderboardEndpoints
                 Date = today,
                 CellCount = r.CellCount,
                 AreaM2 = H3Service.CalculateArea(r.CellCount),
-                Rank = index + 1
+                Rank = index + 1 // rank is 1-based (1st place, 2nd place, etc.)
             });
 
             db.LeaderboardEntries.AddRange(entries);

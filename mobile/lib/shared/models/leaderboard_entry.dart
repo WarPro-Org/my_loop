@@ -1,4 +1,14 @@
-// Leaderboard entry from the API
+/// Leaderboard entry model for the MyLoop ranking system.
+///
+/// Represents one row in the leaderboard, containing a player's rank,
+/// territory stats, and display info (avatar, color, name).
+/// Returned by the `/api/leaderboard` endpoint.
+library;
+
+/// A single entry in the local or global leaderboard.
+///
+/// Contains everything needed to render one player's row in the
+/// leaderboard UI: identity, rank position, and territory metrics.
 class LeaderboardEntry {
   final String userId;
   final String displayName;
@@ -18,6 +28,7 @@ class LeaderboardEntry {
     required this.rank,
   });
 
+  /// Deserializes a leaderboard entry from a JSON map returned by the API.
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(
       userId: json['userId'] as String,

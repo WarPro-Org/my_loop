@@ -1,9 +1,16 @@
+/// Home tab — the main dashboard players see after login.
+///
+/// Displays a welcome header with avatar, a daily challenge card with
+/// progress, quick-stat tiles (streak, hexes, rank) with drill-down
+/// bottom sheets, and a rotating "pro tip" card for engagement.
+library;
+
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
-// 15 pro tips that rotate on each login
+/// Rotating gameplay tips shown once per session to educate new players.
 const _proTips = [
   'Walk a closed loop to capture all hexes inside it!',
   'Longer loops = more territory captured at once.',
@@ -22,11 +29,18 @@ const _proTips = [
   'Team up with friends to dominate a neighborhood!',
 ];
 
-// Home tab - the main screen players see after login
-// Shows welcome message, quick stats, and recent activity
+/// ─────────────────────────────────────────────────────────────────────────────
+/// HOME TAB — Main scrollable dashboard content
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// The primary home tab showing player greeting, daily challenge, stats, and tips.
+///
+/// Stateless because all data is currently mocked. When connected to the
+/// backend, this will become a [ConsumerWidget] watching user state.
 class HomeTab extends StatelessWidget {
   const HomeTab({super.key});
 
+  /// Builds the vertically scrollable dashboard layout.
   @override
   Widget build(BuildContext context) {
     // Pick a random tip each time screen builds (simulates per-login)
@@ -41,7 +55,7 @@ class HomeTab extends StatelessWidget {
             // Welcome header
             Row(
               children: [
-                const AvatarWidget(avatarId: 1, color: '#58CC02', size: 48),
+                const AvatarWidget(avatarId: 1, color: '#00D4AA', size: 48),
                 const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -80,7 +94,14 @@ class HomeTab extends StatelessWidget {
   }
 }
 
-// Daily challenge card (Duolingo-style motivation)
+/// ─────────────────────────────────────────────────────────────────────────────
+/// DAILY CHALLENGE CARD
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// A gradient card showing today's challenge with a progress bar.
+///
+/// Currently displays static mock data (2/5 hexes). Will be powered by
+/// a daily challenge system from the backend.
 class _DailyChallengeCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -89,14 +110,14 @@ class _DailyChallengeCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [AppColors.green, Color(0xFF7AE582)],
+          colors: [AppColors.primary, AppColors.primaryLight],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: AppColors.green.withValues(alpha: 0.3),
+            color: AppColors.primary.withValues(alpha: 0.3),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
@@ -154,7 +175,14 @@ class _DailyChallengeCard extends StatelessWidget {
   }
 }
 
-// Quick stats row - each tile is tappable
+/// ─────────────────────────────────────────────────────────────────────────────
+/// QUICK STATS ROW
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Row of tappable stat tiles that open detail bottom sheets.
+///
+/// Each tile shows an emoji, a value, and a label. Tapping reveals
+/// historical data (streak history, hex history) or rank scope options.
 class _QuickStats extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -190,7 +218,8 @@ class _QuickStats extends StatelessWidget {
     );
   }
 
-  // Shows daily streak history (hexes, distance, time per day)
+  /// Opens a bottom sheet showing the daily streak history with
+  /// per-day hex count, distance walked, and time spent.
   void _showStreakHistory(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -233,7 +262,7 @@ class _QuickStats extends StatelessWidget {
     );
   }
 
-  // Shows hex earned/lost per day
+  /// Opens a bottom sheet showing hex earned/lost per day.
   void _showHexHistory(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -258,7 +287,7 @@ class _QuickStats extends StatelessWidget {
                   ),
                   Text(
                     '+${day['earned']} earned',
-                    style: const TextStyle(color: AppColors.green, fontWeight: FontWeight.w700),
+                    style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
                   ),
                   const SizedBox(width: 16),
                   Text(
@@ -274,7 +303,7 @@ class _QuickStats extends StatelessWidget {
     );
   }
 
-  // Shows rank scope selector (area / city / country)
+  /// Opens a bottom sheet showing rank at different geographic scopes.
   void _showRankSelector(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -307,6 +336,7 @@ class _QuickStats extends StatelessWidget {
   ];
 }
 
+/// A geographic scope rank display row used in the rank bottom sheet.
 class _RankOption extends StatelessWidget {
   final String scope;
   final int rank;
@@ -331,7 +361,7 @@ class _RankOption extends StatelessWidget {
           const Spacer(),
           Text(
             '#$rank',
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.green),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.primary),
           ),
         ],
       ),
@@ -339,6 +369,10 @@ class _RankOption extends StatelessWidget {
   }
 }
 
+/// A single tappable stat tile with emoji, value, and label.
+///
+/// Used in the [_QuickStats] row. The [onTap] callback opens the
+/// corresponding detail bottom sheet.
 class _MiniStat extends StatelessWidget {
   final String emoji;
   final String value;
@@ -376,7 +410,13 @@ class _MiniStat extends StatelessWidget {
   }
 }
 
-// Tip card with rotating tips
+/// ─────────────────────────────────────────────────────────────────────────────
+/// TIP CARD
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Displays a random gameplay tip with a lightbulb emoji.
+///
+/// The tip is randomly selected from [_proTips] each time the home tab rebuilds.
 class _TipCard extends StatelessWidget {
   final String tip;
   const _TipCard({required this.tip});

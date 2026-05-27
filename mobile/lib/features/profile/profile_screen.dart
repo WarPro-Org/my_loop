@@ -1,13 +1,28 @@
+/// Profile screen — displays player stats, achievements, and settings.
+///
+/// Shows the player's avatar and name, a grid of key stats (hexes, distance,
+/// rank, streak), a preview of achievements with star progress, and a
+/// settings section for avatar/name editing and sign-out.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/models/achievements.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
-// Profile screen - shows player stats, avatar, and settings
+/// ─────────────────────────────────────────────────────────────────────────────
+/// PROFILE SCREEN
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// The player's profile tab with identity, stats, achievements, and settings.
+///
+/// Currently uses hardcoded mock data. When connected to the backend,
+/// will watch user state via Riverpod and fetch real-time stats.
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  /// Builds the scrollable profile layout.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -19,7 +34,7 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 16),
 
               // Avatar and name
-              const AvatarWidget(avatarId: 1, color: '#58CC02', size: 80),
+              const AvatarWidget(avatarId: 1, color: '#00D4AA', size: 80),
               const SizedBox(height: 12),
               Text('Player', style: Theme.of(context).textTheme.headlineMedium),
               Text(
@@ -48,7 +63,11 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-// Grid of stat cards
+/// ─────────────────────────────────────────────────────────────────────────────
+/// STATS GRID
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// A 2x2 grid of stat cards showing key player metrics.
 class _StatsGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -69,6 +88,7 @@ class _StatsGrid extends StatelessWidget {
   }
 }
 
+/// A single stat card with emoji, numeric value, and label.
 class _StatCard extends StatelessWidget {
   final String emoji;
   final String value;
@@ -103,7 +123,14 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-// Achievements section - shows first few + "See All" button
+/// ─────────────────────────────────────────────────────────────────────────────
+/// ACHIEVEMENTS SECTION
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shows the first 4 achievements with progress bars and a "See All" button.
+///
+/// Tapping "See All" navigates to [_AllAchievementsScreen] which displays
+/// all 100 achievements with their star progress.
 class _AchievementsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -122,7 +149,7 @@ class _AchievementsSection extends StatelessWidget {
             Text('Achievements 🎖️', style: Theme.of(context).textTheme.titleLarge),
             TextButton(
               onPressed: () => _showAllAchievements(context, mockProgress),
-              child: const Text('See All', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w700)),
+              child: const Text('See All', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -136,6 +163,7 @@ class _AchievementsSection extends StatelessWidget {
     );
   }
 
+  /// Opens the full achievements list screen via a Material page route.
   void _showAllAchievements(BuildContext context, Map<String, int> progress) {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -145,7 +173,10 @@ class _AchievementsSection extends StatelessWidget {
   }
 }
 
-// Single achievement tile with stars
+/// A single achievement row showing emoji, name, progress bar, and star indicators.
+///
+/// Calculates the next tier target and displays progress as a fraction
+/// (e.g., "24 / 50 hexes") with a colored progress bar.
 class _AchievementTile extends StatelessWidget {
   final Achievement achievement;
   final int progress;
@@ -192,7 +223,7 @@ class _AchievementTile extends StatelessWidget {
                     minHeight: 6,
                     backgroundColor: AppColors.greyLight,
                     valueColor: AlwaysStoppedAnimation(
-                      stars >= 3 ? AppColors.yellow : AppColors.green,
+                      stars >= 3 ? AppColors.yellow : AppColors.primary,
                     ),
                   ),
                 ),
@@ -213,7 +244,7 @@ class _AchievementTile extends StatelessWidget {
   }
 }
 
-// Full achievements screen
+/// Full-screen list of all 100 achievements with a total star count header.
 class _AllAchievementsScreen extends StatelessWidget {
   final Map<String, int> progress;
   const _AllAchievementsScreen({required this.progress});
@@ -266,7 +297,14 @@ class _AllAchievementsScreen extends StatelessWidget {
   }
 }
 
-// Settings section with working buttons
+/// ─────────────────────────────────────────────────────────────────────────────
+/// SETTINGS SECTION
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Settings section with avatar/color editor, name editor, and sign-out.
+///
+/// Each setting opens a modal bottom sheet for inline editing without
+/// navigating away from the profile screen.
 class _SettingsSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
@@ -337,7 +375,7 @@ class _SettingsSection extends StatelessWidget {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: AppColors.green, width: 2),
+                  borderSide: const BorderSide(color: AppColors.primary, width: 2),
                 ),
               ),
             ),
@@ -349,7 +387,7 @@ class _SettingsSection extends StatelessWidget {
                   // TODO: Save name via API
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Name updated! ✅'), backgroundColor: AppColors.green),
+                    const SnackBar(content: Text('Name updated! ✅'), backgroundColor: AppColors.primary),
                   );
                 },
                 child: const Text('SAVE'),
@@ -362,7 +400,7 @@ class _SettingsSection extends StatelessWidget {
   }
 }
 
-// Avatar and color editor bottom sheet
+/// Bottom sheet for changing avatar emoji and player color.
 class _AvatarColorEditor extends StatefulWidget {
   const _AvatarColorEditor();
 
@@ -375,7 +413,7 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
   int _selectedColor = 0;
 
   static const _colors = [
-    '#58CC02', '#1CB0F6', '#FF4B4B', '#FF9600',
+    '#00D4AA', '#1CB0F6', '#FF4B4B', '#FF9600',
     '#A560E8', '#FFC800', '#FF6B81', '#2ED8A3',
   ];
 
@@ -416,10 +454,10 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
                   onTap: () => setState(() => _selectedAvatar = index),
                   child: Container(
                     decoration: BoxDecoration(
-                      color: isSelected ? AppColors.green.withValues(alpha: 0.15) : AppColors.snow,
+                      color: isSelected ? AppColors.primary.withValues(alpha: 0.15) : AppColors.snow,
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                        color: isSelected ? AppColors.green : AppColors.greyLight,
+                        color: isSelected ? AppColors.primary : AppColors.greyLight,
                         width: isSelected ? 2 : 1,
                       ),
                     ),
@@ -465,7 +503,7 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
                 // TODO: Save via API
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Avatar updated! ✅'), backgroundColor: AppColors.green),
+                  const SnackBar(content: Text('Avatar updated! ✅'), backgroundColor: AppColors.primary),
                 );
               },
               child: const Text('SAVE CHANGES'),
@@ -477,6 +515,7 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
   }
 }
 
+/// A single settings row tile with an emoji icon, label, and chevron.
 class _SettingsTile extends StatelessWidget {
   final String icon;
   final String label;
