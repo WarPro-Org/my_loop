@@ -1,0 +1,51 @@
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+
+# IDE
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET
+api/**/bin/
+api/**/obj/
+api/**/.vs/
+api/**/appsettings.Development.json
+
+# Flutter
+mobile/.dart_tool/
+mobile/.packages
+mobile/build/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/debug/
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/flutter_export_environment.sh
+mobile/ios/Flutter/Generated.xcconfig
+mobile/ios/Flutter/App.framework
+mobile/ios/Flutter/Flutter.framework
+mobile/ios/Runner.xcworkspace/xcshareddata/WorkspaceSettings.xcsettings
+mobile/windows/flutter/
+mobile/web/favicon.png
+
+# Secrets
+*.env
+**/user-secrets/
+GoogleService-Info.plist
+google-services.json
+
+# Build outputs
+*.apk
+*.ipa
+*.exe
+
+# Docs (generated)
+docs/architecture.md
