@@ -6,8 +6,12 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/auth_service.dart';
+import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
@@ -16,15 +20,15 @@ import 'package:myloop/shared/widgets/big_button.dart';
 /// Presents a name input, an emoji avatar grid, a color picker row, and
 /// a live preview of the combined avatar. On completion, registers the
 /// user via the API and navigates to the home screen.
-class AvatarPickerScreen extends StatefulWidget {
+class AvatarPickerScreen extends ConsumerStatefulWidget {
   const AvatarPickerScreen({super.key});
 
   @override
-  State<AvatarPickerScreen> createState() => _AvatarPickerScreenState();
+  ConsumerState<AvatarPickerScreen> createState() => _AvatarPickerScreenState();
 }
 
 /// State for [AvatarPickerScreen] managing avatar, color, and name selection.
-class _AvatarPickerScreenState extends State<AvatarPickerScreen> {
+class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
   int _selectedAvatar = 0;
   int _selectedColor = 0;
   String _name = '';
@@ -183,10 +187,7 @@ class _AvatarPickerScreenState extends State<AvatarPickerScreen> {
                 label: "LET'S GO! 🚀",
                 onPressed: _name.trim().isEmpty
                     ? () {} // disabled look handled by opacity below
-                    : () {
-                        // TODO: Call API to register user
-                        context.go('/home');
-                      },
+                    : () => _registerAndContinue(),
               ),
               const SizedBox(height: 24),
             ],
@@ -194,5 +195,42 @@ class _AvatarPickerScreenState extends State<AvatarPickerScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _registerAndContinue() async {
+    final name = _name.trim();
+    final color = _colors[_selectedColor];
+    final authService = ref.read(authServiceProvider);
+    final api = ref.read(apiServiceProvider);
+
+    // Use Firebase UID if available, otherwise generate a dev UID
+    final firebaseUid = authService.currentUser?.uid ?? 'dev_${name.toLowerCase().replaceAll(' ', '_')}';
+
+    try {
+      final user = await api.register(
+        firebaseUid: firebaseUid,
+        displayName: name,
+        color: color,
+        avatarId: _selectedAvatar,
+      );
+
+      ref.read(userProfileProvider.notifier).setFromApi(
+        userId: user.id,
+        avatarId: user.avatarId,
+        color: user.color,
+        displayName: user.displayName,
+        hexCount: user.hexCount,
+        streak: user.streak,
+        distanceKm: user.distanceKm,
+      );
+
+      if (mounted) context.go('/home');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Registration failed: $e'), backgroundColor: AppColors.red),
+        );
+      }
+    }
   }
 }

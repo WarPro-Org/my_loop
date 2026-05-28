@@ -1,53 +1,99 @@
 /// Leaderboard screen — displays player rankings in a Duolingo-league style.
 ///
 /// Shows a podium visualization for the top 3 players and a scrollable
-/// list for remaining ranks. Currently uses mock data; will be powered
-/// by the `/api/leaderboard` endpoint.
+/// list for remaining ranks. Powered by the `/api/leaderboard` endpoint.
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/models/leaderboard_entry.dart';
+import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
+import 'package:myloop/shared/widgets/shimmer_loading.dart';
+
+/// Riverpod provider that fetches leaderboard data from the API.
+final leaderboardProvider = FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  return api.getLeaderboard(lat: 0, lng: 0);
+});
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// LEADERBOARD SCREEN
 /// ─────────────────────────────────────────────────────────────────────────────
 
 /// The leaderboard tab showing local area rankings.
-///
-/// Layout: header with title and scope label, top-3 podium visualization,
-/// then a scrollable list for ranks 4+. The current user's row is
-/// highlighted with a tinted background.
-class LeaderboardScreen extends StatelessWidget {
+class LeaderboardScreen extends ConsumerWidget {
   const LeaderboardScreen({super.key});
 
-  /// Builds the vertical layout: header → podium → ranking list.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final leaderboard = ref.watch(leaderboardProvider);
+    final user = ref.watch(userProfileProvider);
+
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 16),
-
-            // Header
-            Text('🏆 Leaderboard', style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 4),
-            Text(
-              'Your area • Today',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.grey,
-              ),
+        child: leaderboard.when(
+          loading: () => Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Column(
+              children: [
+                const SizedBox(height: 16),
+                Center(child: ShimmerBox(width: 200, height: 28, borderRadius: 8)),
+                const SizedBox(height: 8),
+                Center(child: ShimmerBox(width: 120, height: 16, borderRadius: 6)),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(child: ShimmerBox(height: 140)),
+                    const SizedBox(width: 8),
+                    Expanded(child: ShimmerBox(height: 180)),
+                    const SizedBox(width: 8),
+                    Expanded(child: ShimmerBox(height: 120)),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Expanded(child: ShimmerList(itemCount: 5, itemHeight: 56, padding: EdgeInsets.zero)),
+              ],
             ),
-            const SizedBox(height: 16),
-
-            // Top 3 podium
-            _TopThreePodium(),
-            const SizedBox(height: 16),
-
-            // Rest of the list
-            Expanded(child: _RankingList()),
-          ],
+          ),
+          error: (err, _) => Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.wifi_off, size: 48, color: AppColors.grey),
+                const SizedBox(height: 12),
+                Text('Could not load leaderboard', style: TextStyle(color: AppColors.grey)),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () => ref.invalidate(leaderboardProvider),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+          data: (entries) => Column(
+            children: [
+              const SizedBox(height: 16),
+              Text('🏆 Leaderboard', style: Theme.of(context).textTheme.headlineMedium),
+              const SizedBox(height: 4),
+              Text(
+                'Your area • Today',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.grey),
+              ),
+              const SizedBox(height: 16),
+              if (entries.length >= 3) _TopThreePodium(top3: entries.sublist(0, 3)),
+              const SizedBox(height: 16),
+              Expanded(child: _RankingList(
+                players: entries.length > 3 ? entries.sublist(3) : (entries.length < 3 ? entries : []),
+                currentUserName: user.displayName,
+              )),
+            ],
+          ),
         ),
       ),
     );
@@ -58,17 +104,9 @@ class LeaderboardScreen extends StatelessWidget {
 /// TOP 3 PODIUM
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Podium visualization showing the top 3 players with medal emojis.
-///
-/// Arranged as: 2nd place (left) → 1st place (center, tallest) → 3rd place (right).
-/// Each podium column height reflects the player's relative rank.
 class _TopThreePodium extends StatelessWidget {
-  // Mock data - will come from API later
-  final _topPlayers = const [
-    {'name': 'Alex', 'avatar': 0, 'color': '#00D4AA', 'cells': 142, 'rank': 1},
-    {'name': 'Maya', 'avatar': 3, 'color': '#1CB0F6', 'cells': 98, 'rank': 2},
-    {'name': 'Ravi', 'avatar': 5, 'color': '#FF9600', 'cells': 76, 'rank': 3},
-  ];
+  final List<LeaderboardEntry> top3;
+  const _TopThreePodium({required this.top3});
 
   @override
   Widget build(BuildContext context) {
@@ -78,83 +116,55 @@ class _TopThreePodium extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // 2nd place
-          _PodiumItem(
-            rank: 2,
-            name: _topPlayers[1]['name'] as String,
-            avatarId: _topPlayers[1]['avatar'] as int,
-            color: _topPlayers[1]['color'] as String,
-            cells: _topPlayers[1]['cells'] as int,
-            height: 80,
-          ),
+          Expanded(child: _PodiumItem(entry: top3[1], height: 80)),
           const SizedBox(width: 8),
-          // 1st place (tallest)
-          _PodiumItem(
-            rank: 1,
-            name: _topPlayers[0]['name'] as String,
-            avatarId: _topPlayers[0]['avatar'] as int,
-            color: _topPlayers[0]['color'] as String,
-            cells: _topPlayers[0]['cells'] as int,
-            height: 100,
-          ),
+          Expanded(child: _PodiumItem(entry: top3[0], height: 100)),
           const SizedBox(width: 8),
-          // 3rd place
-          _PodiumItem(
-            rank: 3,
-            name: _topPlayers[2]['name'] as String,
-            avatarId: _topPlayers[2]['avatar'] as int,
-            color: _topPlayers[2]['color'] as String,
-            cells: _topPlayers[2]['cells'] as int,
-            height: 64,
-          ),
+          Expanded(child: _PodiumItem(entry: top3[2], height: 64)),
         ],
       ),
     );
   }
 }
 
-/// A single podium column: medal emoji, avatar, name, hex count, and colored bar.
 class _PodiumItem extends StatelessWidget {
-  final int rank;
-  final String name;
-  final int avatarId;
-  final String color;
-  final int cells;
+  final LeaderboardEntry entry;
   final double height;
-
-  const _PodiumItem({
-    required this.rank,
-    required this.name,
-    required this.avatarId,
-    required this.color,
-    required this.cells,
-    required this.height,
-  });
+  const _PodiumItem({required this.entry, required this.height});
 
   @override
   Widget build(BuildContext context) {
     final medals = ['🥇', '🥈', '🥉'];
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(medals[rank - 1], style: const TextStyle(fontSize: 24)),
-        const SizedBox(height: 4),
-        AvatarWidget(avatarId: avatarId, color: color, size: 44),
-        const SizedBox(height: 4),
-        Text(name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-        Text('$cells ⬡', style: TextStyle(fontSize: 11, color: AppColors.grey)),
-        const SizedBox(height: 4),
-        Container(
-          width: 80,
-          height: height,
-          decoration: BoxDecoration(
-            color: rank == 1 ? AppColors.yellow.withValues(alpha: 0.3)
-                : rank == 2 ? AppColors.grey.withValues(alpha: 0.2)
-                : AppColors.orange.withValues(alpha: 0.2),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+    return GestureDetector(
+      onTap: () => context.push('/user-profile', extra: {
+        'userId': entry.userId,
+        'name': entry.displayName,
+        'avatar': entry.avatarId,
+        'color': entry.color,
+        'rank': entry.rank,
+      }),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(medals[entry.rank - 1], style: const TextStyle(fontSize: 24)),
+          const SizedBox(height: 4),
+          AvatarWidget(avatarId: entry.avatarId, color: entry.color, size: 44, hexes: entry.hexCount),
+          const SizedBox(height: 4),
+          Text(entry.displayName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1),
+          Text('${entry.cellCount} ⬡', style: TextStyle(fontSize: 11, color: AppColors.grey)),
+          const SizedBox(height: 4),
+          Container(
+            width: double.infinity,
+            height: height,
+            decoration: BoxDecoration(
+              color: entry.rank == 1 ? AppColors.yellow.withValues(alpha: 0.3)
+                  : entry.rank == 2 ? AppColors.grey.withValues(alpha: 0.2)
+                  : AppColors.orange.withValues(alpha: 0.2),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
@@ -163,72 +173,64 @@ class _PodiumItem extends StatelessWidget {
 /// RANKING LIST
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Scrollable list of players ranked 4th and below.
-///
-/// Highlights the current user's row with a tinted primary-color background.
-/// Each row shows rank number, avatar, name, and hex count.
 class _RankingList extends StatelessWidget {
-  // Mock data
-  final _players = const [
-    {'name': 'Sam', 'avatar': 2, 'color': '#A560E8', 'cells': 54, 'rank': 4},
-    {'name': 'Priya', 'avatar': 8, 'color': '#FF4B4B', 'cells': 42, 'rank': 5},
-    {'name': 'Leo', 'avatar': 4, 'color': '#FFC800', 'cells': 38, 'rank': 6},
-    {'name': 'Zara', 'avatar': 6, 'color': '#2ED8A3', 'cells': 31, 'rank': 7},
-    {'name': 'You', 'avatar': 1, 'color': '#00D4AA', 'cells': 24, 'rank': 8},
-  ];
+  final List<LeaderboardEntry> players;
+  final String currentUserName;
+  const _RankingList({required this.players, required this.currentUserName});
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      itemCount: _players.length,
+      itemCount: players.length,
       separatorBuilder: (_, _) => const Divider(height: 1, color: AppColors.greyLight),
       itemBuilder: (context, index) {
-        final p = _players[index];
-        final isMe = p['name'] == 'You';
+        final p = players[index];
+        final isMe = p.displayName == currentUserName;
 
-        return Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-          decoration: BoxDecoration(
-            color: isMe ? AppColors.primary.withValues(alpha: 0.08) : null,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              // Rank number
-              SizedBox(
-                width: 28,
-                child: Text(
-                  '#${p['rank']}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: isMe ? AppColors.primary : AppColors.grey,
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: isMe ? null : () => context.push('/user-profile', extra: {
+            'userId': p.userId,
+            'name': p.displayName,
+            'avatar': p.avatarId,
+            'color': p.color,
+            'rank': p.rank,
+          }),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+            decoration: BoxDecoration(
+              color: isMe ? AppColors.primary.withValues(alpha: 0.08) : null,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 28,
+                  child: Text(
+                    '#${p.rank}',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      color: isMe ? AppColors.primary : AppColors.grey,
+                    ),
                   ),
                 ),
-              ),
-              // Avatar
-              AvatarWidget(
-                avatarId: p['avatar'] as int,
-                color: p['color'] as String,
-                size: 36,
-              ),
-              const SizedBox(width: 12),
-              // Name
-              Expanded(
-                child: Text(
-                  p['name'] as String,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: isMe ? AppColors.primary : AppColors.dark,
+                AvatarWidget(avatarId: p.avatarId, color: p.color, size: 36, hexes: p.hexCount),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    p.displayName,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: isMe ? AppColors.primary : AppColors.dark,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                 ),
-              ),
-              // Hex count
-              Text(
-                '${p['cells']} ⬡',
-                style: const TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ],
+                Text('${p.cellCount} ⬡', style: const TextStyle(fontWeight: FontWeight.w700)),
+              ],
+            ),
           ),
         );
       },

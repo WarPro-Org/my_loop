@@ -16,6 +16,9 @@ class AppUser {
   final String displayName;
   final String color; // hex color like #FF5733
   final int avatarId;
+  final int hexCount;
+  final int streak;
+  final double distanceKm;
 
   const AppUser({
     required this.id,
@@ -23,6 +26,9 @@ class AppUser {
     required this.displayName,
     required this.color,
     required this.avatarId,
+    this.hexCount = 0,
+    this.streak = 0,
+    this.distanceKm = 0,
   });
 
   /// Deserializes a user from a JSON map returned by the API.
@@ -32,7 +38,10 @@ class AppUser {
       firebaseUid: json['firebaseUid'] as String,
       displayName: json['displayName'] as String,
       color: json['color'] as String,
-      avatarId: json['avatarId'] as int,
+      avatarId: (json['avatarId'] as num).toInt(),
+      hexCount: (json['hexCount'] as num?)?.toInt() ?? 0,
+      streak: (json['streak'] as num?)?.toInt() ?? 0,
+      distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 0,
     );
   }
 
@@ -43,5 +52,8 @@ class AppUser {
     'displayName': displayName,
     'color': color,
     'avatarId': avatarId,
+    'hexCount': hexCount,
+    'streak': streak,
+    'distanceKm': distanceKm,
   };
 }

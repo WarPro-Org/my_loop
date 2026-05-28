@@ -52,27 +52,31 @@ class LocationService {
   /// Should be called at the start of any location-dependent workflow
   /// (e.g., before starting a journey or showing the map).
   Future<bool> requestPermission() async {
-    // Step 1: Verify the device's location service (GPS) is turned on.
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      throw Exception('Location services are disabled. Please enable GPS.');
+    // On web, isLocationServiceEnabled may not work reliably.
+    // We try it but don't block on failure.
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        throw Exception('Location services are disabled. Please enable GPS.');
+      }
+    } catch (e) {
+      // On web browsers, this check may throw — proceed to permission request
+      if (e is Exception && e.toString().contains('disabled')) rethrow;
     }
 
-    // Step 2: Check the current permission status.
+    // Check and request permission
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
-      // First-time or previously denied without "don't ask again" — show
-      // the native permission dialog.
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
         throw Exception('Location permission denied. Please allow location access in settings.');
       }
     }
 
-    // Step 3: Handle the case where the user selected "Don't ask again"
-    // on a previous prompt. The app cannot request again programmatically.
     if (permission == LocationPermission.deniedForever) {
-      throw Exception('Location permanently denied. Go to Settings > Privacy > Location to enable.');
+      // Open app settings so the user can grant permission manually
+      await Geolocator.openAppSettings();
+      throw Exception('Location permanently denied. Please enable location in your device settings, then try again.');
     }
 
     return true;

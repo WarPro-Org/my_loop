@@ -9,7 +9,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
+import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
 /// The initial login/welcome screen shown to unauthenticated users.
@@ -66,6 +68,16 @@ class LoginScreen extends ConsumerWidget {
                 icon: Icons.apple,
                 color: AppColors.dark,
                 onPressed: () => _signInWithApple(context, ref),
+              ),
+              const SizedBox(height: 12),
+
+              // Dev skip button — loads seeded user from DB for testing
+              TextButton(
+                onPressed: () => _devSkip(context, ref),
+                child: Text(
+                  'SKIP (DEV MODE)',
+                  style: TextStyle(color: AppColors.grey, fontSize: 12),
+                ),
               ),
 
               const Spacer(flex: 1),
@@ -124,6 +136,29 @@ class LoginScreen extends ConsumerWidget {
           SnackBar(content: Text('Sign in failed: $e'), backgroundColor: AppColors.red),
         );
       }
+    }
+  }
+
+  /// Dev mode: loads seeded "Robin" user from DB without Firebase auth.
+  Future<void> _devSkip(BuildContext context, WidgetRef ref) async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      final user = await api.getUserByUid('uid_robin');
+      if (user != null) {
+        ref.read(userProfileProvider.notifier).setFromApi(
+          userId: user.id,
+          avatarId: user.avatarId,
+          color: user.color,
+          displayName: user.displayName,
+          hexCount: user.hexCount,
+          streak: user.streak,
+          distanceKm: user.distanceKm,
+        );
+      }
+      if (context.mounted) context.go('/home');
+    } catch (e) {
+      // If API is down, still navigate for testing
+      if (context.mounted) context.go('/home');
     }
   }
 }

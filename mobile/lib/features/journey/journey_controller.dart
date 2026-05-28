@@ -110,7 +110,8 @@ class JourneyController extends Notifier<JourneyState> {
         }
       });
     } catch (e) {
-      state = state.copyWith(error: 'Could not get location: $e');
+      final msg = e.toString().replaceFirst('Exception: ', '');
+      state = state.copyWith(error: msg);
     }
   }
 

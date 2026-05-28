@@ -40,6 +40,9 @@ public static class LeaderboardEndpoints
                     UserName = l.User!.DisplayName,
                     UserColor = l.User!.Color,
                     UserAvatar = l.User!.AvatarId,
+                    UserHexCount = l.User!.HexCount,
+                    UserStreak = l.User!.Streak,
+                    UserDistanceKm = l.User!.DistanceKm,
                     l.CellCount,
                     l.AreaM2
                 })
@@ -66,6 +69,9 @@ public static class LeaderboardEndpoints
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
+            // Use a transaction to prevent readers seeing empty leaderboard mid-refresh
+            await using var transaction = await db.Database.BeginTransactionAsync();
+
             // Delete today's old snapshot (allows safe re-running without duplicates)
             await db.LeaderboardEntries.Where(l => l.Date == today).ExecuteDeleteAsync();
 
@@ -89,6 +95,7 @@ public static class LeaderboardEndpoints
 
             db.LeaderboardEntries.AddRange(entries);
             await db.SaveChangesAsync();
+            await transaction.CommitAsync();
 
             return Results.Ok(new { Message = "Leaderboard refreshed", PlayerCount = rankings.Count });
         });

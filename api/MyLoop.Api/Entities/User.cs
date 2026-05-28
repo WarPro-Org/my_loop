@@ -22,6 +22,24 @@ public class User
     /// <summary>Index of the player's selected avatar graphic from the predefined avatar set.</summary>
     public int AvatarId { get; set; }
 
+    /// <summary>Total number of hexes currently owned by this player.</summary>
+    public int HexCount { get; set; }
+
+    /// <summary>Current daily walk streak (consecutive days with at least one walk).</summary>
+    public int Streak { get; set; }
+
+    /// <summary>Total distance walked in kilometers.</summary>
+    public double DistanceKm { get; set; }
+
+    /// <summary>The highest streak this user has ever achieved.</summary>
+    public int MaxStreak { get; set; }
+
+    /// <summary>Number of times this user finished in the top 3 of a daily leaderboard.</summary>
+    public int TopThreeFinishes { get; set; }
+
+    /// <summary>Whether the user is currently on an active streak today.</summary>
+    public bool IsStreakActive { get; set; } = true;
+
     /// <summary>Timestamp when the user account was created (defaults to UTC now).</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }

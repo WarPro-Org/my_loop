@@ -21,7 +21,7 @@ class ApiService {
 
   ApiService({String? baseUrl})
       : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl ?? 'http://10.0.2.2:5048', // Android emulator localhost
+          baseUrl: baseUrl ?? 'http://192.168.1.8:5048',
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
         ));
@@ -87,13 +87,39 @@ class ApiService {
   Future<List<LeaderboardEntry>> getLeaderboard({
     required double lat,
     required double lng,
+    String? userId,
   }) async {
     final response = await _dio.get('/api/leaderboard', queryParameters: {
       'lat': lat,
       'lng': lng,
+      if (userId case final uid?) 'userId': uid,
     });
-    final list = response.data as List;
-    return list.map((j) => LeaderboardEntry.fromJson(j)).toList();
+    final data = response.data as Map<String, dynamic>;
+    final list = data['top'] as List;
+    return list.map((j) => LeaderboardEntry.fromJson(j as Map<String, dynamic>)).toList();
+  }
+
+  /// Fetches a user's profile by ID.
+  Future<AppUser> getUser(String id) async {
+    final response = await _dio.get('/api/users/$id');
+    return AppUser.fromJson(response.data);
+  }
+
+  /// Looks up a user by Firebase UID. Returns null if not registered.
+  Future<AppUser?> getUserByUid(String firebaseUid) async {
+    try {
+      final response = await _dio.get('/api/users/by-uid/$firebaseUid');
+      return AppUser.fromJson(response.data);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return null;
+      rethrow;
+    }
+  }
+
+  /// Fetches a user's rich public profile (rank, top 3 finishes, max streak, etc.)
+  Future<Map<String, dynamic>> getUserProfile(String id) async {
+    final response = await _dio.get('/api/users/$id/profile');
+    return response.data as Map<String, dynamic>;
   }
 }
 
