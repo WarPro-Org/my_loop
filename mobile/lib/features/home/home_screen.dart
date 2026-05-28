@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
@@ -42,40 +43,135 @@ class _ProfileDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider);
+    final title = getTitleForHexes(profile.hexCount);
+    final avatarColor = Color(int.parse(profile.color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
     return Drawer(
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(20)),
+        borderRadius: BorderRadius.horizontal(left: Radius.circular(24)),
       ),
-      child: SafeArea(
-        child: Column(
-          children: [
-            const SizedBox(height: 32),
-            AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 72),
-            const SizedBox(height: 12),
-            Text(profile.displayName, style: Theme.of(context).textTheme.headlineMedium),
-            const SizedBox(height: 4),
-            Text('Explorer', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.grey)),
-            const SizedBox(height: 32),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-            _DrawerTile(icon: Icons.palette, label: 'Change Avatar & Color', onTap: () {
+      child: Column(
+        children: [
+          // Gradient header with avatar + title
+          Container(
+            width: double.infinity,
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 32,
+              bottom: 28,
+              left: 24,
+              right: 24,
+            ),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [avatarColor.withValues(alpha: 0.15), avatarColor.withValues(alpha: 0.05)],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: avatarColor.withValues(alpha: 0.3),
+                        blurRadius: 20,
+                        spreadRadius: 4,
+                      ),
+                    ],
+                  ),
+                  child: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 80),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  profile.displayName,
+                  style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                // Title badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [avatarColor.withValues(alpha: 0.2), avatarColor.withValues(alpha: 0.08)],
+                    ),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: avatarColor.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(title.emoji, style: const TextStyle(fontSize: 14)),
+                      const SizedBox(width: 6),
+                      Text(
+                        title.label,
+                        style: TextStyle(
+                          color: avatarColor,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Menu items
+          const SizedBox(height: 8),
+          _DrawerTile(
+            icon: Icons.palette_outlined,
+            label: 'Change Avatar & Color',
+            onTap: () {
               Navigator.pop(context);
               context.push('/profile');
-            }),
-            _DrawerTile(icon: Icons.edit, label: 'Edit Display Name', onTap: () {
+            },
+          ),
+          _DrawerTile(
+            icon: Icons.edit_outlined,
+            label: 'Edit Display Name',
+            onTap: () {
               Navigator.pop(context);
               _showNameEditor(context, ref);
-            }),
-            const Spacer(),
-            const Divider(height: 1),
-            _DrawerTile(icon: Icons.logout, label: 'Sign Out', onTap: () {
+            },
+          ),
+          _DrawerTile(
+            icon: Icons.notifications_outlined,
+            label: 'Notifications',
+            onTap: () => Navigator.pop(context),
+          ),
+          _DrawerTile(
+            icon: Icons.help_outline,
+            label: 'How to Play',
+            onTap: () => Navigator.pop(context),
+          ),
+
+          const Spacer(),
+
+          // Version info
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'MyLoop v0.1.0',
+              style: TextStyle(color: AppColors.grey, fontSize: 11),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Divider(height: 1, indent: 24, endIndent: 24),
+          _DrawerTile(
+            icon: Icons.logout_outlined,
+            label: 'Sign Out',
+            iconColor: AppColors.red,
+            onTap: () {
               Navigator.pop(context);
               context.go('/login');
-            }),
-            const SizedBox(height: 16),
-          ],
-        ),
+            },
+          ),
+          SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
+        ],
       ),
     );
   }
@@ -131,13 +227,14 @@ class _DrawerTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _DrawerTile({required this.icon, required this.label, required this.onTap});
+  final Color? iconColor;
+  const _DrawerTile({required this.icon, required this.label, required this.onTap, this.iconColor});
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: AppColors.dark),
-      title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+      leading: Icon(icon, color: iconColor ?? AppColors.dark, size: 22),
+      title: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: iconColor ?? AppColors.dark)),
       trailing: const Icon(Icons.chevron_right, color: AppColors.grey, size: 20),
       onTap: onTap,
     );
@@ -163,44 +260,152 @@ class _NoAnimationFabAnimator extends FloatingActionButtonAnimator {
 }
 
 /// Attractive animated FAB that launches the journey screen.
-class _StartJourneyFab extends StatelessWidget {
+/// Includes a delayed fade-in to sync with the home tab shimmer loading.
+class _StartJourneyFab extends StatefulWidget {
+  @override
+  State<_StartJourneyFab> createState() => _StartJourneyFabState();
+}
+
+class _StartJourneyFabState extends State<_StartJourneyFab> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _opacity;
+  late final Animation<Offset> _slide;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
+    _slide = Tween<Offset>(begin: const Offset(0, 0.5), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
+    // Delay start to match shimmer duration (600ms)
+    Future.delayed(const Duration(milliseconds: 650), () {
+      if (mounted) _controller.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/journey'),
-      child: Container(
-        height: 56,
-        padding: const EdgeInsets.symmetric(horizontal: 28),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          gradient: const LinearGradient(
-            colors: [AppColors.primary, AppColors.primaryDark],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.5),
-              offset: const Offset(0, 6),
-              blurRadius: 16,
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.hexagon, color: AppColors.white, size: 28),
-            const SizedBox(width: 10),
-            const Text(
-              'Start Journey',
-              style: TextStyle(
-                color: AppColors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
+    return SlideTransition(
+      position: _slide,
+      child: FadeTransition(
+        opacity: _opacity,
+        child: _JourneyButton(),
+      ),
+    );
+  }
+}
+
+/// The actual journey button visual.
+class _JourneyButton extends StatefulWidget {
+  @override
+  State<_JourneyButton> createState() => _JourneyButtonState();
+}
+
+class _JourneyButtonState extends State<_JourneyButton> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseController;
+  bool _isHovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => context.push('/journey'),
+        child: AnimatedBuilder(
+          animation: _pulseController,
+          builder: (context, child) {
+            final pulse = _isHovered
+                ? 1.12 + (_pulseController.value * 0.03)
+                : 1.0 + (_pulseController.value * 0.04);
+            final glowOpacity = _isHovered
+                ? 0.6 + (_pulseController.value * 0.3)
+                : 0.3 + (_pulseController.value * 0.3);
+            final blurRadius = _isHovered ? 32.0 : 20.0;
+            final spreadRadius = _isHovered ? 6.0 : 2.0;
+
+            return AnimatedScale(
+              scale: pulse,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              child: Container(
+                height: 60,
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(30),
+                  gradient: LinearGradient(
+                    colors: _isHovered
+                        ? [const Color(0xFF00E4BB), AppColors.primary]
+                        : [AppColors.primary, AppColors.primaryDark],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withValues(alpha: glowOpacity),
+                      offset: const Offset(0, 4),
+                      blurRadius: blurRadius,
+                      spreadRadius: spreadRadius,
+                    ),
+                    if (_isHovered)
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.2),
+                        offset: const Offset(0, 0),
+                        blurRadius: 40,
+                        spreadRadius: 10,
+                      ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Hexagon icon with a subtle rotation
+                    Transform.rotate(
+                      angle: _isHovered
+                          ? _pulseController.value * 0.5
+                          : _pulseController.value * 0.1,
+                      child: const Icon(Icons.hexagon, color: AppColors.white, size: 28),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Start Journey',
+                      style: TextStyle(
+                        color: AppColors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.arrow_forward_rounded, color: Colors.white.withValues(alpha: 0.8), size: 20),
+                  ],
+                ),
               ),
-            ),
-          ],
+            );
+          },
         ),
       ),
     );

@@ -1,4 +1,4 @@
-﻿/// Profile screen - displays player identity, stats, and settings.
+/// Profile screen - displays player identity, stats, and settings.
 library;
 
 import 'package:flutter/material.dart';
@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
+import 'package:myloop/shared/widgets/color_picker_row.dart';
 
 /// The player's profile screen with identity, stats, and settings.
 class ProfileScreen extends ConsumerWidget {
@@ -128,14 +129,12 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
   late int _selectedAvatar;
   late int _selectedColor;
 
-  static const _colors = ['#00D4AA', '#1CB0F6', '#FF4B4B', '#FF9600', '#A560E8', '#FFC800', '#FF6B81', '#2ED8A3'];
-
   @override
   void initState() {
     super.initState();
     final profile = widget.ref.read(userProfileProvider);
     _selectedAvatar = profile.avatarId;
-    final idx = _colors.indexOf(profile.color);
+    final idx = playerColors.indexOf(profile.color);
     _selectedColor = idx >= 0 ? idx : 0;
   }
 
@@ -149,7 +148,7 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
         children: [
           Text('Change Avatar & Color', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(height: 20),
-          Center(child: AvatarWidget(avatarId: _selectedAvatar, color: _colors[_selectedColor], size: 72)),
+          Center(child: AvatarWidget(avatarId: _selectedAvatar, color: playerColors[_selectedColor], size: 72)),
           const SizedBox(height: 20),
           SizedBox(
             height: 140,
@@ -173,30 +172,17 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(_colors.length, (index) {
-              final color = Color(int.parse(_colors[index].replaceFirst('#', ''), radix: 16) | 0xFF000000);
-              final isSelected = _selectedColor == index;
-              return GestureDetector(
-                onTap: () => setState(() => _selectedColor = index),
-                child: Container(
-                  width: 34, height: 34,
-                  decoration: BoxDecoration(
-                    color: color, shape: BoxShape.circle,
-                    border: Border.all(color: isSelected ? AppColors.darkHard : Colors.transparent, width: 3),
-                  ),
-                  child: isSelected ? const Icon(Icons.check, color: AppColors.white, size: 16) : null,
-                ),
-              );
-            }),
+          ColorPickerRow(
+            selectedIndex: _selectedColor,
+            onColorSelected: (index) => setState(() => _selectedColor = index),
+            circleSize: 34,
           ),
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () {
-                widget.ref.read(userProfileProvider.notifier).updateAvatarAndColor(_selectedAvatar, _colors[_selectedColor]);
+                widget.ref.read(userProfileProvider.notifier).updateAvatarAndColor(_selectedAvatar, playerColors[_selectedColor]);
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Avatar updated!'), backgroundColor: AppColors.primary),

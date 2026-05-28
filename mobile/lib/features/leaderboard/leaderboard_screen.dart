@@ -1,7 +1,7 @@
-/// Leaderboard screen — displays player rankings in a Duolingo-league style.
+/// Leaderboard screen — displays player rankings with Local/City/Country tabs.
 ///
 /// Shows a podium visualization for the top 3 players and a scrollable
-/// list for remaining ranks. Powered by the `/api/leaderboard` endpoint.
+/// list for remaining ranks. Each scope fetches from the API independently.
 library;
 
 import 'package:flutter/material.dart';
@@ -14,87 +14,168 @@ import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
 
-/// Riverpod provider that fetches leaderboard data from the API.
-final leaderboardProvider = FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) async {
+/// Scoped leaderboard providers — one per tab.
+final cityLeaderboardProvider = FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) async {
   final api = ref.read(apiServiceProvider);
-  return api.getLeaderboard(lat: 0, lng: 0);
+  final profile = ref.read(userProfileProvider);
+  final response = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId, scope: 'city');
+  if (response.myRank != null) {
+    ref.read(userProfileProvider.notifier).updateStats(rank: response.myRank);
+  }
+  return response.top;
+});
+
+final countryLeaderboardProvider = FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  final profile = ref.read(userProfileProvider);
+  final response = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId, scope: 'country');
+  return response.top;
+});
+
+final worldLeaderboardProvider = FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  final profile = ref.read(userProfileProvider);
+  final response = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId, scope: 'world');
+  return response.top;
 });
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// LEADERBOARD SCREEN
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// The leaderboard tab showing local area rankings.
-class LeaderboardScreen extends ConsumerWidget {
+class LeaderboardScreen extends ConsumerStatefulWidget {
   const LeaderboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final leaderboard = ref.watch(leaderboardProvider);
-    final user = ref.watch(userProfileProvider);
+  ConsumerState<LeaderboardScreen> createState() => _LeaderboardScreenState();
+}
 
+class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen> with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  static const _scopes = ['City', 'Country', 'World'];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: _scopes.length, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
-        child: leaderboard.when(
-          loading: () => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: Column(
-              children: [
-                const SizedBox(height: 16),
-                Center(child: ShimmerBox(width: 200, height: 28, borderRadius: 8)),
-                const SizedBox(height: 8),
-                Center(child: ShimmerBox(width: 120, height: 16, borderRadius: 6)),
-                const SizedBox(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(child: ShimmerBox(height: 140)),
-                    const SizedBox(width: 8),
-                    Expanded(child: ShimmerBox(height: 180)),
-                    const SizedBox(width: 8),
-                    Expanded(child: ShimmerBox(height: 120)),
-                  ],
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            Text('🏆 Leaderboard', style: Theme.of(context).textTheme.headlineMedium),
+            const SizedBox(height: 12),
+            // Scope tabs
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Container(
+                height: 40,
+                decoration: BoxDecoration(
+                  color: AppColors.snow,
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                const SizedBox(height: 24),
-                Expanded(child: ShimmerList(itemCount: 5, itemHeight: 56, padding: EdgeInsets.zero)),
-              ],
-            ),
-          ),
-          error: (err, _) => Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.wifi_off, size: 48, color: AppColors.grey),
-                const SizedBox(height: 12),
-                Text('Could not load leaderboard', style: TextStyle(color: AppColors.grey)),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: () => ref.invalidate(leaderboardProvider),
-                  child: const Text('Retry'),
+                child: TabBar(
+                  controller: _tabController,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  labelColor: AppColors.white,
+                  unselectedLabelColor: AppColors.grey,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  tabs: _scopes.map((s) => Tab(text: s)).toList(),
                 ),
-              ],
-            ),
-          ),
-          data: (entries) => Column(
-            children: [
-              const SizedBox(height: 16),
-              Text('🏆 Leaderboard', style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 4),
-              Text(
-                'Your area • Today',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: AppColors.grey),
               ),
-              const SizedBox(height: 16),
-              if (entries.length >= 3) _TopThreePodium(top3: entries.sublist(0, 3)),
-              const SizedBox(height: 16),
-              Expanded(child: _RankingList(
-                players: entries.length > 3 ? entries.sublist(3) : (entries.length < 3 ? entries : []),
-                currentUserName: user.displayName,
-              )),
-            ],
-          ),
+            ),
+            const SizedBox(height: 12),
+            // Tab content
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _ScopedLeaderboard(provider: cityLeaderboardProvider),
+                  _ScopedLeaderboard(provider: countryLeaderboardProvider),
+                  _ScopedLeaderboard(provider: worldLeaderboardProvider),
+                ],
+              ),
+            ),
+          ],
         ),
+      ),
+    );
+  }
+}
+
+/// A single scoped leaderboard tab (local/city/country).
+class _ScopedLeaderboard extends ConsumerWidget {
+  final FutureProvider<List<LeaderboardEntry>> provider;
+  const _ScopedLeaderboard({required this.provider});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final leaderboard = ref.watch(provider);
+    final user = ref.watch(userProfileProvider);
+
+    return leaderboard.when(
+      loading: () => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(
+          children: [
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Expanded(child: ShimmerBox(height: 140)),
+                const SizedBox(width: 8),
+                Expanded(child: ShimmerBox(height: 180)),
+                const SizedBox(width: 8),
+                Expanded(child: ShimmerBox(height: 120)),
+              ],
+            ),
+            const SizedBox(height: 24),
+            Expanded(child: ShimmerList(itemCount: 5, itemHeight: 56, padding: EdgeInsets.zero)),
+          ],
+        ),
+      ),
+      error: (err, _) => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_off, size: 48, color: AppColors.grey),
+            const SizedBox(height: 12),
+            Text('Could not load leaderboard', style: TextStyle(color: AppColors.grey)),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => ref.invalidate(provider),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+      data: (entries) => Column(
+        children: [
+          if (entries.length >= 3) _TopThreePodium(top3: entries.sublist(0, 3)),
+          const SizedBox(height: 12),
+          Expanded(child: _RankingList(
+            players: entries.length > 3 ? entries.sublist(3) : (entries.length < 3 ? entries : []),
+            currentUserName: user.displayName,
+          )),
+        ],
       ),
     );
   }
@@ -134,7 +215,7 @@ class _PodiumItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final medals = ['🥇', '🥈', '🥉'];
+    const medals = ['🥇', '🥈', '🥉'];
     return GestureDetector(
       onTap: () => context.push('/user-profile', extra: {
         'userId': entry.userId,

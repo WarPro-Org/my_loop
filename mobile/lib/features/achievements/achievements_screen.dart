@@ -1,4 +1,4 @@
-/// Achievements tab — displays all player achievements with progress.
+/// Achievements tab â€” displays all player achievements with progress.
 ///
 /// Shows a star count header and a paginated scrollable list of achievements
 /// with tier progress bars, descriptions, and star indicators.
@@ -6,30 +6,42 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/models/achievements.dart';
+import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
 
 /// The achievements tab showing achievements with lazy pagination.
-class AchievementsScreen extends StatefulWidget {
+class AchievementsScreen extends ConsumerStatefulWidget {
   const AchievementsScreen({super.key});
 
   @override
-  State<AchievementsScreen> createState() => _AchievementsScreenState();
+  ConsumerState<AchievementsScreen> createState() => _AchievementsScreenState();
 }
 
-class _AchievementsScreenState extends State<AchievementsScreen> {
+class _AchievementsScreenState extends ConsumerState<AchievementsScreen> {
   static const _pageSize = 10;
   int _loadedCount = _pageSize;
   bool _isLoadingMore = false;
   bool _initialLoading = true;
   final _scrollController = ScrollController();
 
-  // Mock progress data — will come from backend later
-  final _mockProgress = <String, int>{
-    'hex_1': 24, 'walk_1': 12, 'walk_2': 3, 'walk_3': 5,
-    'hex_4': 8, 'social_3': 2, 'mile_1': 7, 'explore_1': 4,
-  };
+  /// Derives achievement progress from the user's live stats.
+  ///
+  /// Hex-based achievements use hexCount, walk-based use streak as a proxy.
+  /// This will be replaced by a dedicated achievements API later.
+  Map<String, int> _getProgress() {
+    final profile = ref.watch(userProfileProvider);
+    return {
+      'hex_1': profile.hexCount,
+      'hex_2': profile.hexCount,
+      'hex_3': profile.hexCount,
+      'walk_1': profile.streak,
+      'walk_2': profile.distanceKm.toInt(),
+      'walk_3': profile.streak,
+    };
+  }
 
   @override
   void initState() {
@@ -70,6 +82,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final progress = _getProgress();
     if (_initialLoading) {
       return Scaffold(
         body: SafeArea(
@@ -95,19 +108,19 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
     }
 
     final totalStars = achievements.fold<int>(
-      0, (sum, a) => sum + a.getStars(_mockProgress[a.id] ?? 0),
+      0, (sum, a) => sum + a.getStars(progress[a.id] ?? 0),
     );
     final hasMore = _loadedCount < achievements.length;
 
     // Sort achievements: most completed first (by stars desc, then progress % desc)
     final sorted = List<Achievement>.from(achievements)
       ..sort((a, b) {
-        final starsA = a.getStars(_mockProgress[a.id] ?? 0);
-        final starsB = b.getStars(_mockProgress[b.id] ?? 0);
+        final starsA = a.getStars(progress[a.id] ?? 0);
+        final starsB = b.getStars(progress[b.id] ?? 0);
         if (starsA != starsB) return starsB.compareTo(starsA);
-        // Same stars — sort by progress toward next tier
-        final progA = (_mockProgress[a.id] ?? 0) / a.tier3;
-        final progB = (_mockProgress[b.id] ?? 0) / b.tier3;
+        // Same stars â€” sort by progress toward next tier
+        final progA = (progress[a.id] ?? 0) / a.tier3;
+        final progB = (progress[b.id] ?? 0) / b.tier3;
         return progB.compareTo(progA);
       });
 
@@ -127,16 +140,23 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
                       color: AppColors.yellow.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      '⬡ $totalStars / ${achievements.length * 3}',
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.hexagon, size: 16, color: AppColors.yellow),
+                        const SizedBox(width: 4),
+                        Text(
+                          '$totalStars / ${achievements.length * 3}',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
             const SizedBox(height: 16),
-            // Achievement list — paginated
+            // Achievement list â€” paginated
             Expanded(
               child: ListView.builder(
                 controller: _scrollController,
@@ -152,7 +172,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
                   }
                   return _AchievementTile(
                     achievement: sorted[index],
-                    progress: _mockProgress[sorted[index].id] ?? 0,
+                    progress: progress[sorted[index].id] ?? 0,
                   );
                 },
               ),
@@ -165,7 +185,7 @@ class _AchievementsScreenState extends State<AchievementsScreen> {
 }
 
 /// A single achievement row showing emoji, name, description, progress bar, and stars.
-/// Tappable with ink ripple — opens bottom sheet with full details.
+/// Tappable with ink ripple â€” opens bottom sheet with full details.
 class _AchievementTile extends StatelessWidget {
   final Achievement achievement;
   final int progress;

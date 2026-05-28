@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
+import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -280,13 +282,13 @@ class _StatItem extends StatelessWidget {
 ///
 /// In idle state, shows "START JOURNEY" with instructions.
 /// In tracking state, shows "STOP & CAPTURE" in red to end the walk.
-class _BottomControls extends StatelessWidget {
+class _BottomControls extends ConsumerWidget {
   final JourneyState journey;
   final JourneyController controller;
   const _BottomControls({required this.journey, required this.controller});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.all(20),
@@ -302,7 +304,7 @@ class _BottomControls extends StatelessWidget {
           ],
         ),
         child: journey.status == JourneyStatus.tracking
-            ? _buildTrackingControls(context)
+            ? _buildTrackingControls(context, ref)
             : _buildIdleControls(context),
       ),
     );
@@ -331,7 +333,7 @@ class _BottomControls extends StatelessWidget {
     );
   }
 
-  Widget _buildTrackingControls(BuildContext context) {
+  Widget _buildTrackingControls(BuildContext context, WidgetRef ref) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -349,10 +351,39 @@ class _BottomControls extends StatelessWidget {
           label: 'STOP & CAPTURE',
           icon: Icons.stop,
           color: AppColors.red,
-          onPressed: () {
-            controller.stopJourney();
-            // TODO: Submit path to API
-            Navigator.of(context).pop();
+          onPressed: () async {
+            final path = controller.stopJourney();
+            if (path.length < 2) {
+              if (context.mounted) Navigator.of(context).pop();
+              return;
+            }
+            // Submit claim to API and update user state
+            try {
+              final api = ref.read(apiServiceProvider);
+              final profile = ref.read(userProfileProvider);
+              if (profile.userId != null) {
+                final result = await api.submitClaim(userId: profile.userId!, path: path);
+                final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+                // Refresh user stats from DB
+                final user = await api.getUser(profile.userId!);
+                ref.read(userProfileProvider.notifier).updateStats(
+                  hexCount: user.hexCount,
+                  streak: user.streak,
+                  distanceKm: user.distanceKm,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Captured $capturedCount hexes! 🎉'),
+                      backgroundColor: AppColors.primary,
+                    ),
+                  );
+                }
+              }
+            } catch (_) {
+              // Silently fail — user can still see their walk ended
+            }
+            if (context.mounted) Navigator.of(context).pop();
           },
         ),
       ],

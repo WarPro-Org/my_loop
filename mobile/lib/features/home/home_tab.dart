@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/home/home_screen.dart';
+import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/animated_hexagon.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
@@ -40,6 +41,16 @@ const _proTips = [
 /// HOME TAB — Main scrollable dashboard content
 /// ─────────────────────────────────────────────────────────────────────────────
 
+/// Whether the home tab has finished its initial shimmer loading.
+final homeTabLoadedProvider = NotifierProvider<_HomeTabLoadedNotifier, bool>(_HomeTabLoadedNotifier.new);
+
+class _HomeTabLoadedNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+  void markLoaded() => state = true;
+  void markLoading() => state = false;
+}
+
 /// The primary home tab showing player greeting, daily challenge, stats, and tips.
 ///
 /// Shows shimmer placeholders briefly while data loads, then reveals content.
@@ -57,7 +68,10 @@ class _HomeTabState extends ConsumerState<HomeTab> {
   void initState() {
     super.initState();
     Future.delayed(const Duration(milliseconds: 600), () {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ref.read(homeTabLoadedProvider.notifier).markLoaded();
+      }
     });
   }
 
@@ -139,15 +153,49 @@ class _HomeTabState extends ConsumerState<HomeTab> {
                     ],
                   ),
                 ),
-                // Settings button = user's hex avatar badge
+                // Settings button = user's hex avatar badge — made to look tappable
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,
                   onTap: () => homeScaffoldKey.currentState?.openEndDrawer(),
-                  child: AvatarWidget(
-                    avatarId: profile.avatarId,
-                    color: profile.color,
-                    size: 52,
-                    hexes: myHexes,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppColors.primary.withValues(alpha: 0.4), width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.15),
+                              blurRadius: 8,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: AvatarWidget(
+                          avatarId: profile.avatarId,
+                          color: profile.color,
+                          size: 48,
+                          hexes: myHexes,
+                        ),
+                      ),
+                      // Small badge indicator
+                      Positioned(
+                        bottom: -2,
+                        right: -2,
+                        child: Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: AppColors.white, width: 2),
+                          ),
+                          child: const Icon(Icons.menu, size: 10, color: AppColors.white),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -296,7 +344,7 @@ class _QuickStats extends ConsumerWidget {
             emoji: '🏆',
             value: '#${user.rank}',
             label: 'Rank',
-            onTap: () => _showRankSelector(context),
+            onTap: () => _showRankSelector(context, ref),
           ),
         ),
       ],
@@ -469,48 +517,101 @@ class _QuickStats extends ConsumerWidget {
   }
 
   /// Opens a bottom sheet showing rank at different geographic scopes.
-  void _showRankSelector(BuildContext context) {
+  void _showRankSelector(BuildContext context, WidgetRef ref) {
+    final user = ref.read(userProfileProvider);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 16),
-            // Rank hero card
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFFFFD93D), Color(0xFFF59E0B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  const Text('🏆', style: TextStyle(fontSize: 44)),
-                  const SizedBox(width: 16),
-                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    const Text('#8 in Your Area', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
-                    const SizedBox(height: 4),
-                    Text('Top 10%!', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13)),
-                  ]),
-                ],
-              ),
+      builder: (context) => _RankSheet(cityRank: user.rank, userId: user.userId),
+    );
+  }
+}
+
+/// Bottom sheet that fetches and displays rank across all scopes.
+class _RankSheet extends StatefulWidget {
+  final int cityRank;
+  final String? userId;
+  const _RankSheet({required this.cityRank, this.userId});
+
+  @override
+  State<_RankSheet> createState() => _RankSheetState();
+}
+
+class _RankSheetState extends State<_RankSheet> {
+  int _countryRank = 0;
+  int _worldRank = 0;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchRanks();
+  }
+
+  Future<void> _fetchRanks() async {
+    if (widget.userId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final container = ProviderScope.containerOf(context);
+      final api = container.read(apiServiceProvider);
+      final results = await Future.wait([
+        api.getLeaderboard(lat: 0, lng: 0, userId: widget.userId, scope: 'country'),
+        api.getLeaderboard(lat: 0, lng: 0, userId: widget.userId, scope: 'world'),
+      ]);
+      if (mounted) {
+        setState(() {
+          _countryRank = results[0].myRank ?? 0;
+          _worldRank = results[1].myRank ?? 0;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final rank = widget.cityRank > 0 ? widget.cityRank : 0;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 16),
+          // Rank hero card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [Color(0xFFFFD93D), Color(0xFFF59E0B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+              borderRadius: BorderRadius.circular(16),
             ),
-            const SizedBox(height: 20),
-            Text('Rank by Scope', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
-            const SizedBox(height: 12),
-            _RankOption(scope: 'Neighborhood', rank: 3, emoji: '📍', total: 28),
-            _RankOption(scope: 'City', rank: 8, emoji: '🏙️', total: 342),
-            _RankOption(scope: 'Country', rank: 1247, emoji: '🌍', total: 84200),
-            const SizedBox(height: 8),
-          ],
-        ),
+            child: Row(
+              children: [
+                const Text('🏆', style: TextStyle(fontSize: 44)),
+                const SizedBox(width: 16),
+                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('#$rank in Your City', style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  Text(rank <= 3 && rank > 0 ? 'Podium finish! 🥇' : 'Keep walking to climb!', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13)),
+                ]),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text('Your Ranking', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
+          _RankOption(scope: 'City', rank: rank, emoji: '🏙️'),
+          _RankOption(scope: 'Country', rank: _loading ? -1 : _countryRank, emoji: '🌍'),
+          _RankOption(scope: 'World', rank: _loading ? -1 : _worldRank, emoji: '🌐'),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }
@@ -519,10 +620,9 @@ class _QuickStats extends ConsumerWidget {
 /// A geographic scope rank display row used in the rank bottom sheet.
 class _RankOption extends StatelessWidget {
   final String scope;
-  final int rank;
+  final int rank; // -1 = loading, 0 = unknown
   final String emoji;
-  final int total;
-  const _RankOption({required this.scope, required this.rank, required this.emoji, required this.total});
+  const _RankOption({required this.scope, required this.rank, required this.emoji});
 
   @override
   Widget build(BuildContext context) {
@@ -539,18 +639,14 @@ class _RankOption extends StatelessWidget {
           Text(emoji, style: const TextStyle(fontSize: 22)),
           const SizedBox(width: 12),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(scope, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                Text('out of $total players', style: TextStyle(fontSize: 11, color: AppColors.grey)),
-              ],
-            ),
+            child: Text(scope, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
           ),
-          Text(
-            '#$rank',
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.primary),
-          ),
+          rank == -1
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+              : Text(
+                  rank > 0 ? '#$rank' : '—',
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.primary),
+                ),
         ],
       ),
     );

@@ -35,12 +35,14 @@ class ApiService {
     required String displayName,
     required String color,
     required int avatarId,
+    String authProvider = 'local',
   }) async {
     final response = await _dio.post('/api/users/register', data: {
       'firebaseUid': firebaseUid,
       'displayName': displayName,
       'color': color,
       'avatarId': avatarId,
+      'authProvider': authProvider,
     });
     return AppUser.fromJson(response.data);
   }
@@ -82,21 +84,23 @@ class ApiService {
 
   /// Retrieves the leaderboard for players near the given coordinates.
   ///
+  /// [scope] can be "local", "city", or "country".
   /// Returns a ranked list of [LeaderboardEntry] objects sorted by
-  /// cell count descending.
-  Future<List<LeaderboardEntry>> getLeaderboard({
+  /// cell count descending, plus the logged-in user's rank.
+  Future<LeaderboardResponse> getLeaderboard({
     required double lat,
     required double lng,
     String? userId,
+    String scope = 'local',
   }) async {
     final response = await _dio.get('/api/leaderboard', queryParameters: {
       'lat': lat,
       'lng': lng,
       if (userId case final uid?) 'userId': uid,
+      'scope': scope,
     });
     final data = response.data as Map<String, dynamic>;
-    final list = data['top'] as List;
-    return list.map((j) => LeaderboardEntry.fromJson(j as Map<String, dynamic>)).toList();
+    return LeaderboardResponse.fromJson(data);
   }
 
   /// Fetches a user's profile by ID.

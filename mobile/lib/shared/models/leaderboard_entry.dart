@@ -50,3 +50,20 @@ class LeaderboardEntry {
     );
   }
 }
+
+/// Complete leaderboard API response including the user's personal rank.
+class LeaderboardResponse {
+  final List<LeaderboardEntry> top;
+  final int? myRank;
+
+  const LeaderboardResponse({required this.top, this.myRank});
+
+  factory LeaderboardResponse.fromJson(Map<String, dynamic> json) {
+    final list = json['top'] as List;
+    final myRankData = json['myRank'] as Map<String, dynamic>?;
+    return LeaderboardResponse(
+      top: list.map((j) => LeaderboardEntry.fromJson(j as Map<String, dynamic>)).toList(),
+      myRank: (myRankData?['rank'] as num?)?.toInt(),
+    );
+  }
+}

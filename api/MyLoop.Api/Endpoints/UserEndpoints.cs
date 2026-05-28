@@ -20,15 +20,13 @@ public static class UserEndpoints
         var group = app.MapGroup("/api/users");
 
         // POST /api/users/register
-        // Register a new user. Called once after Firebase sign-in.
-        // The app sends the Firebase UID + chosen display name, color, and avatar.
+        // Register a new user. Called once after sign-in (federated or local).
+        // For local accounts, FirebaseUid can be "local_<name>" or empty — a unique one is generated.
         group.MapPost("/register", async (
             [FromBody] RegisterRequest request,
             AppDbContext db) =>
         {
             // Input validation
-            if (string.IsNullOrWhiteSpace(request.FirebaseUid) || request.FirebaseUid.Length > 128)
-                return Results.BadRequest("Invalid FirebaseUid");
             if (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Length > 30)
                 return Results.BadRequest("DisplayName must be 1-30 characters");
             if (string.IsNullOrWhiteSpace(request.Color) || !System.Text.RegularExpressions.Regex.IsMatch(request.Color, @"^#[0-9A-Fa-f]{6}$"))
@@ -36,17 +34,29 @@ public static class UserEndpoints
             if (request.AvatarId < 0 || request.AvatarId > 50)
                 return Results.BadRequest("AvatarId must be 0-50");
 
-            // Prevent duplicate accounts — one Firebase UID maps to exactly one MyLoop user
-            if (await db.Users.AnyAsync(u => u.FirebaseUid == request.FirebaseUid))
-                return Results.Conflict("User already registered");
+            var authProvider = request.AuthProvider ?? "local";
+            var firebaseUid = request.FirebaseUid;
+
+            // For local accounts, generate a unique UID if not provided or starts with "dev_"/"local_"
+            if (string.IsNullOrWhiteSpace(firebaseUid) || firebaseUid.StartsWith("dev_") || firebaseUid.StartsWith("local_"))
+            {
+                firebaseUid = $"local_{Guid.NewGuid():N}";
+                authProvider = "local";
+            }
+
+            // Check if user already exists — return existing user (graceful re-registration)
+            var existing = await db.Users.FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid);
+            if (existing is not null)
+                return Results.Ok(existing);
 
             var user = new User
             {
                 Id = Guid.NewGuid(),
-                FirebaseUid = request.FirebaseUid,
+                FirebaseUid = firebaseUid,
                 DisplayName = request.DisplayName.Trim(),
                 Color = request.Color,
-                AvatarId = request.AvatarId
+                AvatarId = request.AvatarId,
+                AuthProvider = authProvider,
             };
 
             db.Users.Add(user);
@@ -134,7 +144,8 @@ public static class UserEndpoints
     /// <param name="DisplayName">The player's chosen display name.</param>
     /// <param name="Color">Hex color string (e.g., "#FF5733") used to render the player's territory.</param>
     /// <param name="AvatarId">Index of the selected avatar graphic.</param>
-    public record RegisterRequest(string FirebaseUid, string DisplayName, string Color, int AvatarId);
+    /// <param name="AuthProvider">Authentication provider: "google", "apple", or "local". Defaults to "local".</param>
+    public record RegisterRequest(string? FirebaseUid, string DisplayName, string Color, int AvatarId, string? AuthProvider = "local");
 
     /// <summary>
     /// Request body for updating a user's profile. All fields are optional —

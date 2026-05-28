@@ -69,6 +69,21 @@ class LoginScreen extends ConsumerWidget {
                 color: AppColors.dark,
                 onPressed: () => _signInWithApple(context, ref),
               ),
+              const SizedBox(height: 16),
+
+              // Local account creation
+              OutlinedButton(
+                onPressed: () => context.push('/local-signup'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 52),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  side: const BorderSide(color: AppColors.greyLight, width: 2),
+                ),
+                child: const Text(
+                  'CREATE ACCOUNT WITHOUT LOGIN',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark),
+                ),
+              ),
               const SizedBox(height: 12),
 
               // Dev skip button — loads seeded user from DB for testing
@@ -154,6 +169,11 @@ class LoginScreen extends ConsumerWidget {
           streak: user.streak,
           distanceKm: user.distanceKm,
         );
+        // Fetch rank from leaderboard API
+        final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: user.id, scope: 'city');
+        if (lb.myRank != null) {
+          ref.read(userProfileProvider.notifier).updateStats(rank: lb.myRank);
+        }
       }
       if (context.mounted) context.go('/home');
     } catch (e) {

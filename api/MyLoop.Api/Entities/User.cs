@@ -42,4 +42,13 @@ public class User
 
     /// <summary>Timestamp when the user account was created (defaults to UTC now).</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>The city the user registered in (for city-scope leaderboard).</summary>
+    public string City { get; set; } = "";
+
+    /// <summary>The country the user is in (for country-scope leaderboard).</summary>
+    public string Country { get; set; } = "";
+
+    /// <summary>Authentication provider used to create this account (e.g., "google", "apple", "local").</summary>
+    public string AuthProvider { get; set; } = "local";
 }

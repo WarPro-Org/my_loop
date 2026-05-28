@@ -14,6 +14,7 @@ import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
+import 'package:myloop/shared/widgets/color_picker_row.dart';
 
 /// Screen where new players create their in-game identity.
 ///
@@ -21,7 +22,8 @@ import 'package:myloop/shared/widgets/big_button.dart';
 /// a live preview of the combined avatar. On completion, registers the
 /// user via the API and navigates to the home screen.
 class AvatarPickerScreen extends ConsumerStatefulWidget {
-  const AvatarPickerScreen({super.key});
+  final String? prefillName;
+  const AvatarPickerScreen({super.key, this.prefillName});
 
   @override
   ConsumerState<AvatarPickerScreen> createState() => _AvatarPickerScreenState();
@@ -31,19 +33,13 @@ class AvatarPickerScreen extends ConsumerStatefulWidget {
 class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
   int _selectedAvatar = 0;
   int _selectedColor = 0;
-  String _name = '';
+  late String _name;
 
-  /// The 8 hex color options players can choose from for their avatar ring.
-  static const _colors = [
-    '#00D4AA', // green
-    '#1CB0F6', // blue
-    '#FF4B4B', // red
-    '#FF9600', // orange
-    '#A560E8', // purple
-    '#FFC800', // yellow
-    '#FF6B81', // pink
-    '#2ED8A3', // teal
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _name = widget.prefillName ?? '';
+  }
 
   /// Builds the scrollable form layout with name, avatar grid, colors, and CTA.
   @override
@@ -66,6 +62,7 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
 
               // Name input
               TextField(
+                controller: TextEditingController(text: _name),
                 onChanged: (v) => setState(() => _name = v),
                 decoration: InputDecoration(
                   hintText: 'Your display name',
@@ -141,33 +138,9 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
               const SizedBox(height: 12),
 
               // Color picker row
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(_colors.length, (index) {
-                  final color = Color(
-                    int.parse(_colors[index].replaceFirst('#', ''), radix: 16) |
-                        0xFF000000,
-                  );
-                  final isSelected = _selectedColor == index;
-                  return GestureDetector(
-                    onTap: () => setState(() => _selectedColor = index),
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: isSelected ? AppColors.darkHard : Colors.transparent,
-                          width: 3,
-                        ),
-                      ),
-                      child: isSelected
-                          ? const Icon(Icons.check, color: AppColors.white, size: 18)
-                          : null,
-                    ),
-                  );
-                }),
+              ColorPickerRow(
+                selectedIndex: _selectedColor,
+                onColorSelected: (index) => setState(() => _selectedColor = index),
               ),
               const SizedBox(height: 24),
 
@@ -175,7 +148,7 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
               Center(
                 child: AvatarWidget(
                   avatarId: _selectedAvatar,
-                  color: _colors[_selectedColor],
+                  color: playerColors[_selectedColor],
                   size: 64,
                 ),
               ),
@@ -199,12 +172,28 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
 
   Future<void> _registerAndContinue() async {
     final name = _name.trim();
-    final color = _colors[_selectedColor];
+    final color = playerColors[_selectedColor];
     final authService = ref.read(authServiceProvider);
     final api = ref.read(apiServiceProvider);
 
-    // Use Firebase UID if available, otherwise generate a dev UID
-    final firebaseUid = authService.currentUser?.uid ?? 'dev_${name.toLowerCase().replaceAll(' ', '_')}';
+    // Determine auth provider and UID
+    final firebaseUser = authService.currentUser;
+    final String firebaseUid;
+    final String authProvider;
+    if (firebaseUser != null) {
+      firebaseUid = firebaseUser.uid;
+      // Determine provider from Firebase providers
+      final providerData = firebaseUser.providerData;
+      if (providerData.any((p) => p.providerId == 'apple.com')) {
+        authProvider = 'apple';
+      } else {
+        authProvider = 'google';
+      }
+    } else {
+      // Local account — let the server generate a unique UID
+      firebaseUid = 'local_${name.toLowerCase().replaceAll(' ', '_')}';
+      authProvider = 'local';
+    }
 
     try {
       final user = await api.register(
@@ -212,6 +201,7 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
         displayName: name,
         color: color,
         avatarId: _selectedAvatar,
+        authProvider: authProvider,
       );
 
       ref.read(userProfileProvider.notifier).setFromApi(

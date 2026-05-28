@@ -4,6 +4,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
@@ -117,9 +118,8 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     final distanceKm = (p['distanceKm'] as num?)?.toDouble() ?? 0.0;
     final topThree = (p['topThreeFinishes'] as num?)?.toInt() ?? 0;
     final isStreakActive = p['isStreakActive'] as bool? ?? false;
-    final currentRank = (p['currentRank'] as num?)?.toInt() ?? widget.rank;
-    final totalPlayers = (p['totalPlayers'] as num?)?.toInt() ?? 0;
     final joinedAt = p['joinedAt'] as String?;
+    final title = getTitleForHexes(hexCount);
 
     // Parse join date
     String joinLabel = 'Unknown';
@@ -134,32 +134,68 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const SizedBox(height: 16),
-          AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 96, hexes: hexCount),
-          const SizedBox(height: 16),
-          Text(
-            widget.name,
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
-            overflow: TextOverflow.ellipsis,
-            maxLines: 1,
-          ),
-          const SizedBox(height: 4),
+
+          // Profile header card
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.greyLight, width: 1.5),
+              boxShadow: [
+                BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4)),
+              ],
             ),
-            child: Text(
-              'Rank #$currentRank${totalPlayers > 0 ? ' of $totalPlayers' : ''}',
-              style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700),
+            child: Row(
+              children: [
+                // Avatar
+                AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 52, hexes: hexCount),
+                const SizedBox(width: 14),
+                // Name + title + joined
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        widget.name,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, fontSize: 20),
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${title.emoji} ${title.label}',
+                              style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Joined $joinLabel',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.grey, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // Badge — properly centered with breathing room
+                HexTrophyBadge(hexes: hexCount, size: 60, showLabel: true, showProgress: true),
+              ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Joined $joinLabel',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.grey),
           ),
           const SizedBox(height: 24),
 
@@ -170,13 +206,10 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           // Stats
           _StatRow(icon: Icons.hexagon, label: 'Total Hexes', value: '$hexCount', color: AppColors.primary),
           _StatRow(icon: Icons.directions_walk, label: 'Distance', value: '${distanceKm.toStringAsFixed(1)} km', color: AppColors.accent),
-          _StatRow(icon: Icons.local_fire_department, label: 'Current Streak', value: '$streak days', color: AppColors.orange),
           _StatRow(icon: Icons.whatshot, label: 'Max Streak', value: '$maxStreak days', color: AppColors.red),
           _StatRow(icon: Icons.emoji_events, label: 'Top 3 Finishes', value: '$topThree', color: AppColors.yellow),
-          _StatRow(icon: Icons.leaderboard, label: 'Current Rank', value: '#$currentRank', color: AppColors.primaryDark),
 
           const SizedBox(height: 24),
-          Center(child: HexTrophyBadge(hexes: hexCount, size: 72, showLabel: true, showProgress: true)),
         ],
       ),
     );
@@ -216,7 +249,7 @@ class _StreakBadge extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  isActive ? '🔥 On a $streak-day streak!' : 'Streak paused',
+                  isActive ? 'On a $streak-day streak!' : 'Streak paused',
                   style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,

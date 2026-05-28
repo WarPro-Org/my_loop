@@ -19,20 +19,49 @@ public static class LeaderboardEndpoints
     {
         var group = app.MapGroup("/api/leaderboard");
 
-        // GET /api/leaderboard?lat=...&lng=...&userId=...
-        // Get today's leaderboard for a specific area.
-        // Send the center of your map view (lat/lng) and we find the city-level zone.
-        // Also returns the requesting user's rank if userId is provided.
-        group.MapGet("/", async (double lat, double lng, Guid? userId, AppDbContext db) =>
+        // GET /api/leaderboard?lat=...&lng=...&userId=...&scope=city|country|world
+        // Get today's leaderboard for a specific scope.
+        // scope: "city" (default), "country", or "world"
+        // Returns top 20 players + the requesting user's rank if not in top 20.
+        group.MapGet("/", async (double lat, double lng, Guid? userId, string? scope, AppDbContext db) =>
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var leaderboardScope = scope?.ToLowerInvariant() ?? "city";
+            const int maxEntries = 20;
 
-            // Retrieve the top 10 players by rank for today's snapshot
-            var top = await db.LeaderboardEntries
+            // Determine the requesting user's city/country for scoped filtering
+            string? userCity = null;
+            string? userCountry = null;
+            if (userId.HasValue)
+            {
+                var requestingUser = await db.Users.FindAsync(userId.Value);
+                if (requestingUser != null)
+                {
+                    userCity = requestingUser.City;
+                    userCountry = requestingUser.Country;
+                }
+            }
+
+            // Build scoped query: filter leaderboard entries based on scope
+            var query = db.LeaderboardEntries
                 .Include(l => l.User)
-                .Where(l => l.Date == today)
+                .Where(l => l.Date == today);
+
+            // Apply scope filter based on requesting user's location
+            if (leaderboardScope == "city" && !string.IsNullOrEmpty(userCity))
+            {
+                query = query.Where(l => l.User!.City == userCity);
+            }
+            else if (leaderboardScope == "country" && !string.IsNullOrEmpty(userCountry))
+            {
+                query = query.Where(l => l.User!.Country == userCountry);
+            }
+            // "world" = no filter (show everyone)
+
+            // Retrieve the top players by rank for today's snapshot
+            var top = await query
                 .OrderBy(l => l.Rank)
-                .Take(10)
+                .Take(maxEntries)
                 .Select(l => new
                 {
                     l.Rank,
@@ -48,18 +77,49 @@ public static class LeaderboardEndpoints
                 })
                 .ToListAsync();
 
-            // If a userId was provided, also find their personal rank
-            // (they may not be in the top 10 but still want to see their position)
+            // Re-rank within scope (position in filtered list)
+            var scopedTop = top.Select((entry, index) => new
+            {
+                Rank = index + 1,
+                entry.UserId,
+                entry.UserName,
+                entry.UserColor,
+                entry.UserAvatar,
+                entry.UserHexCount,
+                entry.UserStreak,
+                entry.UserDistanceKm,
+                entry.CellCount,
+                entry.AreaM2
+            }).ToList();
+
+            // If a userId was provided, find their scoped rank
             object? myRank = null;
             if (userId.HasValue)
             {
-                myRank = await db.LeaderboardEntries
-                    .Where(l => l.Date == today && l.UserId == userId.Value)
-                    .Select(l => new { l.Rank, l.CellCount, l.AreaM2 })
-                    .FirstOrDefaultAsync();
+                // Check if user is already in scopedTop
+                var userEntry = scopedTop.FirstOrDefault(e => e.UserId == userId.Value);
+                if (userEntry != null)
+                {
+                    myRank = new { userEntry.Rank, userEntry.CellCount, userEntry.AreaM2 };
+                }
+                else
+                {
+                    // User not in top 20 for this scope — get their global entry and compute scoped position
+                    var globalEntry = await db.LeaderboardEntries
+                        .Where(l => l.Date == today && l.UserId == userId.Value)
+                        .Select(l => new { l.CellCount, l.AreaM2 })
+                        .FirstOrDefaultAsync();
+                    if (globalEntry != null)
+                    {
+                        // Count how many users in this scope have more cells
+                        var higherCount = await query
+                            .CountAsync(l => l.CellCount > globalEntry.CellCount);
+                        myRank = new { Rank = higherCount + 1, globalEntry.CellCount, globalEntry.AreaM2 };
+                    }
+                }
             }
 
-            return Results.Ok(new { Top = top, MyRank = myRank });
+            return Results.Ok(new { Top = scopedTop, MyRank = myRank, Scope = leaderboardScope });
         });
 
         // POST /api/leaderboard/refresh
