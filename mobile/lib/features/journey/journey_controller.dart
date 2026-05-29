@@ -9,22 +9,20 @@ library;
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/location_service.dart';
 
 /// The possible states of a journey recording session.
 enum JourneyStatus { idle, tracking, submitting }
 
 /// Immutable snapshot of the current journey state.
-///
-/// Contains the tracking status, recorded GPS path, calculated distance,
-/// elapsed timer, current position, and any error to display to the user.
 class JourneyState {
   final JourneyStatus status;
   final List<List<double>> path; // [[lat, lng], ...]
   final double distanceMeters;
   final Duration elapsed;
   final Position? currentPosition;
-  final String? error; // shows error message to user
+  final String? error;
 
   const JourneyState({
     this.status = JourneyStatus.idle,
@@ -35,9 +33,6 @@ class JourneyState {
     this.error,
   });
 
-  /// Creates a copy of this state with optional field overrides.
-  ///
-  /// Setting [error] to `null` explicitly clears any previous error message.
   JourneyState copyWith({
     JourneyStatus? status,
     List<List<double>>? path,
@@ -61,7 +56,6 @@ class JourneyState {
 ///
 /// Manages the lifecycle: request permissions → start listening to GPS
 /// → accumulate path points → calculate distance → stop and return path.
-/// Also runs a 1-second timer for elapsed time display.
 class JourneyController extends Notifier<JourneyState> {
   StreamSubscription<Position>? _positionSub;
   Timer? _timer;
@@ -71,10 +65,6 @@ class JourneyController extends Notifier<JourneyState> {
   JourneyState build() => const JourneyState();
 
   /// Begins recording a new journey.
-  ///
-  /// Requests location permission, gets the initial position, then starts
-  /// a GPS position stream and an elapsed-time timer. Updates [JourneyState]
-  /// reactively on each new position or timer tick.
   Future<void> startJourney() async {
     final locationService = ref.read(locationServiceProvider);
 
@@ -101,14 +91,15 @@ class JourneyController extends Notifier<JourneyState> {
       // Start listening to position updates
       _positionSub = locationService.startTracking().listen(_onPosition);
 
-      // Start elapsed timer (updates every second)
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (_startTime != null) {
-          state = state.copyWith(
-            elapsed: DateTime.now().difference(_startTime!),
-          );
-        }
-      });
+      // Start elapsed timer (ticks every second)
+      _timer = Timer.periodic(
+        const Duration(seconds: AppConstants.timerIntervalSeconds),
+        (_) {
+          if (_startTime != null) {
+            state = state.copyWith(elapsed: DateTime.now().difference(_startTime!));
+          }
+        },
+      );
     } catch (e) {
       final msg = e.toString().replaceFirst('Exception: ', '');
       state = state.copyWith(error: msg);
@@ -117,58 +108,66 @@ class JourneyController extends Notifier<JourneyState> {
 
   /// Handles each GPS position update from the location stream.
   ///
-  /// Filters out GPS jitter by requiring movement to exceed the noise floor
-  /// (determined by the position's reported accuracy). Only positions that
-  /// represent genuine movement get recorded to the path and added to distance.
-  /// The live marker (currentPosition) is always updated for visual feedback.
+  /// Filters out GPS jitter using accuracy thresholds and speed-aware
+  /// noise floors. Only genuine movement gets recorded to the path.
   void _onPosition(Position pos) {
-    // Reject unreliable readings — accuracy > 25m means GPS is guessing
-    if (pos.accuracy > 25.0) {
+    // Reject unreliable readings (accuracy worse than 25m)
+    if (pos.accuracy > AppConstants.maxAccuracyMeters) {
       state = state.copyWith(currentPosition: pos);
       return;
     }
 
     // Calculate distance from last accepted point
-    double addedDistance = 0;
+    double distanceFromLast = 0;
     if (state.path.isNotEmpty) {
       final last = state.path.last;
-      addedDistance = Geolocator.distanceBetween(
+      distanceFromLast = Geolocator.distanceBetween(
         last[0], last[1], pos.latitude, pos.longitude,
       );
     }
 
-    // Only accept the point if movement exceeds the noise floor.
-    // The noise floor is the reported accuracy clamped to [8, 25] meters.
-    // This prevents GPS jitter from accumulating false distance when stationary.
-    // Additional check: if reported speed is available and essentially zero,
-    // require even more displacement to accept the point.
-    final noiseFloor = state.path.isEmpty
-        ? 0.0
-        : (pos.speed >= 0 && pos.speed < 0.3)
-            ? pos.accuracy.clamp(10.0, 25.0) // Stationary: stricter filter
-            : pos.accuracy.clamp(6.0, 20.0); // Moving: more permissive
+    // Determine noise floor based on movement speed.
+    // Stationary (speed < 0.3 m/s): stricter threshold (10-25m)
+    // Moving: more permissive (6-20m)
+    final noiseFloor = _calculateNoiseFloor(pos);
 
-    if (addedDistance < noiseFloor && state.path.isNotEmpty) {
-      // Within noise range — update live marker only, don't record to path
+    if (distanceFromLast < noiseFloor && state.path.isNotEmpty) {
+      // Within noise range — update live marker only, skip recording
       state = state.copyWith(currentPosition: pos);
       return;
     }
 
-    // Valid movement detected — record the point and accumulate distance
+    // Valid movement — record the point and add to distance
     final newPoint = [pos.latitude, pos.longitude];
     final updatedPath = [...state.path, newPoint];
 
     state = state.copyWith(
       path: updatedPath,
       currentPosition: pos,
-      distanceMeters: state.distanceMeters + addedDistance,
+      distanceMeters: state.distanceMeters + distanceFromLast,
     );
   }
 
-  /// Stops the journey, cancels subscriptions, and returns the recorded path.
-  ///
-  /// The returned path (list of `[lat, lng]` pairs) is used by the UI to
-  /// submit the claim to the backend API.
+  /// Calculates the GPS noise floor based on speed and accuracy.
+  double _calculateNoiseFloor(Position pos) {
+    if (state.path.isEmpty) return 0.0;
+
+    final bool isStationary = pos.speed >= 0 && pos.speed < AppConstants.stationarySpeedThreshold;
+
+    if (isStationary) {
+      return pos.accuracy.clamp(
+        AppConstants.stationaryNoiseFloorMin,
+        AppConstants.stationaryNoiseFloorMax,
+      );
+    }
+
+    return pos.accuracy.clamp(
+      AppConstants.movingNoiseFloorMin,
+      AppConstants.movingNoiseFloorMax,
+    );
+  }
+
+  /// Stops the journey and returns the recorded path.
   List<List<double>> stopJourney() {
     _positionSub?.cancel();
     _timer?.cancel();
@@ -179,8 +178,5 @@ class JourneyController extends Notifier<JourneyState> {
 }
 
 /// Riverpod provider for the [JourneyController].
-///
-/// Widgets watch this to react to journey state changes (tracking status,
-/// path updates, errors).
 final journeyControllerProvider =
     NotifierProvider<JourneyController, JourneyState>(JourneyController.new);

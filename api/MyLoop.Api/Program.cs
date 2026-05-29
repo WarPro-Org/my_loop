@@ -1,21 +1,27 @@
-/// <summary>
-/// MyLoop API — Entry point for the territory-capture game backend.
-/// Configures services, database, and HTTP pipeline for the minimal API.
-/// </summary>
-
 using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
-using MyLoop.Api.Endpoints;
 using MyLoop.Api.Entities;
+using MyLoop.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Register the EF Core DbContext with PostgreSQL as the backing store.
-// Connection string is read from appsettings.json / environment variables.
+// --- Database ---
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Enable CORS for the Flutter web frontend
+// --- Dependency Injection: register all services ---
+builder.Services.AddScoped<IValidationService, ValidationService>();
+builder.Services.AddScoped<IGeoService, GeoService>();
+builder.Services.AddScoped<IHexGridService, HexGridService>();
+builder.Services.AddScoped<ITerritoryService, TerritoryService>();
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
+
+// --- Controllers ---
+builder.Services.AddControllers();
+
+// --- CORS ---
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -29,6 +35,7 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseCors();
+app.MapControllers();
 
 // Ensure the database schema exists on startup.
 // This is a dev convenience — in production, use EF Core migrations instead.
@@ -161,7 +168,7 @@ using (var scope = app.Services.CreateScope())
                 UserId = sorted[i].Id,
                 Date = today,
                 CellCount = sorted[i].HexCount,
-                AreaM2 = sorted[i].HexCount * 15047.5, // ~15k m² per H3 res-8 cell
+                AreaM2 = sorted[i].HexCount * GameConstants.CellAreaSquareMeters, // ~15k m² per H3 res-10 cell
                 Rank = i + 1,
             });
         }
@@ -169,17 +176,13 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// Health check endpoint — confirms the API process is alive and accepting requests
+// Health check endpoint
 app.MapGet("/", () => "MyLoop API is running");
 
-// Register all domain endpoint groups (Users, Territory/Claims, Leaderboard)
-app.MapUserEndpoints();
-app.MapTerritoryEndpoints();
-app.MapLeaderboardEndpoints();
-
-// Auto-refresh leaderboard on startup so it's always current for today
+// Auto-refresh leaderboard on startup so it's always current
 using (var startupScope = app.Services.CreateScope())
 {
+    var leaderboardService = startupScope.ServiceProvider.GetRequiredService<ILeaderboardService>();
     var startupDb = startupScope.ServiceProvider.GetRequiredService<AppDbContext>();
     var today = DateOnly.FromDateTime(DateTime.UtcNow);
     var hasToday = startupDb.LeaderboardEntries.Any(l => l.Date == today);
@@ -198,7 +201,7 @@ using (var startupScope = app.Services.CreateScope())
                 UserId = ranked[i].Id,
                 Date = today,
                 CellCount = ranked[i].HexCount,
-                AreaM2 = ranked[i].HexCount * 15047.5,
+                AreaM2 = ranked[i].HexCount * GameConstants.CellAreaSquareMeters,
                 Rank = i + 1,
             });
         }
