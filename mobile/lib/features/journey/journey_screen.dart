@@ -328,7 +328,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
           ),
           children: [
             TileLayer(
-              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
+              subdomains: const ['a', 'b', 'c', 'd'],
               userAgentPackageName: 'com.myloop.app',
             ),
 

@@ -137,62 +137,69 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
         children: [
           const SizedBox(height: 28),
 
-          // Profile header: avatar + name/tag side by side, centered
+          // Profile header: LEFT = avatar + name/tag, RIGHT = big badge
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
             children: [
-              // Avatar with glow
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(int.parse(widget.color.replaceFirst('#', ''), radix: 16) | 0xFF000000).withValues(alpha: 0.25),
-                      blurRadius: 16,
-                      spreadRadius: 2,
+              // LEFT SIDE: Avatar + name + tag
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Avatar with glow
+                    Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(int.parse(widget.color.replaceFirst('#', ''), radix: 16) | 0xFF000000).withValues(alpha: 0.25),
+                            blurRadius: 16,
+                            spreadRadius: 2,
+                          ),
+                        ],
+                      ),
+                      child: AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 52, hexes: hexCount),
+                    ),
+                    const SizedBox(width: 12),
+                    // Name + tag stacked vertically
+                    Flexible(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.name,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, fontSize: 19),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          const SizedBox(height: 5),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(title.emoji, style: const TextStyle(fontSize: 12, height: 1.0)),
+                                const SizedBox(width: 4),
+                                Text(title.label, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 11)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                child: AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 52, hexes: hexCount),
               ),
-              const SizedBox(width: 14),
-              // Name + tag
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.name,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, fontSize: 19),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                  const SizedBox(height: 5),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(title.emoji, style: const TextStyle(fontSize: 12, height: 1.0)),
-                        const SizedBox(width: 4),
-                        Text(title.label, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              const SizedBox(width: 12),
+              // RIGHT SIDE: Big tier badge
+              HexTrophyBadge(hexes: hexCount, size: 72, showLabel: true, showProgress: true),
             ],
           ),
-          const SizedBox(height: 24),
-
-          // Badge centered
-          HexTrophyBadge(hexes: hexCount, size: 64, showLabel: true, showProgress: true),
           const SizedBox(height: 24),
 
           // Streak row
