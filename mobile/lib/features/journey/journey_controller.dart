@@ -117,13 +117,18 @@ class JourneyController extends Notifier<JourneyState> {
 
   /// Handles each GPS position update from the location stream.
   ///
-  /// Appends the new coordinate to the path and recalculates total
-  /// distance using [Geolocator.distanceBetween].
+  /// Filters out GPS jitter by requiring movement to exceed the noise floor
+  /// (determined by the position's reported accuracy). Only positions that
+  /// represent genuine movement get recorded to the path and added to distance.
+  /// The live marker (currentPosition) is always updated for visual feedback.
   void _onPosition(Position pos) {
-    final newPoint = [pos.latitude, pos.longitude];
-    final updatedPath = [...state.path, newPoint];
+    // Reject unreliable readings — accuracy > 25m means GPS is guessing
+    if (pos.accuracy > 25.0) {
+      state = state.copyWith(currentPosition: pos);
+      return;
+    }
 
-    // Calculate distance from last point
+    // Calculate distance from last accepted point
     double addedDistance = 0;
     if (state.path.isNotEmpty) {
       final last = state.path.last;
@@ -131,6 +136,27 @@ class JourneyController extends Notifier<JourneyState> {
         last[0], last[1], pos.latitude, pos.longitude,
       );
     }
+
+    // Only accept the point if movement exceeds the noise floor.
+    // The noise floor is the reported accuracy clamped to [8, 25] meters.
+    // This prevents GPS jitter from accumulating false distance when stationary.
+    // Additional check: if reported speed is available and essentially zero,
+    // require even more displacement to accept the point.
+    final noiseFloor = state.path.isEmpty
+        ? 0.0
+        : (pos.speed >= 0 && pos.speed < 0.3)
+            ? pos.accuracy.clamp(10.0, 25.0) // Stationary: stricter filter
+            : pos.accuracy.clamp(6.0, 20.0); // Moving: more permissive
+
+    if (addedDistance < noiseFloor && state.path.isNotEmpty) {
+      // Within noise range — update live marker only, don't record to path
+      state = state.copyWith(currentPosition: pos);
+      return;
+    }
+
+    // Valid movement detected — record the point and accumulate distance
+    final newPoint = [pos.latitude, pos.longitude];
+    final updatedPath = [...state.path, newPoint];
 
     state = state.copyWith(
       path: updatedPath,

@@ -336,6 +336,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               userAgentPackageName: 'com.myloop.app',
             ),
 
+            // Labels overlay — place names, roads, boundaries on top of satellite
+            if (_useSatellite)
+              TileLayer(
+                urlTemplate: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+                userAgentPackageName: 'com.myloop.app',
+              ),
+
             // User's owned hex polygons (animated overlay)
             if (_ownedHexBoundaries.isNotEmpty)
               AnimatedHexOverlay(
