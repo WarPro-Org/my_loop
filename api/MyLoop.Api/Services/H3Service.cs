@@ -17,8 +17,20 @@ public static class H3Service
     /// <summary>H3 resolution level. Resolution 10 yields hexagons approximately 65m across.</summary>
     private const int Resolution = 10;
 
-    /// <summary>Average area in square meters of a single H3 resolution-10 cell (~4,234 m²).</summary>
-    private const double CellAreaM2 = 4234.0;
+    /// <summary>Average area in square meters of a single H3 resolution-10 cell (~15,047 m²).</summary>
+    private const double CellAreaM2 = 15047.0;
+
+    /// <summary>
+    /// Visual hex radius in meters. All hexes worldwide are rendered at this exact size
+    /// to ensure fair, consistent territory competition regardless of terrain or geography.
+    /// </summary>
+    public const double HexRadiusMeters = 25.0;
+
+    /// <summary>
+    /// Minimum polygon area (m²) for interior fill. Loops smaller than this only get trail cells.
+    /// This equals roughly 2 H3 cells — prevents micro-loops from generating fill.
+    /// </summary>
+    private const double MinFillAreaM2 = 30000.0;
 
     /// <summary>
     /// Computes all hexagonal cells captured by the user's walked path.
@@ -41,11 +53,16 @@ public static class H3Service
             allCells[cellId] = boundary;
 
         // Step 2: If the path forms a closed loop (start ≈ end), also fill the enclosed interior
+        // Only fill if the loop encloses enough area (prevents micro-loops from generating fill)
         if (IsLoopClosed(path))
         {
-            var enclosedCells = PolygonFill(path);
-            foreach (var (cellId, boundary) in enclosedCells)
-                allCells[cellId] = boundary; // duplicates just overwrite — no harm done
+            var polygonArea = CalculatePolygonArea(path);
+            if (polygonArea >= MinFillAreaM2)
+            {
+                var enclosedCells = PolygonFill(path);
+                foreach (var (cellId, boundary) in enclosedCells)
+                    allCells[cellId] = boundary; // duplicates just overwrite — no harm done
+            }
         }
 
         return allCells.Select(kv => (kv.Key, kv.Value)).ToList();
@@ -85,13 +102,10 @@ public static class H3Service
 
             if (!cells.ContainsKey(cellId))
             {
-                // Retrieve the hexagon's 6 corner vertices for rendering on the map
-                var boundary = index.GetCellBoundary();
-                // Convert from NTS Coordinate (X=lng, Y=lat) to our [lat, lng] format
-                var coords = boundary.Coordinates
-                    .Select(c => new double[] { c.Y, c.X })
-                    .ToArray();
-                cells[cellId] = coords;
+                // Use the H3 cell center to generate a visually-perfect hexagon
+                var latLng = index.ToLatLng();
+                var boundary = GetPerfectHexBoundary(latLng.LatitudeDegrees, latLng.LongitudeDegrees);
+                cells[cellId] = boundary;
             }
         }
 
@@ -127,12 +141,10 @@ public static class H3Service
         foreach (var cell in cells)
         {
             var cellId = (long)(ulong)cell;
-            var boundary = cell.GetCellBoundary();
-            // Convert boundary vertices back to [lat, lng] format for client rendering
-            var coords = boundary.Coordinates
-                .Select(c => new double[] { c.Y, c.X })
-                .ToArray();
-            result.Add((cellId, coords));
+            // Use the H3 cell center to generate a visually-perfect hexagon
+            var latLng = cell.ToLatLng();
+            var boundary = GetPerfectHexBoundary(latLng.LatitudeDegrees, latLng.LongitudeDegrees);
+            result.Add((cellId, boundary));
         }
 
         return result;
@@ -195,5 +207,74 @@ public static class H3Service
                 Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
         // Convert from chord length to arc length on the sphere surface
         return R * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+    }
+
+    /// <summary>
+    /// Calculates the approximate area of a geographic polygon in square meters
+    /// using the Shoelface formula projected to local metric coordinates.
+    /// </summary>
+    /// <param name="polygon">Array of [latitude, longitude] coordinate pairs.</param>
+    /// <returns>Area in square meters.</returns>
+    public static double CalculatePolygonArea(double[][] polygon)
+    {
+        if (polygon.Length < 3) return 0;
+
+        // Use centroid as origin for local projection
+        var centLat = polygon.Average(p => p[0]);
+        var centLng = polygon.Average(p => p[1]);
+        const double metersPerDegreeLat = 111320.0;
+        var metersPerDegreeLng = 111320.0 * Math.Cos(centLat * Math.PI / 180.0);
+
+        // Shoelace formula in metric coordinates
+        double area = 0;
+        for (int i = 0; i < polygon.Length; i++)
+        {
+            var j = (i + 1) % polygon.Length;
+            var xi = (polygon[i][1] - centLng) * metersPerDegreeLng;
+            var yi = (polygon[i][0] - centLat) * metersPerDegreeLat;
+            var xj = (polygon[j][1] - centLng) * metersPerDegreeLng;
+            var yj = (polygon[j][0] - centLat) * metersPerDegreeLat;
+            area += xi * yj - xj * yi;
+        }
+        return Math.Abs(area) / 2.0;
+    }
+
+    /// <summary>
+    /// Generates a visually-perfect regular hexagon boundary for display on a Web Mercator map.
+    /// Unlike H3's geographic boundaries which appear distorted at high latitudes,
+    /// this produces a flat-top hexagon that always looks regular on the map.
+    /// </summary>
+    /// <param name="centerLat">Latitude of the hex center in degrees.</param>
+    /// <param name="centerLng">Longitude of the hex center in degrees.</param>
+    /// <param name="radiusMeters">Radius from center to vertex in meters (default 25m).</param>
+    /// <returns>Array of 7 [lat, lng] pairs (6 vertices + closing point).</returns>
+    public static double[][] GetPerfectHexBoundary(double centerLat, double centerLng, double radiusMeters = HexRadiusMeters)
+    {
+        // Convert radius from meters to degrees
+        // 1 degree latitude ≈ 111,320 meters (constant)
+        // 1 degree longitude ≈ 111,320 * cos(latitude) meters (varies with latitude)
+        const double metersPerDegreeLat = 111320.0;
+        var metersPerDegreeLng = 111320.0 * Math.Cos(centerLat * Math.PI / 180.0);
+
+        var latRadius = radiusMeters / metersPerDegreeLat;
+        var lngRadius = radiusMeters / metersPerDegreeLng;
+
+        // Generate 6 vertices of a flat-top regular hexagon
+        // Flat-top: vertex angles are 0°, 60°, 120°, 180°, 240°, 300°
+        var vertices = new double[7][];
+        for (int i = 0; i < 6; i++)
+        {
+            var angleDeg = 60.0 * i; // flat-top orientation
+            var angleRad = angleDeg * Math.PI / 180.0;
+            vertices[i] = new double[]
+            {
+                centerLat + latRadius * Math.Cos(angleRad),
+                centerLng + lngRadius * Math.Sin(angleRad)
+            };
+        }
+        // Close the polygon (last point = first point)
+        vertices[6] = vertices[0];
+
+        return vertices;
     }
 }

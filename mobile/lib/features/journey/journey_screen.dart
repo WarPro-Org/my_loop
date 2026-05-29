@@ -136,6 +136,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   bool _followUser = true; // User can toggle free exploration
   bool _locationError = false;
   double _currentZoom = 17.0;
+  bool _useSatellite = true; // Map theme: true=satellite, false=dark
   List<List<List<double>>> _capturedHexBoundaries = [];
   List<List<List<double>>> _ownedHexBoundaries = [];
 
@@ -328,8 +329,10 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
           ),
           children: [
             TileLayer(
-              urlTemplate: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-              subdomains: const ['a', 'b', 'c', 'd'],
+              urlTemplate: _useSatellite
+                  ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                  : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+              subdomains: _useSatellite ? const [] : const ['a', 'b', 'c', 'd'],
               userAgentPackageName: 'com.myloop.app',
             ),
 
@@ -429,6 +432,29 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               ),
             ),
           ),
+
+        // Map theme toggle button (top-right)
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 12,
+          right: 16,
+          child: GestureDetector(
+            onTap: () => setState(() => _useSatellite = !_useSatellite),
+            child: Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                shape: BoxShape.circle,
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
+              ),
+              child: Icon(
+                _useSatellite ? Icons.dark_mode : Icons.satellite_alt,
+                color: AppColors.dark,
+                size: 20,
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }
