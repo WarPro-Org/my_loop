@@ -167,14 +167,24 @@ public static class TerritoryEndpoints
                 .Select(t => new
                 {
                     t.CellId,
-                    Boundary = t.BoundaryJson,
+                    t.BoundaryJson,
                     t.OwnerId,
                     OwnerColor = t.Owner!.Color,
                     OwnerName = t.Owner!.DisplayName
                 })
                 .ToListAsync();
 
-            return Results.Ok(filtered);
+            // Parse BoundaryJson strings into actual arrays for the client
+            var result = filtered.Select(t => new
+            {
+                t.CellId,
+                Boundary = System.Text.Json.JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
+                t.OwnerId,
+                t.OwnerColor,
+                t.OwnerName
+            });
+
+            return Results.Ok(result);
         });
 
         // GET /api/territories/stats/{userId}
