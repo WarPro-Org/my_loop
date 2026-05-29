@@ -3,6 +3,9 @@
 Thumbs.db
 *.swp
 
+# Utility scripts
+*.sql
+
 # IDE
 .idea/
 .vscode/

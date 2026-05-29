@@ -155,13 +155,15 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       final locationService = ref.read(locationServiceProvider);
       await locationService.requestPermission();
       final pos = await locationService.getCurrentPosition();
-      if (mounted) {
+      if (mounted && pos.latitude.isFinite && pos.longitude.isFinite) {
         setState(() { _initialPosition = pos; _locationError = false; });
         if (_mapReady && _followUser) {
           _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
         }
         // Load owned hexes near this position
         _loadOwnedHexes(pos.latitude, pos.longitude);
+      } else if (mounted) {
+        setState(() => _locationError = true);
       }
     } catch (_) {
       if (mounted) setState(() => _locationError = true);
@@ -196,7 +198,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     try {
       final locationService = ref.read(locationServiceProvider);
       final pos = await locationService.getCurrentPosition();
-      if (mounted) {
+      if (mounted && pos.latitude.isFinite && pos.longitude.isFinite) {
         setState(() => _initialPosition = pos);
         // Only move if following
         if (_mapReady && _followUser) {
@@ -211,7 +213,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     super.didUpdateWidget(old);
     // Only follow during tracking if followUser is enabled
     final pos = widget.journey.currentPosition;
-    if (pos != null && _mapReady && _followUser) {
+    if (pos != null && _mapReady && _followUser && pos.latitude.isFinite && pos.longitude.isFinite) {
       _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
     }
   }
