@@ -16,6 +16,7 @@ import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
@@ -133,6 +134,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   bool _mapReady = false;
   bool _followUser = true; // User can toggle free exploration
   bool _locationError = false;
+  double _currentZoom = 17.0;
   List<List<List<double>>> _capturedHexBoundaries = [];
   List<List<List<double>>> _ownedHexBoundaries = [];
 
@@ -275,6 +277,10 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               }
             },
             onPositionChanged: (pos, hasGesture) {
+              // Track zoom for adaptive hex rendering
+              if (pos.zoom != null && pos.zoom != _currentZoom) {
+                setState(() => _currentZoom = pos.zoom!);
+              }
               // User panned manually — disable auto-follow
               if (hasGesture && _followUser) {
                 setState(() => _followUser = false);
@@ -287,30 +293,21 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               userAgentPackageName: 'com.myloop.app',
             ),
 
-            // User's owned hex polygons (loaded on map open)
+            // User's owned hex polygons (animated overlay)
             if (_ownedHexBoundaries.isNotEmpty)
-              PolygonLayer(
-                polygons: _ownedHexBoundaries.map((boundary) =>
-                  Polygon(
-                    points: boundary.map((p) => LatLng(p[0], p[1])).toList(),
-                    color: userColor.withValues(alpha: 0.2),
-                    borderColor: userColor.withValues(alpha: 0.6),
-                    borderStrokeWidth: 1.5,
-                  ),
-                ).toList(),
+              AnimatedHexOverlay(
+                hexBoundaries: _ownedHexBoundaries,
+                userColor: userColor,
+                currentZoom: _currentZoom,
               ),
 
-            // Captured hex polygons (from current session claim)
+            // Captured hex polygons (from current session — extra glow)
             if (_capturedHexBoundaries.isNotEmpty)
-              PolygonLayer(
-                polygons: _capturedHexBoundaries.map((boundary) =>
-                  Polygon(
-                    points: boundary.map((p) => LatLng(p[0], p[1])).toList(),
-                    color: userColor.withValues(alpha: 0.4),
-                    borderColor: userColor,
-                    borderStrokeWidth: 2,
-                  ),
-                ).toList(),
+              AnimatedHexOverlay(
+                hexBoundaries: _capturedHexBoundaries,
+                userColor: userColor,
+                currentZoom: _currentZoom,
+                isNewCapture: true,
               ),
 
             // Draw the walked path
