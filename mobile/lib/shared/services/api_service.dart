@@ -11,6 +11,13 @@ import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/models/user.dart';
 
+/// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
+/// Defaults to local network IP for development.
+const _defaultApiUrl = String.fromEnvironment(
+  'API_URL',
+  defaultValue: 'http://192.168.1.8:5048',
+);
+
 /// Service class that encapsulates all HTTP communication with the backend.
 ///
 /// Uses [Dio] with a configurable base URL (defaults to Android emulator
@@ -21,7 +28,7 @@ class ApiService {
 
   ApiService({String? baseUrl})
       : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl ?? 'http://192.168.1.8:5048',
+          baseUrl: baseUrl ?? _defaultApiUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
         ));

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MyLoop.Api.Data;
+using MyLoop.Api.DTOs;
 using MyLoop.Api.Entities;
 using MyLoop.Api.Services;
 
@@ -142,6 +143,7 @@ public static class TerritoryEndpoints
                 claim.CellCount,
                 claim.AreaM2,
                 StolenFromOthers = stolenCount,
+                Boundaries = cells.Select(c => c.Boundary).ToList(),
             });
         });
 
@@ -263,8 +265,6 @@ public static class TerritoryEndpoints
     /// </summary>
     /// <param name="UserId">The ID of the user making the claim.</param>
     /// <param name="Path">Array of [lat, lng] coordinate pairs representing the walked path.</param>
-    public record ClaimRequest(Guid UserId, double[][] Path);
-
     /// <summary>
     /// Calculates the great-circle distance between two geographic points using the Haversine formula.
     /// Used to validate that the user actually walked a meaningful distance before claiming territory.

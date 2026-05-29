@@ -28,12 +28,18 @@ import 'package:myloop/shared/widgets/big_button.dart';
 /// Uses a [Stack] to overlay the map, stats bar (top), and controls (bottom).
 /// Watches [journeyControllerProvider] to reactively update the UI as the
 /// player walks. Listens for errors and shows them via snackbar.
-class JourneyScreen extends ConsumerWidget {
+class JourneyScreen extends ConsumerStatefulWidget {
   const JourneyScreen({super.key});
 
-  /// Builds the stacked layout: map → stats overlay → bottom controls.
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<JourneyScreen> createState() => _JourneyScreenState();
+}
+
+class _JourneyScreenState extends ConsumerState<JourneyScreen> {
+  final _mapKey = GlobalKey<_JourneyMapState>();
+
+  @override
+  Widget build(BuildContext context) {
     final journey = ref.watch(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
 
@@ -53,7 +59,7 @@ class JourneyScreen extends ConsumerWidget {
       body: Stack(
         children: [
           // The map (full screen)
-          _JourneyMap(journey: journey),
+          _JourneyMap(key: _mapKey, journey: journey),
 
           // Close/back button (top-left)
           Positioned(
@@ -97,6 +103,7 @@ class JourneyScreen extends ConsumerWidget {
             child: _BottomControls(
               journey: journey,
               controller: controller,
+              mapKey: _mapKey,
             ),
           ),
         ],
@@ -113,7 +120,7 @@ class JourneyScreen extends ConsumerWidget {
 /// follows the user's live location, and auto-updates every 5 seconds.
 class _JourneyMap extends ConsumerStatefulWidget {
   final JourneyState journey;
-  const _JourneyMap({required this.journey});
+  const _JourneyMap({super.key, required this.journey});
 
   @override
   ConsumerState<_JourneyMap> createState() => _JourneyMapState();
@@ -124,12 +131,15 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   Position? _initialPosition;
   Timer? _locationTimer;
   bool _mapReady = false;
+  bool _followUser = true; // User can toggle free exploration
+  bool _locationError = false;
+  List<List<List<double>>> _capturedHexBoundaries = [];
+  List<List<List<double>>> _ownedHexBoundaries = [];
 
   @override
   void initState() {
     super.initState();
     _acquireLocation();
-    // Auto-update position every 5 seconds when not tracking
     _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
   }
 
@@ -146,16 +156,41 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       await locationService.requestPermission();
       final pos = await locationService.getCurrentPosition();
       if (mounted) {
-        setState(() => _initialPosition = pos);
-        if (_mapReady) {
+        setState(() { _initialPosition = pos; _locationError = false; });
+        if (_mapReady && _followUser) {
           _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
         }
+        // Load owned hexes near this position
+        _loadOwnedHexes(pos.latitude, pos.longitude);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _locationError = true);
+    }
+  }
+
+  Future<void> _loadOwnedHexes(double lat, double lng) async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      // Load hexes in ~1km radius around user
+      final offset = 0.01; // ~1.1km
+      final cells = await api.getTerritories(
+        minLat: lat - offset,
+        minLng: lng - offset,
+        maxLat: lat + offset,
+        maxLng: lng + offset,
+      );
+      final profile = ref.read(userProfileProvider);
+      // Filter to only user's own hexes
+      final mine = cells.where((c) => c.ownerId == profile.userId).toList();
+      if (mounted && mine.isNotEmpty) {
+        setState(() {
+          _ownedHexBoundaries = mine.map((c) => c.boundary).toList();
+        });
       }
     } catch (_) {}
   }
 
   Future<void> _refreshPosition() async {
-    // Only auto-refresh when NOT already tracking (controller handles that)
     final journey = ref.read(journeyControllerProvider);
     if (journey.status == JourneyStatus.tracking) return;
     try {
@@ -163,7 +198,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       final pos = await locationService.getCurrentPosition();
       if (mounted) {
         setState(() => _initialPosition = pos);
-        if (_mapReady) {
+        // Only move if following
+        if (_mapReady && _followUser) {
           _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
         }
       }
@@ -173,91 +209,184 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   @override
   void didUpdateWidget(covariant _JourneyMap old) {
     super.didUpdateWidget(old);
-    // Follow user during tracking
+    // Only follow during tracking if followUser is enabled
     final pos = widget.journey.currentPosition;
-    if (pos != null && _mapReady) {
+    if (pos != null && _mapReady && _followUser) {
       _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
     }
+  }
+
+  /// Called after claim submission — renders captured hexes on map
+  void showCapturedHexes(List<List<List<double>>> boundaries) {
+    setState(() => _capturedHexBoundaries = boundaries);
   }
 
   @override
   Widget build(BuildContext context) {
     final journey = widget.journey;
     final profile = ref.watch(userProfileProvider);
+    final userColor = Color(int.parse(profile.color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
-    // Determine map center
+    // Show loading spinner while acquiring location
+    if (_initialPosition == null && journey.currentPosition == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_locationError) ...[
+              const Icon(Icons.location_off, size: 48, color: AppColors.grey),
+              const SizedBox(height: 12),
+              const Text('Could not get your location', style: TextStyle(color: AppColors.grey)),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () { setState(() => _locationError = false); _acquireLocation(); },
+                child: const Text('Retry'),
+              ),
+            ] else ...[
+              const CircularProgressIndicator(color: AppColors.primary),
+              const SizedBox(height: 16),
+              const Text('Getting your location...', style: TextStyle(color: AppColors.grey)),
+            ],
+          ],
+        ),
+      );
+    }
+
     LatLng center;
     if (journey.currentPosition != null) {
       center = LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude);
-    } else if (_initialPosition != null) {
-      center = LatLng(_initialPosition!.latitude, _initialPosition!.longitude);
     } else {
-      center = const LatLng(0, 0); // Will be updated once GPS resolves
+      center = LatLng(_initialPosition!.latitude, _initialPosition!.longitude);
     }
 
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: center,
-        initialZoom: 17,
-        onMapReady: () {
-          _mapReady = true;
-          // If we already have a position, snap to it
-          if (_initialPosition != null) {
-            _mapController.move(LatLng(_initialPosition!.latitude, _initialPosition!.longitude), 17);
-          }
-        },
-      ),
+    return Stack(
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.myloop.app',
-        ),
-
-        // Draw the walked path as a polyline
-        if (journey.path.length > 1)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: journey.path.map((p) => LatLng(p[0], p[1])).toList(),
-                color: AppColors.primary,
-                strokeWidth: 4,
-              ),
-            ],
+        FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: center,
+            initialZoom: 17,
+            onMapReady: () {
+              _mapReady = true;
+              if (_initialPosition != null) {
+                _mapController.move(LatLng(_initialPosition!.latitude, _initialPosition!.longitude), 17);
+              }
+            },
+            onPositionChanged: (pos, hasGesture) {
+              // User panned manually — disable auto-follow
+              if (hasGesture && _followUser) {
+                setState(() => _followUser = false);
+              }
+            },
           ),
+          children: [
+            TileLayer(
+              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.myloop.app',
+            ),
 
-        // User position marker with avatar
-        if (journey.currentPosition != null || _initialPosition != null)
-          MarkerLayer(
-            markers: [
-              Marker(
-                point: journey.currentPosition != null
-                    ? LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude)
-                    : LatLng(_initialPosition!.latitude, _initialPosition!.longitude),
-                width: 44,
-                height: 44,
-                child: Container(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.white, width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.4),
-                        blurRadius: 10,
-                        spreadRadius: 3,
-                      ),
-                    ],
+            // User's owned hex polygons (loaded on map open)
+            if (_ownedHexBoundaries.isNotEmpty)
+              PolygonLayer(
+                polygons: _ownedHexBoundaries.map((boundary) =>
+                  Polygon(
+                    points: boundary.map((p) => LatLng(p[0], p[1])).toList(),
+                    color: userColor.withValues(alpha: 0.2),
+                    borderColor: userColor.withValues(alpha: 0.6),
+                    borderStrokeWidth: 1.5,
                   ),
-                  child: ClipOval(
-                    child: AvatarWidget(
-                      avatarId: profile.avatarId,
-                      color: profile.color,
-                      size: 38,
+                ).toList(),
+              ),
+
+            // Captured hex polygons (from current session claim)
+            if (_capturedHexBoundaries.isNotEmpty)
+              PolygonLayer(
+                polygons: _capturedHexBoundaries.map((boundary) =>
+                  Polygon(
+                    points: boundary.map((p) => LatLng(p[0], p[1])).toList(),
+                    color: userColor.withValues(alpha: 0.4),
+                    borderColor: userColor,
+                    borderStrokeWidth: 2,
+                  ),
+                ).toList(),
+              ),
+
+            // Draw the walked path
+            if (journey.path.length > 1)
+              PolylineLayer(
+                polylines: [
+                  Polyline(
+                    points: journey.path.map((p) => LatLng(p[0], p[1])).toList(),
+                    color: AppColors.primary,
+                    strokeWidth: 4,
+                  ),
+                ],
+              ),
+
+            // User position marker with avatar
+            if (journey.currentPosition != null || _initialPosition != null)
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: journey.currentPosition != null
+                        ? LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude)
+                        : LatLng(_initialPosition!.latitude, _initialPosition!.longitude),
+                    width: 44,
+                    height: 44,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: AppColors.white, width: 3),
+                        boxShadow: [
+                          BoxShadow(
+                            color: userColor.withValues(alpha: 0.4),
+                            blurRadius: 10,
+                            spreadRadius: 3,
+                          ),
+                        ],
+                      ),
+                      child: ClipOval(
+                        child: AvatarWidget(
+                          avatarId: profile.avatarId,
+                          color: profile.color,
+                          size: 38,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+          ],
+        ),
+
+        // Re-center button (shown when user has panned away)
+        if (!_followUser)
+          Positioned(
+            bottom: 140,
+            right: 16,
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _followUser = true);
+                final trackPos = widget.journey.currentPosition;
+                final pos = trackPos ?? _initialPosition;
+                if (pos != null && _mapReady) {
+                  _mapController.move(
+                    LatLng(pos.latitude, pos.longitude),
+                    _mapController.camera.zoom,
+                  );
+                }
+              },
+              child: Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 2))],
+                ),
+                child: const Icon(Icons.my_location, color: AppColors.primary, size: 24),
+              ),
+            ),
           ),
       ],
     );
@@ -281,7 +410,6 @@ class _StatsBar extends StatelessWidget {
     final minutes = journey.elapsed.inMinutes;
     final seconds = journey.elapsed.inSeconds % 60;
     final distanceKm = journey.distanceMeters / 1000;
-    final points = journey.path.length;
 
     return SafeArea(
       child: Container(
@@ -314,9 +442,9 @@ class _StatsBar extends StatelessWidget {
               label: 'Distance',
             ),
             _StatItem(
-              emoji: '📍',
-              value: '$points',
-              label: 'Points',
+              emoji: '⬡',
+              value: '—',
+              label: 'Hexes',
             ),
           ],
         ),
@@ -366,7 +494,8 @@ class _StatItem extends StatelessWidget {
 class _BottomControls extends ConsumerWidget {
   final JourneyState journey;
   final JourneyController controller;
-  const _BottomControls({required this.journey, required this.controller});
+  final GlobalKey<_JourneyMapState> mapKey;
+  const _BottomControls({required this.journey, required this.controller, required this.mapKey});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -445,6 +574,18 @@ class _BottomControls extends ConsumerWidget {
               if (profile.userId != null) {
                 final result = await api.submitClaim(userId: profile.userId!, path: path);
                 final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+
+                // Show captured hex boundaries on map
+                final rawBoundaries = result['boundaries'] as List<dynamic>?;
+                if (rawBoundaries != null && rawBoundaries.isNotEmpty) {
+                  final boundaries = rawBoundaries.map<List<List<double>>>((b) =>
+                    (b as List<dynamic>).map<List<double>>((point) =>
+                      (point as List<dynamic>).map<double>((v) => (v as num).toDouble()).toList()
+                    ).toList()
+                  ).toList();
+                  mapKey.currentState?.showCapturedHexes(boundaries);
+                }
+
                 // Refresh user stats from DB
                 final user = await api.getUser(profile.userId!);
                 ref.read(userProfileProvider.notifier).updateStats(
@@ -463,8 +604,8 @@ class _BottomControls extends ConsumerWidget {
               }
             } catch (_) {
               // Silently fail — user can still see their walk ended
+              if (context.mounted) Navigator.of(context).pop();
             }
-            if (context.mounted) Navigator.of(context).pop();
           },
         ),
       ],

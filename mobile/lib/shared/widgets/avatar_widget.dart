@@ -1,7 +1,7 @@
 /// Avatar widget and emoji definitions for player identity display.
 ///
 /// Provides the [AvatarWidget] which renders a player's emoji on top of
-/// a hex trophy badge that reflects their tier level.
+/// a plain colored circle background.
 library;
 
 import 'dart:math' as math;
@@ -24,16 +24,14 @@ const avatarEmojis = [
   '🦅', // 11 - eagle
 ];
 
-/// Displays a player's avatar emoji on top of a hex trophy background.
+/// Displays a player's avatar emoji on a plain colored circle background.
 ///
-/// All users start on Bronze tier. As hex count grows the hex background
-/// changes to Silver, Gold, Platinum, Crystal, Diamond — visible progress
-/// at a glance. Pass [hexes] to reflect tier; omit (defaults 0 = Bronze).
+/// Uses the player's chosen color as background. Simple and clean.
 class AvatarWidget extends StatelessWidget {
   final int avatarId;
-  final String color; // kept for API compatibility; tier color overrides bg
+  final String color;
   final double size;
-  final int hexes; // determines tier background
+  final int hexes; // kept for API compat, not used visually
 
   const AvatarWidget({
     super.key,
@@ -45,27 +43,21 @@ class AvatarWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tier = HexTier.fromHexes(hexes);
-    final division = HexTier.divisionFromHexes(hexes);
     final emoji = avatarEmojis[avatarId.clamp(0, avatarEmojis.length - 1)];
+    final bgColor = Color(int.parse(color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
-    return SizedBox(
+    return Container(
       width: size,
       height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Full hex trophy badge as background (with division details)
-          CustomPaint(
-            size: Size(size, size),
-            painter: AvatarHexBadgePainter(tier: tier, division: division),
-          ),
-          // Emoji on top
-          Text(
-            emoji,
-            style: TextStyle(fontSize: size * 0.38),
-          ),
-        ],
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: bgColor.withValues(alpha: 0.2),
+        border: Border.all(color: bgColor, width: 2),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        emoji,
+        style: TextStyle(fontSize: size * 0.45),
       ),
     );
   }

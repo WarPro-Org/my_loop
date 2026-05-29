@@ -436,7 +436,7 @@ class _QuickStats extends ConsumerWidget {
               Text('Daily History', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
               const SizedBox(height: 12),
               Expanded(
-                child: _StreakHistoryLazy(scroll: scroll),
+                child: _StreakHistoryLazy(scroll: scroll, streakDays: currentStreak),
               ),
             ],
           ),
@@ -1087,77 +1087,82 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
   void _loadMore() {
     if (_loadingMore || _visibleCount >= _allDays.length) return;
     setState(() => _loadingMore = true);
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) setState(() { _visibleCount = _allDays.length; _loadingMore = false; });
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) setState(() { _visibleCount = (_visibleCount + 5).clamp(0, _allDays.length); _loadingMore = false; });
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final visible = _allDays.take(_visibleCount).toList();
-    return ListView.builder(
-      controller: widget.scroll,
-      itemCount: visible.length + (_visibleCount < _allDays.length ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == visible.length) {
-          // Load more button
-          return Center(
-            child: TextButton(
-              onPressed: _loadMore,
-              child: _loadingMore
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Show more', style: TextStyle(fontWeight: FontWeight.w700)),
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        if (notification is ScrollEndNotification &&
+            notification.metrics.pixels >= notification.metrics.maxScrollExtent - 50) {
+          _loadMore();
+        }
+        return false;
+      },
+      child: ListView.builder(
+        controller: widget.scroll,
+        itemCount: visible.length + (_loadingMore ? 3 : 0),
+        itemBuilder: (context, index) {
+          if (index >= visible.length) {
+            // Shimmer placeholder
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: ShimmerBox(height: 72, borderRadius: 12),
+            );
+          }
+          final day = visible[index];
+          final earned = day['earned'] as int;
+          final lost = day['lost'] as int;
+          final net = earned - lost;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.snow,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.greyLight, width: 1.5),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                  child: const Center(child: Text('⬡', style: TextStyle(fontSize: 20))),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(day['date'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Row(children: [
+                        Text('+$earned captured', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
+                        if (lost > 0) ...[
+                          const SizedBox(width: 8),
+                          Text('-$lost stolen', style: const TextStyle(color: AppColors.red, fontWeight: FontWeight.w600, fontSize: 12)),
+                        ],
+                      ]),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: net >= 0 ? AppColors.primary.withValues(alpha: 0.1) : AppColors.red.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('${net >= 0 ? '+' : ''}$net', style: TextStyle(fontWeight: FontWeight.w800, color: net >= 0 ? AppColors.primary : AppColors.red)),
+                ),
+              ],
             ),
           );
-        }
-        final day = visible[index];
-        final earned = day['earned'] as int;
-        final lost = day['lost'] as int;
-        final net = earned - lost;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.snow,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.greyLight, width: 1.5),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
-                child: const Center(child: Text('⬡', style: TextStyle(fontSize: 20))),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(day['date'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Row(children: [
-                      Text('+$earned captured', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
-                      if (lost > 0) ...[
-                        const SizedBox(width: 8),
-                        Text('-$lost stolen', style: const TextStyle(color: AppColors.red, fontWeight: FontWeight.w600, fontSize: 12)),
-                      ],
-                    ]),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: net >= 0 ? AppColors.primary.withValues(alpha: 0.1) : AppColors.red.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text('${net >= 0 ? '+' : ''}$net', style: TextStyle(fontWeight: FontWeight.w800, color: net >= 0 ? AppColors.primary : AppColors.red)),
-              ),
-            ],
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 }
@@ -1168,41 +1173,39 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
 
 class _StreakHistoryLazy extends StatefulWidget {
   final ScrollController scroll;
-  const _StreakHistoryLazy({required this.scroll});
+  final int streakDays;
+  const _StreakHistoryLazy({required this.scroll, required this.streakDays});
 
   @override
   State<_StreakHistoryLazy> createState() => _StreakHistoryLazyState();
 }
 
 class _StreakHistoryLazyState extends State<_StreakHistoryLazy> {
-  static final _allDays = [
-    {'date': 'Today', 'hexes': 5, 'distance': '1.2 km', 'time': '18 min'},
-    {'date': 'May 27', 'hexes': 8, 'distance': '2.1 km', 'time': '32 min'},
-    {'date': 'May 26', 'hexes': 3, 'distance': '0.8 km', 'time': '12 min'},
-    {'date': 'May 25', 'hexes': 6, 'distance': '1.5 km', 'time': '24 min'},
-    {'date': 'May 24', 'hexes': 2, 'distance': '0.5 km', 'time': '8 min'},
-    {'date': 'May 23', 'hexes': 4, 'distance': '1.0 km', 'time': '15 min'},
-    {'date': 'May 22', 'hexes': 7, 'distance': '1.8 km', 'time': '28 min'},
-    {'date': 'May 21', 'hexes': 5, 'distance': '1.3 km', 'time': '20 min'},
-    {'date': 'May 20', 'hexes': 3, 'distance': '0.7 km', 'time': '11 min'},
-    {'date': 'May 19', 'hexes': 9, 'distance': '2.5 km', 'time': '38 min'},
-    {'date': 'May 18', 'hexes': 4, 'distance': '1.1 km', 'time': '17 min'},
-    {'date': 'May 17', 'hexes': 6, 'distance': '1.6 km', 'time': '25 min'},
-    {'date': 'May 16', 'hexes': 2, 'distance': '0.6 km', 'time': '9 min'},
-    {'date': 'May 15', 'hexes': 8, 'distance': '2.0 km', 'time': '30 min'},
-    {'date': 'May 14', 'hexes': 5, 'distance': '1.4 km', 'time': '22 min'},
-  ];
-
-  int _visibleCount = 10;
+  late List<Map<String, dynamic>> _days;
+  int _visibleCount = 7;
   bool _loadingMore = false;
 
+  @override
+  void initState() {
+    super.initState();
+    // Generate streak entries matching the actual streak count
+    final now = DateTime.now();
+    _days = List.generate(widget.streakDays.clamp(1, 60), (i) {
+      final date = now.subtract(Duration(days: i));
+      final label = i == 0 ? 'Today' : i == 1 ? 'Yesterday' : '${_monthName(date.month)} ${date.day}';
+      return {'date': label, 'hexes': (3 + (date.day * 7 + i) % 8), 'distance': '${(0.4 + (i * 0.3) % 2.0).toStringAsFixed(1)} km', 'time': '${8 + (date.day + i) % 25} min'};
+    });
+  }
+
+  String _monthName(int m) => const ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1];
+
   void _loadMore() {
-    if (_loadingMore || _visibleCount >= _allDays.length) return;
+    if (_loadingMore || _visibleCount >= _days.length) return;
     setState(() => _loadingMore = true);
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) {
         setState(() {
-          _visibleCount = (_visibleCount + 10).clamp(0, _allDays.length);
+          _visibleCount = (_visibleCount + 7).clamp(0, _days.length);
           _loadingMore = false;
         });
       }
@@ -1211,61 +1214,86 @@ class _StreakHistoryLazyState extends State<_StreakHistoryLazy> {
 
   @override
   Widget build(BuildContext context) {
-    final visible = _allDays.take(_visibleCount).toList();
-    return ListView.builder(
-      controller: widget.scroll,
-      itemCount: visible.length + (_visibleCount < _allDays.length ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == visible.length) {
-          return Center(
-            child: TextButton(
-              onPressed: _loadMore,
-              child: _loadingMore
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Show more', style: TextStyle(fontWeight: FontWeight.w700)),
+    final visible = _days.take(_visibleCount).toList();
+    return NotificationListener<ScrollNotification>(
+      onNotification: (notification) {
+        // Auto-load more when scrolling near the bottom
+        if (notification is ScrollUpdateNotification &&
+            notification.metrics.pixels > notification.metrics.maxScrollExtent - 100) {
+          _loadMore();
+        }
+        return false;
+      },
+      child: ListView.builder(
+        controller: widget.scroll,
+        itemCount: visible.length + (_loadingMore ? 3 : 0),
+        itemBuilder: (context, index) {
+          // Shimmer placeholders while loading more
+          if (index >= visible.length) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: AppColors.snow,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Container(width: 44, height: 44, decoration: BoxDecoration(color: AppColors.greyLight.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(10))),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(height: 12, width: 80, color: AppColors.greyLight.withValues(alpha: 0.5)),
+                      const SizedBox(height: 6),
+                      Container(height: 10, width: 140, color: AppColors.greyLight.withValues(alpha: 0.3)),
+                    ],
+                  )),
+                ],
+              ),
+            );
+          }
+          final day = visible[index];
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.snow,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.greyLight, width: 1.5),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Center(child: Text('🔥', style: TextStyle(fontSize: 20))),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(day['date'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
+                      const SizedBox(height: 2),
+                      Text('${day['hexes']} hexes · ${day['distance']} · ${day['time']}',
+                        style: TextStyle(fontSize: 12, color: AppColors.grey), overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                  child: Text('✓', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800)),
+                ),
+              ],
             ),
           );
-        }
-        final day = visible[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.snow,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.greyLight, width: 1.5),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44, height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.orange.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Center(child: Text('🔥', style: TextStyle(fontSize: 20))),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(day['date'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
-                    const SizedBox(height: 2),
-                    Text('${day['hexes']} hexes · ${day['distance']} · ${day['time']}',
-                      style: TextStyle(fontSize: 12, color: AppColors.grey), overflow: TextOverflow.ellipsis),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                child: Text('✓', style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800)),
-              ),
-            ],
-          ),
-        );
-      },
+        },
+      ),
     );
   }
 }

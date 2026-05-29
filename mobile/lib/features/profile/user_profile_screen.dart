@@ -132,137 +132,112 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     }
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 16),
+          const SizedBox(height: 28),
 
-          // Profile header card
+          // Profile header: avatar + name/tag side by side, centered
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Avatar with glow
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Color(int.parse(widget.color.replaceFirst('#', ''), radix: 16) | 0xFF000000).withValues(alpha: 0.25),
+                      blurRadius: 16,
+                      spreadRadius: 2,
+                    ),
+                  ],
+                ),
+                child: AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 52, hexes: hexCount),
+              ),
+              const SizedBox(width: 14),
+              // Name + tag
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    widget.name,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, fontSize: 19),
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                  const SizedBox(height: 5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(title.emoji, style: const TextStyle(fontSize: 12, height: 1.0)),
+                        const SizedBox(width: 4),
+                        Text(title.label, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 11)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // Badge centered
+          HexTrophyBadge(hexes: hexCount, size: 64, showLabel: true, showProgress: true),
+          const SizedBox(height: 24),
+
+          // Streak row
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: AppColors.greyLight, width: 1.5),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, 4)),
-              ],
+              gradient: LinearGradient(
+                colors: isStreakActive
+                  ? [AppColors.orange.withValues(alpha: 0.12), AppColors.red.withValues(alpha: 0.06)]
+                  : [AppColors.greyLight.withValues(alpha: 0.5), AppColors.greyLight.withValues(alpha: 0.3)],
+              ),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: isStreakActive ? AppColors.orange.withValues(alpha: 0.3) : AppColors.greyLight),
             ),
             child: Row(
               children: [
-                // Avatar
-                AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 52, hexes: hexCount),
-                const SizedBox(width: 14),
-                // Name + title + joined
+                Text(isStreakActive ? '🔥' : '⏸️', style: const TextStyle(fontSize: 24)),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        widget.name,
-                        style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, fontSize: 20),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${title.emoji} ${title.label}',
-                              style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Joined $joinLabel',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: AppColors.grey, fontSize: 12),
-                      ),
-                    ],
+                  child: Text(
+                    isStreakActive ? '$streak-day streak!' : 'Streak paused',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      color: isStreakActive ? AppColors.dark : AppColors.grey,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
-                const SizedBox(width: 16),
-                // Badge — properly centered with breathing room
-                HexTrophyBadge(hexes: hexCount, size: 60, showLabel: true, showProgress: true),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-
-          // Streak badge
-          _StreakBadge(streak: streak, maxStreak: maxStreak, isActive: isStreakActive),
           const SizedBox(height: 20),
 
-          // Stats
-          _StatRow(icon: Icons.hexagon, label: 'Total Hexes', value: '$hexCount', color: AppColors.primary),
-          _StatRow(icon: Icons.directions_walk, label: 'Distance', value: '${distanceKm.toStringAsFixed(1)} km', color: AppColors.accent),
-          _StatRow(icon: Icons.whatshot, label: 'Max Streak', value: '$maxStreak days', color: AppColors.red),
+          // Stats list — simple rows
+          _StatRow(icon: Icons.hexagon, label: 'Hexes Owned', value: '$hexCount', color: AppColors.primary),
+          _StatRow(icon: Icons.directions_walk, label: 'Distance Walked', value: '${distanceKm.toStringAsFixed(1)} km', color: AppColors.accent),
+          _StatRow(icon: Icons.whatshot, label: 'Best Streak', value: '$maxStreak days', color: AppColors.orange),
           _StatRow(icon: Icons.emoji_events, label: 'Top 3 Finishes', value: '$topThree', color: AppColors.yellow),
 
           const SizedBox(height: 24),
-        ],
-      ),
-    );
-  }
-}
-
-class _StreakBadge extends StatelessWidget {
-  final int streak;
-  final int maxStreak;
-  final bool isActive;
-  const _StreakBadge({required this.streak, required this.maxStreak, required this.isActive});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isActive
-            ? [AppColors.orange.withValues(alpha: 0.15), AppColors.red.withValues(alpha: 0.1)]
-            : [AppColors.greyLight, AppColors.greyLight],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: isActive ? AppColors.orange.withValues(alpha: 0.3) : AppColors.greyLight),
-      ),
-      child: Row(
-        children: [
-          Icon(
-            isActive ? Icons.local_fire_department : Icons.pause_circle_outline,
-            color: isActive ? AppColors.orange : AppColors.grey,
-            size: 32,
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isActive ? 'On a $streak-day streak!' : 'Streak paused',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
-                    color: isActive ? AppColors.dark : AppColors.grey,
-                  ),
-                ),
-                Text(
-                  'Best: $maxStreak days',
-                  style: const TextStyle(fontSize: 13, color: AppColors.grey),
-                ),
-              ],
-            ),
-          ),
+          // Joined date at bottom center
+          Text('Joined $joinLabel', style: TextStyle(color: AppColors.grey, fontSize: 12)),
+          const SizedBox(height: 32),
         ],
       ),
     );
@@ -279,20 +254,22 @@ class _StatRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            width: 36, height: 36,
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 22),
+            child: Icon(icon, color: color, size: 18),
           ),
-          const SizedBox(width: 16),
-          Expanded(child: Text(label, style: const TextStyle(fontSize: 15, color: AppColors.grey))),
-          Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(label, style: const TextStyle(fontSize: 14, color: AppColors.grey)),
+          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
         ],
       ),
     );

@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/features/home/home_tab.dart';
+import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
+import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
@@ -16,20 +19,31 @@ final homeScaffoldKey = GlobalKey<ScaffoldState>();
 final homeFabVisible = ValueNotifier<bool>(true);
 
 /// The app shell scaffold providing bottom navigation and the journey FAB (home only).
+/// Uses IndexedStack to keep all tabs alive — eliminates the tab-switch glitch
+/// where old content would show for a frame during GoRouter's child swap.
 class HomeScreen extends ConsumerWidget {
-  final Widget child;
+  final Widget child; // kept for ShellRoute compat but ignored
   const HomeScreen({super.key, required this.child});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).uri.path;
-    final isHome = location == '/home';
+    int currentIndex = 0;
+    if (location == '/leaderboard') currentIndex = 1;
+    if (location == '/achievements') currentIndex = 2;
 
     return Scaffold(
       key: homeScaffoldKey,
-      body: child,
+      body: IndexedStack(
+        index: currentIndex,
+        children: const [
+          HomeTab(),
+          LeaderboardScreen(),
+          AchievementsScreen(),
+        ],
+      ),
       endDrawer: const _ProfileDrawer(),
-      floatingActionButton: isHome
+      floatingActionButton: currentIndex == 0
         ? ValueListenableBuilder<bool>(
             valueListenable: homeFabVisible,
             builder: (_, visible, child) => visible ? child! : const SizedBox.shrink(),
@@ -38,7 +52,7 @@ class HomeScreen extends ConsumerWidget {
         : const SizedBox.shrink(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButtonAnimator: _NoAnimationFabAnimator(),
-      bottomNavigationBar: _BottomNav(),
+      bottomNavigationBar: _BottomNav(currentIndex: currentIndex),
     );
   }
 }
@@ -96,7 +110,7 @@ class _ProfileDrawer extends ConsumerWidget {
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
-                // Title badge
+                // Title badge — properly aligned emoji + text
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                   decoration: BoxDecoration(
@@ -108,16 +122,21 @@ class _ProfileDrawer extends ConsumerWidget {
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Text(title.emoji, style: const TextStyle(fontSize: 14)),
+                      Text(title.emoji, style: const TextStyle(fontSize: 14, height: 1.0)),
                       const SizedBox(width: 6),
-                      Text(
-                        title.label,
-                        style: TextStyle(
-                          color: avatarColor,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13,
-                          letterSpacing: 0.3,
+                      Flexible(
+                        child: Text(
+                          title.label,
+                          style: TextStyle(
+                            color: avatarColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            letterSpacing: 0.3,
+                            height: 1.2,
+                          ),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -186,47 +205,67 @@ class _ProfileDrawer extends ConsumerWidget {
   void _showNameEditor(BuildContext context, WidgetRef ref) {
     final profile = ref.read(userProfileProvider);
     final controller = TextEditingController(text: profile.displayName);
+    String? errorText;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 24, right: 24, top: 24, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Edit Display Name', style: Theme.of(ctx).textTheme.headlineMedium),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Enter your name',
-                filled: true,
-                fillColor: AppColors.snow,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.greyLight)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(left: 24, right: 24, top: 24, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Edit Display Name', style: Theme.of(ctx).textTheme.headlineMedium),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 20,
+                decoration: InputDecoration(
+                  hintText: 'Enter your name',
+                  errorText: errorText,
+                  counterText: '',
+                  filled: true,
+                  fillColor: AppColors.snow,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.greyLight)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  final name = controller.text.trim();
-                  if (name.isNotEmpty) {
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final name = controller.text.trim();
+                    final validated = _validateDisplayName(name);
+                    if (validated != null) {
+                      setSheetState(() => errorText = validated);
+                      return;
+                    }
                     ref.read(userProfileProvider.notifier).updateDisplayName(name);
-                  }
-                  Navigator.pop(ctx);
-                },
-                child: const Text('SAVE'),
+                    Navigator.pop(ctx);
+                  },
+                  child: const Text('SAVE'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Validates display name: 2-20 chars, alphanumeric + spaces + basic punctuation only.
+  String? _validateDisplayName(String name) {
+    if (name.isEmpty) return 'Name cannot be empty';
+    if (name.length < 2) return 'Name must be at least 2 characters';
+    if (name.length > 20) return 'Name must be 20 characters or less';
+    // Allow letters, numbers, spaces, hyphens, underscores, apostrophes
+    final valid = RegExp(r"^[a-zA-Z0-9 \-_']+$");
+    if (!valid.hasMatch(name)) return 'Only letters, numbers, spaces, hyphens allowed';
+    return null;
   }
 }
 
@@ -421,13 +460,11 @@ class _JourneyButtonState extends State<_JourneyButton> with SingleTickerProvide
 
 /// Bottom navigation bar: Home, Ranks, Achievements.
 class _BottomNav extends StatelessWidget {
+  final int currentIndex;
+  const _BottomNav({required this.currentIndex});
+
   @override
   Widget build(BuildContext context) {
-    final location = GoRouterState.of(context).uri.path;
-    int currentIndex = 0;
-    if (location == '/leaderboard') currentIndex = 1;
-    if (location == '/achievements') currentIndex = 2;
-
     return BottomNavigationBar(
       currentIndex: currentIndex,
       onTap: (index) {

@@ -28,7 +28,8 @@ class _LocalSignupScreenState extends State<LocalSignupScreen> {
   void initState() {
     super.initState();
     _nameController.addListener(() {
-      final valid = _nameController.text.trim().length >= 2;
+      final name = _nameController.text.trim();
+      final valid = name.length >= 2 && name.length <= 20 && RegExp(r"^[a-zA-Z0-9 \-_']+$").hasMatch(name);
       if (valid != _isValid) setState(() => _isValid = valid);
     });
   }

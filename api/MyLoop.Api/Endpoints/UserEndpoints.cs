@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MyLoop.Api.Data;
+using MyLoop.Api.DTOs;
 using MyLoop.Api.Entities;
+using MyLoop.Api.Services;
 
 namespace MyLoop.Api.Endpoints;
 
@@ -27,12 +29,12 @@ public static class UserEndpoints
             AppDbContext db) =>
         {
             // Input validation
-            if (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Length > 30)
-                return Results.BadRequest("DisplayName must be 1-30 characters");
-            if (string.IsNullOrWhiteSpace(request.Color) || !System.Text.RegularExpressions.Regex.IsMatch(request.Color, @"^#[0-9A-Fa-f]{6}$"))
-                return Results.BadRequest("Color must be a valid hex color (e.g. #FF5733)");
-            if (request.AvatarId < 0 || request.AvatarId > 50)
-                return Results.BadRequest("AvatarId must be 0-50");
+            var nameError = ValidationService.ValidateDisplayName(request.DisplayName);
+            if (nameError != null) return Results.BadRequest(nameError);
+            var colorError = ValidationService.ValidateColor(request.Color);
+            if (colorError != null) return Results.BadRequest(colorError);
+            var avatarError = ValidationService.ValidateAvatarId(request.AvatarId);
+            if (avatarError != null) return Results.BadRequest(avatarError);
 
             var authProvider = request.AuthProvider ?? "local";
             var firebaseUid = request.FirebaseUid;
@@ -90,10 +92,25 @@ public static class UserEndpoints
             var user = await db.Users.FindAsync(id);
             if (user is null) return Results.NotFound();
 
-            // Only overwrite fields that were explicitly provided (non-null)
-            if (request.DisplayName is not null) user.DisplayName = request.DisplayName;
-            if (request.Color is not null) user.Color = request.Color;
-            if (request.AvatarId is not null) user.AvatarId = request.AvatarId.Value;
+            // Validate inputs to prevent injection and bad data
+            if (request.DisplayName is not null)
+            {
+                var nameError = ValidationService.ValidateDisplayName(request.DisplayName);
+                if (nameError != null) return Results.BadRequest(nameError);
+                user.DisplayName = request.DisplayName.Trim();
+            }
+            if (request.Color is not null)
+            {
+                var colorError = ValidationService.ValidateColor(request.Color);
+                if (colorError != null) return Results.BadRequest(colorError);
+                user.Color = request.Color;
+            }
+            if (request.AvatarId is not null)
+            {
+                var avatarError = ValidationService.ValidateAvatarId(request.AvatarId.Value);
+                if (avatarError != null) return Results.BadRequest(avatarError);
+                user.AvatarId = request.AvatarId.Value;
+            }
 
             await db.SaveChangesAsync();
             return Results.Ok(user);
@@ -136,23 +153,4 @@ public static class UserEndpoints
             });
         });
     }
-
-    /// <summary>
-    /// Request body for registering a new user after Firebase authentication.
-    /// </summary>
-    /// <param name="FirebaseUid">The unique identifier from Firebase Auth.</param>
-    /// <param name="DisplayName">The player's chosen display name.</param>
-    /// <param name="Color">Hex color string (e.g., "#FF5733") used to render the player's territory.</param>
-    /// <param name="AvatarId">Index of the selected avatar graphic.</param>
-    /// <param name="AuthProvider">Authentication provider: "google", "apple", or "local". Defaults to "local".</param>
-    public record RegisterRequest(string? FirebaseUid, string DisplayName, string Color, int AvatarId, string? AuthProvider = "local");
-
-    /// <summary>
-    /// Request body for updating a user's profile. All fields are optional —
-    /// only non-null values will be applied.
-    /// </summary>
-    /// <param name="DisplayName">New display name, or null to keep current.</param>
-    /// <param name="Color">New hex color, or null to keep current.</param>
-    /// <param name="AvatarId">New avatar index, or null to keep current.</param>
-    public record UpdateUserRequest(string? DisplayName, string? Color, int? AvatarId);
 }

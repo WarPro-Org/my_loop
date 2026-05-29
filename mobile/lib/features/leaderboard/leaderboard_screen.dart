@@ -12,6 +12,7 @@ import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
+import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
 
 /// Scoped leaderboard providers — one per tab.
@@ -297,16 +298,25 @@ class _RankingList extends StatelessWidget {
                   ),
                 ),
                 AvatarWidget(avatarId: p.avatarId, color: p.color, size: 36, hexes: p.hexCount),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
-                  child: Text(
-                    p.displayName,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: isMe ? AppColors.primary : AppColors.dark,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
+                  child: Row(
+                    children: [
+                      // Tier indicator — small colored hexagon showing rank at a glance
+                      Icon(Icons.hexagon, size: 14, color: HexTier.fromHexes(p.hexCount).color),
+                      const SizedBox(width: 5),
+                      Expanded(
+                        child: Text(
+                          p.displayName,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: isMe ? AppColors.primary : AppColors.dark,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 Text('${p.cellCount} ⬡', style: const TextStyle(fontWeight: FontWeight.w700)),
