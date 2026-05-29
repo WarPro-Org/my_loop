@@ -130,6 +130,7 @@ class _JourneyMap extends ConsumerStatefulWidget {
 class _JourneyMapState extends ConsumerState<_JourneyMap> {
   final MapController _mapController = MapController();
   Position? _initialPosition;
+  LatLng? _fallbackCenter; // Used when geolocation fails but hexes exist
   Timer? _locationTimer;
   bool _mapReady = false;
   bool _followUser = true; // User can toggle free exploration
@@ -142,6 +143,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void initState() {
     super.initState();
     _acquireLocation();
+    _loadAllOwnedHexes(); // Also load hexes independent of geolocation
     _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
   }
 
@@ -175,8 +177,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   Future<void> _loadOwnedHexes(double lat, double lng) async {
     try {
       final api = ref.read(apiServiceProvider);
-      // Load hexes in ~1km radius around user
-      final offset = 0.01; // ~1.1km
+      // Load hexes in ~2km radius around user
+      final offset = 0.02; // ~2.2km
       final cells = await api.getTerritories(
         minLat: lat - offset,
         minLng: lng - offset,
@@ -190,6 +192,39 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         setState(() {
           _ownedHexBoundaries = mine.map((c) => c.boundary).toList();
         });
+      }
+    } catch (_) {}
+  }
+
+  /// Loads ALL owned hexes without depending on geolocation.
+  /// Uses a wide bounding box covering the user's known territory.
+  Future<void> _loadAllOwnedHexes() async {
+    try {
+      final profile = ref.read(userProfileProvider);
+      if (profile.userId == null) return;
+      final api = ref.read(apiServiceProvider);
+      // Use a very wide search (whole city region)
+      final cells = await api.getTerritories(
+        minLat: 59.0,
+        minLng: 17.8,
+        maxLat: 59.5,
+        maxLng: 18.3,
+      );
+      final mine = cells.where((c) => c.ownerId == profile.userId).toList();
+      if (mounted && mine.isNotEmpty) {
+        setState(() {
+          _ownedHexBoundaries = mine.map((c) => c.boundary).toList();
+        });
+        // If geolocation failed, center map on owned hexes
+        if (_initialPosition == null && mine.isNotEmpty) {
+          final firstHex = mine.first.boundary;
+          if (firstHex.isNotEmpty) {
+            final center = firstHex[0];
+            setState(() {
+              _fallbackCenter = LatLng(center[0], center[1]);
+            });
+          }
+        }
       }
     } catch (_) {}
   }
@@ -231,8 +266,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     final profile = ref.watch(userProfileProvider);
     final userColor = Color(int.parse(profile.color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
-    // Show loading spinner while acquiring location
-    if (_initialPosition == null && journey.currentPosition == null) {
+    // Show loading spinner while acquiring location (unless we have a fallback)
+    if (_initialPosition == null && _fallbackCenter == null && journey.currentPosition == null) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -259,8 +294,10 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     LatLng center;
     if (journey.currentPosition != null) {
       center = LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude);
-    } else {
+    } else if (_initialPosition != null) {
       center = LatLng(_initialPosition!.latitude, _initialPosition!.longitude);
+    } else {
+      center = _fallbackCenter!;
     }
 
     return Stack(
@@ -274,6 +311,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               _mapReady = true;
               if (_initialPosition != null) {
                 _mapController.move(LatLng(_initialPosition!.latitude, _initialPosition!.longitude), 17);
+              } else if (_fallbackCenter != null) {
+                _mapController.move(_fallbackCenter!, 17);
               }
             },
             onPositionChanged: (pos, hasGesture) {
@@ -323,13 +362,15 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               ),
 
             // User position marker with avatar
-            if (journey.currentPosition != null || _initialPosition != null)
+            if (journey.currentPosition != null || _initialPosition != null || _fallbackCenter != null)
               MarkerLayer(
                 markers: [
                   Marker(
                     point: journey.currentPosition != null
                         ? LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude)
-                        : LatLng(_initialPosition!.latitude, _initialPosition!.longitude),
+                        : _initialPosition != null
+                            ? LatLng(_initialPosition!.latitude, _initialPosition!.longitude)
+                            : _fallbackCenter!,
                     width: 44,
                     height: 44,
                     child: Container(
