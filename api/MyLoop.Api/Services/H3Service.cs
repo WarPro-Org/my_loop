@@ -145,6 +145,35 @@ public static class H3Service
     /// <returns>Total area in square meters.</returns>
     public static double CalculateArea(int cellCount) => cellCount * CellAreaM2;
 
+    /// <summary>H3 resolution used for parent cell grouping (spatial hash buckets, ~12km zones).</summary>
+    private const int ParentResolution = 3;
+
+    /// <summary>
+    /// Gets the center latitude and longitude of an H3 cell.
+    /// Used to populate CenterLat/CenterLng for spatial viewport queries.
+    /// </summary>
+    /// <param name="cellId">The H3 cell ID as a 64-bit integer.</param>
+    /// <returns>Tuple of (latitude, longitude) in degrees.</returns>
+    public static (double Lat, double Lng) GetCellCenter(long cellId)
+    {
+        var index = (H3Index)(ulong)cellId;
+        var latLng = index.ToLatLng();
+        return (latLng.LatitudeDegrees, latLng.LongitudeDegrees);
+    }
+
+    /// <summary>
+    /// Gets the H3 parent cell ID at resolution 3 for a given resolution-10 cell.
+    /// Parent cells act as spatial hash buckets (~12km zones) for partition pruning.
+    /// </summary>
+    /// <param name="cellId">The H3 resolution-10 cell ID.</param>
+    /// <returns>The H3 resolution-3 parent cell ID.</returns>
+    public static long GetParentCellId(long cellId)
+    {
+        var index = (H3Index)(ulong)cellId;
+        var parent = index.GetParentForResolution(ParentResolution);
+        return (long)(ulong)parent;
+    }
+
     /// <summary>
     /// Computes the great-circle distance between two geographic points using the Haversine formula.
     /// Used internally to check loop closure (whether start and end points are within threshold).

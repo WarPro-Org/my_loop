@@ -25,6 +25,9 @@ public class AppDbContext : DbContext
     /// <summary>Gets the set of individual hex cells that make up the territory map.</summary>
     public DbSet<TerritoryCell> TerritoryCells => Set<TerritoryCell>();
 
+    /// <summary>Gets the set of ownership transfer events (cell ownership history).</summary>
+    public DbSet<CellTransfer> CellTransfers => Set<CellTransfer>();
+
     /// <summary>Gets the set of daily leaderboard snapshots.</summary>
     public DbSet<LeaderboardEntry> LeaderboardEntries => Set<LeaderboardEntry>();
 
@@ -46,6 +49,17 @@ public class AppDbContext : DbContext
         {
             e.HasKey(t => t.CellId);
             e.HasIndex(t => t.OwnerId); // fast lookup: "give me all cells owned by this user"
+            e.HasIndex(t => t.PreviousOwnerId); // revenge feature: "hexes stolen from me"
+            e.HasIndex(t => new { t.CenterLat, t.CenterLng }); // viewport queries (will upgrade to point+GiST via raw SQL)
+            e.HasIndex(t => t.ParentCellId); // geohash-style partition pruning by area
+        });
+
+        // CellTransfer: ownership history for revenge/recapture features
+        modelBuilder.Entity<CellTransfer>(e =>
+        {
+            e.HasIndex(t => new { t.FromUserId, t.TransferredAt }); // "hexes stolen from me, most recent first"
+            e.HasIndex(t => new { t.ToUserId, t.TransferredAt }); // "hexes I've captured"
+            e.HasIndex(t => t.CellId); // "full history of this hex"
         });
 
         // LeaderboardEntry: one entry per user per day

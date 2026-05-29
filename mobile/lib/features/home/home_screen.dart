@@ -12,6 +12,9 @@ import 'package:myloop/shared/widgets/avatar_widget.dart';
 /// Global key so child widgets (like home_tab) can open the end drawer.
 final homeScaffoldKey = GlobalKey<ScaffoldState>();
 
+/// Controls FAB visibility — set to false when modals/sheets are open.
+final homeFabVisible = ValueNotifier<bool>(true);
+
 /// The app shell scaffold providing bottom navigation and the journey FAB (home only).
 class HomeScreen extends ConsumerWidget {
   final Widget child;
@@ -27,7 +30,11 @@ class HomeScreen extends ConsumerWidget {
       body: child,
       endDrawer: const _ProfileDrawer(),
       floatingActionButton: isHome
-        ? _StartJourneyFab()
+        ? ValueListenableBuilder<bool>(
+            valueListenable: homeFabVisible,
+            builder: (_, visible, child) => visible ? child! : const SizedBox.shrink(),
+            child: _StartJourneyFab(),
+          )
         : const SizedBox.shrink(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButtonAnimator: _NoAnimationFabAnimator(),

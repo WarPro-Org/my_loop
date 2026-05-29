@@ -62,17 +62,24 @@ class HomeTab extends ConsumerStatefulWidget {
 }
 
 class _HomeTabState extends ConsumerState<HomeTab> {
-  bool _isLoading = true;
+  late bool _isLoading;
 
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(milliseconds: 600), () {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        ref.read(homeTabLoadedProvider.notifier).markLoaded();
-      }
-    });
+    // Skip shimmer if we've already loaded once this session
+    final alreadyLoaded = ref.read(homeTabLoadedProvider);
+    if (alreadyLoaded) {
+      _isLoading = false;
+    } else {
+      _isLoading = true;
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ref.read(homeTabLoadedProvider.notifier).markLoaded();
+        }
+      });
+    }
   }
 
   /// Builds the vertically scrollable dashboard layout.
@@ -356,6 +363,7 @@ class _QuickStats extends ConsumerWidget {
     final currentStreak = user.streak;
     final streakBroken = currentStreak == 0;
 
+    homeFabVisible.value = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -434,7 +442,7 @@ class _QuickStats extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ).then((_) => homeFabVisible.value = true);
   }
 
   /// Opens a bottom sheet showing hex earned/lost per day + tier scale.
@@ -454,6 +462,7 @@ class _QuickStats extends ConsumerWidget {
         ? '${tier.label} ${romans[division]}'  // next division in same tier
         : (nextTier?.label ?? 'Max');           // next tier
 
+    homeFabVisible.value = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -513,18 +522,19 @@ class _QuickStats extends ConsumerWidget {
           ),
         ),
       ),
-    );
+    ).then((_) => homeFabVisible.value = true);
   }
 
   /// Opens a bottom sheet showing rank at different geographic scopes.
   void _showRankSelector(BuildContext context, WidgetRef ref) {
     final user = ref.read(userProfileProvider);
+    homeFabVisible.value = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (context) => _RankSheet(cityRank: user.rank, userId: user.userId),
-    );
+    ).then((_) => homeFabVisible.value = true);
   }
 }
 

@@ -16,11 +16,31 @@ public class TerritoryCell
     /// <summary>The user who currently owns this cell. Updated on each claim that covers this hex.</summary>
     public Guid OwnerId { get; set; }
 
+    /// <summary>
+    /// The user who owned this cell before the current owner took it.
+    /// Null if the cell was unclaimed before. Powers "revenge recapture" — victim can
+    /// see which hexes they lost and navigate to reclaim them.
+    /// </summary>
+    public Guid? PreviousOwnerId { get; set; }
+
     /// <summary>The claim that most recently captured this cell.</summary>
     public Guid ClaimId { get; set; }
 
     /// <summary>Timestamp when this cell was last claimed/stolen.</summary>
     public DateTime ClaimedAt { get; set; }
+
+    /// <summary>Latitude of the hexagon's center point. Used for spatial viewport queries with indexed range scans.</summary>
+    public double CenterLat { get; set; }
+
+    /// <summary>Longitude of the hexagon's center point. Used for spatial viewport queries with indexed range scans.</summary>
+    public double CenterLng { get; set; }
+
+    /// <summary>
+    /// H3 parent cell ID at resolution 3 — acts as a spatial hash bucket.
+    /// Cells sharing the same parent are geographically clustered (~12km zones).
+    /// Extensibility hook for geohash-style partition pruning and city-level queries.
+    /// </summary>
+    public long ParentCellId { get; set; }
 
     /// <summary>
     /// The 6 (or 5) corner vertices of this hexagon, serialized as a JSON array of [lat, lng] pairs.

@@ -5,14 +5,18 @@
 /// and start/stop controls. Integrates with [JourneyController] via Riverpod.
 library;
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -105,32 +109,106 @@ class JourneyScreen extends ConsumerWidget {
 /// MAP LAYER
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Full-screen interactive map showing OSM tiles, the walked polyline, and
-/// a pulsing current-position marker.
-///
-/// Centers on the player's current GPS position. Falls back to Delhi
-/// coordinates when GPS is not yet available.
-class _JourneyMap extends StatelessWidget {
+/// Full-screen interactive map that immediately acquires GPS position,
+/// follows the user's live location, and auto-updates every 5 seconds.
+class _JourneyMap extends ConsumerStatefulWidget {
   final JourneyState journey;
   const _JourneyMap({required this.journey});
 
   @override
+  ConsumerState<_JourneyMap> createState() => _JourneyMapState();
+}
+
+class _JourneyMapState extends ConsumerState<_JourneyMap> {
+  final MapController _mapController = MapController();
+  Position? _initialPosition;
+  Timer? _locationTimer;
+  bool _mapReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _acquireLocation();
+    // Auto-update position every 5 seconds when not tracking
+    _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
+  }
+
+  @override
+  void dispose() {
+    _locationTimer?.cancel();
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _acquireLocation() async {
+    try {
+      final locationService = ref.read(locationServiceProvider);
+      await locationService.requestPermission();
+      final pos = await locationService.getCurrentPosition();
+      if (mounted) {
+        setState(() => _initialPosition = pos);
+        if (_mapReady) {
+          _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _refreshPosition() async {
+    // Only auto-refresh when NOT already tracking (controller handles that)
+    final journey = ref.read(journeyControllerProvider);
+    if (journey.status == JourneyStatus.tracking) return;
+    try {
+      final locationService = ref.read(locationServiceProvider);
+      final pos = await locationService.getCurrentPosition();
+      if (mounted) {
+        setState(() => _initialPosition = pos);
+        if (_mapReady) {
+          _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
+        }
+      }
+    } catch (_) {}
+  }
+
+  @override
+  void didUpdateWidget(covariant _JourneyMap old) {
+    super.didUpdateWidget(old);
+    // Follow user during tracking
+    final pos = widget.journey.currentPosition;
+    if (pos != null && _mapReady) {
+      _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Default center (will be overridden by GPS)
-    final center = journey.currentPosition != null
-        ? LatLng(
-            journey.currentPosition!.latitude,
-            journey.currentPosition!.longitude,
-          )
-        : const LatLng(28.6139, 77.2090); // Delhi fallback
+    final journey = widget.journey;
+    final profile = ref.watch(userProfileProvider);
+
+    // Determine map center
+    LatLng center;
+    if (journey.currentPosition != null) {
+      center = LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude);
+    } else if (_initialPosition != null) {
+      center = LatLng(_initialPosition!.latitude, _initialPosition!.longitude);
+    } else {
+      center = const LatLng(0, 0); // Will be updated once GPS resolves
+    }
 
     return FlutterMap(
+      mapController: _mapController,
       options: MapOptions(
         initialCenter: center,
-        initialZoom: 16,
+        initialZoom: 17,
+        onMapReady: () {
+          _mapReady = true;
+          // If we already have a position, snap to it
+          if (_initialPosition != null) {
+            _mapController.move(LatLng(_initialPosition!.latitude, _initialPosition!.longitude), 17);
+          }
+        },
       ),
       children: [
-        // OpenStreetMap tiles (free)
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.myloop.app',
@@ -141,38 +219,41 @@ class _JourneyMap extends StatelessWidget {
           PolylineLayer(
             polylines: [
               Polyline(
-                points: journey.path
-                    .map((p) => LatLng(p[0], p[1]))
-                    .toList(),
+                points: journey.path.map((p) => LatLng(p[0], p[1])).toList(),
                 color: AppColors.primary,
                 strokeWidth: 4,
               ),
             ],
           ),
 
-        // Current position marker
-        if (journey.currentPosition != null)
+        // User position marker with avatar
+        if (journey.currentPosition != null || _initialPosition != null)
           MarkerLayer(
             markers: [
               Marker(
-                point: LatLng(
-                  journey.currentPosition!.latitude,
-                  journey.currentPosition!.longitude,
-                ),
-                width: 24,
-                height: 24,
+                point: journey.currentPosition != null
+                    ? LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude)
+                    : LatLng(_initialPosition!.latitude, _initialPosition!.longitude),
+                width: 44,
+                height: 44,
                 child: Container(
                   decoration: BoxDecoration(
-                    color: AppColors.primary,
                     shape: BoxShape.circle,
                     border: Border.all(color: AppColors.white, width: 3),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.3),
-                        blurRadius: 8,
-                        spreadRadius: 2,
+                        color: AppColors.primary.withValues(alpha: 0.4),
+                        blurRadius: 10,
+                        spreadRadius: 3,
                       ),
                     ],
+                  ),
+                  child: ClipOval(
+                    child: AvatarWidget(
+                      avatarId: profile.avatarId,
+                      color: profile.color,
+                      size: 38,
+                    ),
                   ),
                 ),
               ),

@@ -45,6 +45,60 @@ using (var scope = app.Services.CreateScope())
     }
     catch { /* Column already exists or DB was just created with it */ }
 
+    // Add territory ownership history columns and table (handles existing DBs)
+    try
+    {
+        // New columns on TerritoryCells for spatial queries and revenge feature
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"PreviousOwnerId\" uuid NULL");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CenterLat\" double precision NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CenterLng\" double precision NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"ParentCellId\" bigint NOT NULL DEFAULT 0");
+
+        // CellTransfers table — ownership history for revenge recapture feature
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""CellTransfers"" (
+                ""Id"" uuid PRIMARY KEY,
+                ""CellId"" bigint NOT NULL,
+                ""FromUserId"" uuid NULL,
+                ""ToUserId"" uuid NOT NULL,
+                ""ClaimId"" uuid NOT NULL,
+                ""TransferredAt"" timestamp with time zone NOT NULL
+            )");
+
+        // Indexes for CellTransfers (idempotent with IF NOT EXISTS)
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_CellTransfers_FromUserId_TransferredAt""
+            ON ""CellTransfers"" (""FromUserId"", ""TransferredAt"" DESC)");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_CellTransfers_ToUserId_TransferredAt""
+            ON ""CellTransfers"" (""ToUserId"", ""TransferredAt"" DESC)");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_CellTransfers_CellId""
+            ON ""CellTransfers"" (""CellId"")");
+
+        // Indexes for TerritoryCells new columns
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_PreviousOwnerId""
+            ON ""TerritoryCells"" (""PreviousOwnerId"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_CenterLatLng""
+            ON ""TerritoryCells"" (""CenterLat"", ""CenterLng"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId""
+            ON ""TerritoryCells"" (""ParentCellId"")");
+
+        // True 2D spatial index using PostgreSQL native point + GiST
+        // This uses an expression index: point(CenterLng, CenterLat) — note: PG point is (x, y) = (lng, lat)
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Center_GiST""
+            ON ""TerritoryCells"" USING gist (point(""CenterLng"", ""CenterLat""))");
+    }
+    catch { /* Tables/columns already exist or DB was just created with them */ }
+
     // Seed data if the Users table is empty
     if (!db.Users.Any())
     {
@@ -122,5 +176,34 @@ app.MapGet("/", () => "MyLoop API is running");
 app.MapUserEndpoints();
 app.MapTerritoryEndpoints();
 app.MapLeaderboardEndpoints();
+
+// Auto-refresh leaderboard on startup so it's always current for today
+using (var startupScope = app.Services.CreateScope())
+{
+    var startupDb = startupScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    var today = DateOnly.FromDateTime(DateTime.UtcNow);
+    var hasToday = startupDb.LeaderboardEntries.Any(l => l.Date == today);
+    if (!hasToday)
+    {
+        // Generate today's leaderboard from user hex counts
+        var ranked = startupDb.Users
+            .OrderByDescending(u => u.HexCount)
+            .Where(u => u.HexCount > 0)
+            .ToList();
+        for (int i = 0; i < ranked.Count; i++)
+        {
+            startupDb.LeaderboardEntries.Add(new LeaderboardEntry
+            {
+                Id = Guid.NewGuid(),
+                UserId = ranked[i].Id,
+                Date = today,
+                CellCount = ranked[i].HexCount,
+                AreaM2 = ranked[i].HexCount * 15047.5,
+                Rank = i + 1,
+            });
+        }
+        startupDb.SaveChanges();
+    }
+}
 
 app.Run();

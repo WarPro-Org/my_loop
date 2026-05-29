@@ -69,15 +69,36 @@ public static class TerritoryEndpoints
 
             // Assign every hex inside the polygon to this user.
             // If a hex already has an owner, it gets overwritten (last-writer-wins territory model).
+            // Every ownership change is recorded in CellTransfers for the revenge recapture feature.
+            var transfers = new List<CellTransfer>();
+
             foreach (var (cellId, boundary) in cells)
             {
+                var center = H3Service.GetCellCenter(cellId);
+                var parentCellId = H3Service.GetParentCellId(cellId);
+
                 var existing = await db.TerritoryCells.FindAsync(cellId);
                 if (existing is not null)
                 {
+                    // Record the transfer: who lost this hex and who took it
+                    transfers.Add(new CellTransfer
+                    {
+                        Id = Guid.NewGuid(),
+                        CellId = cellId,
+                        FromUserId = existing.OwnerId == request.UserId ? null : existing.OwnerId,
+                        ToUserId = request.UserId,
+                        ClaimId = claim.Id,
+                        TransferredAt = DateTime.UtcNow,
+                    });
+
                     // Steal: overwrite the previous owner of this hex
+                    existing.PreviousOwnerId = existing.OwnerId == request.UserId ? existing.PreviousOwnerId : existing.OwnerId;
                     existing.OwnerId = request.UserId;
                     existing.ClaimId = claim.Id;
                     existing.ClaimedAt = DateTime.UtcNow;
+                    existing.CenterLat = center.Lat;
+                    existing.CenterLng = center.Lng;
+                    existing.ParentCellId = parentCellId;
                     existing.SetBoundary(boundary);
                 }
                 else
@@ -87,28 +108,47 @@ public static class TerritoryEndpoints
                     {
                         CellId = cellId,
                         OwnerId = request.UserId,
+                        PreviousOwnerId = null,
                         ClaimId = claim.Id,
                         ClaimedAt = DateTime.UtcNow,
+                        CenterLat = center.Lat,
+                        CenterLng = center.Lng,
+                        ParentCellId = parentCellId,
                     };
                     cell.SetBoundary(boundary);
                     db.TerritoryCells.Add(cell);
+
+                    // Record the initial claim (from unclaimed)
+                    transfers.Add(new CellTransfer
+                    {
+                        Id = Guid.NewGuid(),
+                        CellId = cellId,
+                        FromUserId = null,
+                        ToUserId = request.UserId,
+                        ClaimId = claim.Id,
+                        TransferredAt = DateTime.UtcNow,
+                    });
                 }
             }
 
+            db.CellTransfers.AddRange(transfers);
             db.Claims.Add(claim);
             await db.SaveChangesAsync();
 
+            var stolenCount = transfers.Count(t => t.FromUserId != null);
             return Results.Created($"/api/claims/{claim.Id}", new
             {
                 claim.Id,
                 claim.CellCount,
-                claim.AreaM2
+                claim.AreaM2,
+                StolenFromOthers = stolenCount,
             });
         });
 
         // GET /api/territories?minLat=...&minLng=...&maxLat=...&maxLng=...
         // Get territories within a map viewport. The app calls this to draw colored hexes on the map.
         // Client sends the visible bounding box and receives all cells that intersect it.
+        // Uses CenterLat/CenterLng indexed query instead of loading all cells into memory.
         group.MapGet("/territories", async (
             [FromQuery] double minLat,
             [FromQuery] double minLng,
@@ -116,28 +156,21 @@ public static class TerritoryEndpoints
             [FromQuery] double maxLng,
             AppDbContext db) =>
         {
-            // Load all cells with their owner info.
-            // NOTE: This loads everything into memory — acceptable for MVP scale,
-            // but will need spatial indexing (PostGIS) for production at scale.
-            var cells = await db.TerritoryCells
+            // Spatial viewport query using indexed CenterLat/CenterLng columns.
+            // At scale, the GiST expression index on point(CenterLng, CenterLat) will be used.
+            var filtered = await db.TerritoryCells
                 .Include(t => t.Owner)
-                .ToListAsync();
-
-            // Filter in memory: keep only cells where at least one boundary vertex
-            // falls within the requested bounding box
-            var filtered = cells
+                .Where(t => t.CenterLat >= minLat && t.CenterLat <= maxLat
+                         && t.CenterLng >= minLng && t.CenterLng <= maxLng)
                 .Select(t => new
                 {
                     t.CellId,
-                    Boundary = t.GetBoundary(),
+                    Boundary = t.BoundaryJson,
                     t.OwnerId,
                     OwnerColor = t.Owner!.Color,
                     OwnerName = t.Owner!.DisplayName
                 })
-                .Where(t => t.Boundary.Any(point =>
-                    point[0] >= minLat && point[0] <= maxLat &&
-                    point[1] >= minLng && point[1] <= maxLng))
-                .ToList();
+                .ToListAsync();
 
             return Results.Ok(filtered);
         });
@@ -151,6 +184,76 @@ public static class TerritoryEndpoints
             {
                 CellCount = cellCount,
                 AreaM2 = H3Service.CalculateArea(cellCount)
+            });
+        });
+
+        // GET /api/territories/stolen/{userId}?days=7
+        // Get hexes that were stolen FROM this user (for revenge recapture).
+        // Returns cells where someone else took territory that this user previously owned.
+        group.MapGet("/territories/stolen/{userId:guid}", async (
+            Guid userId,
+            [FromQuery] int days,
+            AppDbContext db) =>
+        {
+            var since = DateTime.UtcNow.AddDays(-Math.Clamp(days, 1, 30));
+
+            var stolen = await db.CellTransfers
+                .Where(t => t.FromUserId == userId && t.TransferredAt >= since)
+                .OrderByDescending(t => t.TransferredAt)
+                .Select(t => new
+                {
+                    t.CellId,
+                    t.ToUserId,
+                    t.TransferredAt,
+                    t.ClaimId,
+                })
+                .ToListAsync();
+
+            // Group by attacker for summary
+            var byStealer = stolen
+                .GroupBy(s => s.ToUserId)
+                .Select(g => new { UserId = g.Key, CellsStolen = g.Count() })
+                .OrderByDescending(g => g.CellsStolen)
+                .ToList();
+
+            return Results.Ok(new
+            {
+                TotalStolen = stolen.Count,
+                Since = since,
+                ByStealer = byStealer,
+                Cells = stolen.Take(200), // limit response size
+            });
+        });
+
+        // GET /api/territories/history/{cellId}
+        // Get the full ownership timeline of a specific hex cell.
+        // Shows how many times this hex has changed hands and who held it.
+        group.MapGet("/territories/history/{cellId:long}", async (long cellId, AppDbContext db) =>
+        {
+            var history = await db.CellTransfers
+                .Where(t => t.CellId == cellId)
+                .OrderByDescending(t => t.TransferredAt)
+                .Select(t => new
+                {
+                    t.FromUserId,
+                    t.ToUserId,
+                    t.TransferredAt,
+                    t.ClaimId,
+                })
+                .Take(50) // limit history depth
+                .ToListAsync();
+
+            var currentOwner = await db.TerritoryCells
+                .Where(t => t.CellId == cellId)
+                .Select(t => new { t.OwnerId, t.ClaimedAt })
+                .FirstOrDefaultAsync();
+
+            return Results.Ok(new
+            {
+                CellId = cellId,
+                CurrentOwner = currentOwner,
+                TransferCount = history.Count,
+                History = history,
             });
         });
     }
