@@ -40,6 +40,147 @@ class JourneyScreen extends ConsumerStatefulWidget {
 
 class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   final _mapKey = GlobalKey<_JourneyMapState>();
+  bool _isSubmitting = false;
+
+  /// Handles Stop & Capture — runs from the screen's stable ConsumerState context
+  /// so showDialog and ScaffoldMessenger always work correctly.
+  Future<void> _onStopCapture(JourneyState journey, JourneyController controller) async {
+    if (_isSubmitting) return;
+
+    // Capture walk stats before stopJourney() resets the state
+    final walkDistance = journey.distanceMeters;
+    final walkDuration = journey.elapsed;
+    final path = controller.stopJourney();
+
+    if (path.length < 2) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Walk a bit more to capture territory!'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final profile = ref.read(userProfileProvider);
+      if (profile.userId == null) return;
+
+      final result = await api.submitClaim(userId: profile.userId!, path: path);
+      final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+      final stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
+
+      // Parse boundaries and render captured hexes on map
+      final rawBoundaries = result['boundaries'] as List<dynamic>?;
+      if (rawBoundaries != null && rawBoundaries.isNotEmpty) {
+        final boundaries = rawBoundaries.map<List<List<double>>>((b) =>
+          (b as List<dynamic>).map<List<double>>((point) =>
+            (point as List<dynamic>).map<double>((v) => (v as num).toDouble()).toList()
+          ).toList()
+        ).toList();
+        _mapKey.currentState?.showCapturedHexes(boundaries);
+      }
+
+      // Force-reload all hexes from DB as a safety net (covers any edge cases)
+      _mapKey.currentState?.forceReloadHexes();
+
+      // Refresh user stats from DB
+      final user = await api.getUser(profile.userId!);
+      if (mounted) {
+        ref.read(userProfileProvider.notifier).updateStats(
+          hexCount: user.hexCount,
+          streak: user.streak,
+          distanceKm: user.distanceKm,
+        );
+      }
+
+      // Show celebration using this screen's stable context
+      if (mounted) {
+        _showCelebration(
+          hexCount: capturedCount,
+          stolenCount: stolenCount,
+          distance: walkDistance,
+          duration: walkDuration,
+          newStreak: user.streak,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
+            backgroundColor: AppColors.red,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  void _showCelebration({
+    required int hexCount,
+    required int stolenCount,
+    required double distance,
+    required Duration duration,
+    required int newStreak,
+  }) {
+    final distanceStr = distance >= 1000
+        ? '${(distance / 1000).toStringAsFixed(2)} km'
+        : '${distance.toStringAsFixed(0)} m';
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    final timeStr = minutes > 0 ? '${minutes}m ${seconds}s' : '${seconds}s';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🎉', style: TextStyle(fontSize: 56)),
+              const SizedBox(height: 12),
+              const Text(
+                'Territory Captured!',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 20),
+              _CelebrationStat(icon: '⬡', label: 'Hexes earned', value: '$hexCount'),
+              if (stolenCount > 0)
+                _CelebrationStat(icon: '⚔️', label: 'Stolen from others', value: '$stolenCount'),
+              _CelebrationStat(icon: '📏', label: 'Distance walked', value: distanceStr),
+              _CelebrationStat(icon: '⏱️', label: 'Walk time', value: timeStr),
+              _CelebrationStat(icon: '🔥', label: 'Current streak', value: '$newStreak day${newStreak == 1 ? '' : 's'}'),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('AWESOME!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -104,8 +245,9 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
             right: 0,
             child: _BottomControls(
               journey: journey,
-              controller: controller,
-              mapKey: _mapKey,
+              isSubmitting: _isSubmitting,
+              onStartJourney: controller.startJourney,
+              onStopCapture: () => _onStopCapture(journey, controller),
             ),
           ),
         ],
@@ -415,6 +557,17 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       _myHexBoundaries = [..._myHexBoundaries, ...boundaries];
       _myHexCount = _myHexBoundaries.length;
     });
+  }
+
+  /// Forces an immediate refresh of territory hexes from the server.
+  /// Called after claim submission so newly captured hexes appear without
+  /// waiting for the periodic 30-second timer.
+  void forceReloadHexes() {
+    if (_mapReady) {
+      _refreshViewportHexes();
+    } else if (_initialPosition != null) {
+      _loadViewportHexes(_initialPosition!.latitude, _initialPosition!.longitude);
+    }
   }
 
   @override
@@ -744,16 +897,21 @@ class _StatsBar extends StatelessWidget {
 
 /// Bottom panel with Start/Stop buttons depending on journey state.
 ///
-/// In idle state, shows "START JOURNEY" with instructions.
-/// In tracking state, shows "STOP & CAPTURE" in red to end the walk.
-class _BottomControls extends ConsumerWidget {
+/// Stateless — all async claim logic lives in _JourneyScreenState._onStopCapture.
+class _BottomControls extends StatelessWidget {
   final JourneyState journey;
-  final JourneyController controller;
-  final GlobalKey<_JourneyMapState> mapKey;
-  const _BottomControls({required this.journey, required this.controller, required this.mapKey});
+  final bool isSubmitting;
+  final VoidCallback onStartJourney;
+  final VoidCallback onStopCapture;
+  const _BottomControls({
+    required this.journey,
+    required this.isSubmitting,
+    required this.onStartJourney,
+    required this.onStopCapture,
+  });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.all(20),
@@ -769,13 +927,13 @@ class _BottomControls extends ConsumerWidget {
           ],
         ),
         child: journey.status == JourneyStatus.tracking
-            ? _buildTrackingControls(context, ref)
-            : _buildIdleControls(context),
+            ? _buildTrackingControls()
+            : _buildIdleControls(),
       ),
     );
   }
 
-  Widget _buildIdleControls(BuildContext context) {
+  Widget _buildIdleControls() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -792,13 +950,13 @@ class _BottomControls extends ConsumerWidget {
         BigButton(
           label: 'START JOURNEY',
           icon: Icons.play_arrow,
-          onPressed: () => controller.startJourney(),
+          onPressed: onStartJourney,
         ),
       ],
     );
   }
 
-  Widget _buildTrackingControls(BuildContext context, WidgetRef ref) {
+  Widget _buildTrackingControls() {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -813,141 +971,16 @@ class _BottomControls extends ConsumerWidget {
         ),
         const SizedBox(height: 16),
         BigButton(
-          label: 'STOP & CAPTURE',
-          icon: Icons.stop,
+          label: isSubmitting ? 'SUBMITTING...' : 'STOP & CAPTURE',
+          icon: isSubmitting ? Icons.hourglass_empty : Icons.stop,
           color: AppColors.red,
-          onPressed: () async {
-            // Save stats before stopJourney resets them
-            final walkDistance = journey.distanceMeters;
-            final walkDuration = journey.elapsed;
-            final path = controller.stopJourney();
-            if (path.length < 2) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Walk a bit more to capture territory!'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-              }
-              return;
-            }
-            // Submit claim to API and update user state
-            try {
-              final api = ref.read(apiServiceProvider);
-              final profile = ref.read(userProfileProvider);
-              if (profile.userId != null) {
-                final result = await api.submitClaim(userId: profile.userId!, path: path);
-                final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
-                final stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
-
-                // Show captured hex boundaries on map
-                final rawBoundaries = result['boundaries'] as List<dynamic>?;
-                if (rawBoundaries != null && rawBoundaries.isNotEmpty) {
-                  final boundaries = rawBoundaries.map<List<List<double>>>((b) =>
-                    (b as List<dynamic>).map<List<double>>((point) =>
-                      (point as List<dynamic>).map<double>((v) => (v as num).toDouble()).toList()
-                    ).toList()
-                  ).toList();
-                  mapKey.currentState?.showCapturedHexes(boundaries);
-                }
-
-                // Refresh user stats from DB
-                final user = await api.getUser(profile.userId!);
-                ref.read(userProfileProvider.notifier).updateStats(
-                  hexCount: user.hexCount,
-                  streak: user.streak,
-                  distanceKm: user.distanceKm,
-                );
-
-                // Show celebration dialog
-                if (context.mounted) {
-                  _showCelebration(
-                    context,
-                    hexCount: capturedCount,
-                    stolenCount: stolenCount,
-                    distance: walkDistance,
-                    duration: walkDuration,
-                    newStreak: user.streak,
-                  );
-                }
-              }
-            } catch (_) {
-              // Show error but stay on map
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Could not submit claim. Try again later.'),
-                    backgroundColor: Colors.orange,
-                  ),
-                );
-              }
-            }
-          },
+          onPressed: isSubmitting ? null : onStopCapture,
         ),
       ],
     );
   }
-
-  void _showCelebration(
-    BuildContext context, {
-    required int hexCount,
-    required int stolenCount,
-    required double distance,
-    required Duration duration,
-    required int newStreak,
-  }) {
-    final distanceStr = distance >= 1000
-        ? '${(distance / 1000).toStringAsFixed(2)} km'
-        : '${distance.toStringAsFixed(0)} m';
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds % 60;
-    final timeStr = minutes > 0 ? '${minutes}m ${seconds}s' : '${seconds}s';
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('🎉', style: TextStyle(fontSize: 56)),
-              const SizedBox(height: 12),
-              const Text(
-                'Territory Captured!',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 20),
-              _CelebrationStat(icon: '⬡', label: 'Hexes earned', value: '$hexCount'),
-              if (stolenCount > 0)
-                _CelebrationStat(icon: '⚔️', label: 'Stolen from others', value: '$stolenCount'),
-              _CelebrationStat(icon: '📏', label: 'Distance walked', value: distanceStr),
-              _CelebrationStat(icon: '⏱️', label: 'Walk time', value: timeStr),
-              _CelebrationStat(icon: '🔥', label: 'Current streak', value: '$newStreak day${newStreak == 1 ? '' : 's'}'),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('AWESOME!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
+
 
 class _CelebrationStat extends StatelessWidget {
   final String icon;
