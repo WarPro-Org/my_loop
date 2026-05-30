@@ -368,7 +368,8 @@ class _QuickStats extends ConsumerWidget {
   /// Opens a bottom sheet showing the daily streak history.
   void _showStreakHistory(BuildContext context, UserProfile user) {
     final currentStreak = user.streak;
-    final streakBroken = currentStreak == 0;
+    final isNewUser = user.distanceKm == 0 && currentStreak == 0;
+    final streakBroken = !isNewUser && currentStreak == 0;
 
     homeFabVisible.value = false;
     showModalBottomSheet(
@@ -387,8 +388,33 @@ class _QuickStats extends ConsumerWidget {
             children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
-              // Streak hero - normal or broken state
-              if (streakBroken) ...[
+              // Streak hero - new user / broken / active
+              if (isNewUser) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [Color(0xFF00D4AA), Color(0xFF00897B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      const _ReadyHexFace(size: 52),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Ready to Run!', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 4),
+                            Text('Start your first walk to begin a streak', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (streakBroken) ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
@@ -486,7 +512,7 @@ class _QuickStats extends ConsumerWidget {
             children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
-              // Trophy hero
+              // Trophy hero with current badge LEFT and next badge RIGHT
               Row(
                 children: [
                   HexTrophyBadge(hexes: userHexes, size: 64, showProgress: false, showLabel: false),
@@ -501,18 +527,42 @@ class _QuickStats extends ConsumerWidget {
                       ],
                     ),
                   ),
+                  // Next tier/division badge (greyed out target)
+                  if (nextTier != null || division < 4)
+                    Opacity(
+                      opacity: 0.4,
+                      child: HexTrophyBadge(hexes: nextDivThreshold, size: 48, showProgress: false, showLabel: true),
+                    ),
                 ],
               ),
               const SizedBox(height: 16),
-              // Division progress
-              ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: LinearProgressIndicator(
-                  value: HexTier.divisionProgress(userHexes),
-                  minHeight: 10,
-                  backgroundColor: tier.color.withValues(alpha: 0.15),
-                  valueColor: AlwaysStoppedAnimation(tier.color),
-                ),
+              // Division progress with labels at endpoints
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: tier.color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                    child: Text(tier.label[0], style: TextStyle(color: tier.color, fontWeight: FontWeight.w800, fontSize: 12)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: LinearProgressIndicator(
+                        value: HexTier.divisionProgress(userHexes),
+                        minHeight: 10,
+                        backgroundColor: tier.color.withValues(alpha: 0.15),
+                        valueColor: AlwaysStoppedAnimation(tier.color),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(color: (nextTier?.color ?? tier.color).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
+                    child: Text(nextTier?.label[0] ?? '★', style: TextStyle(color: nextTier?.color ?? tier.color, fontWeight: FontWeight.w800, fontSize: 12)),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
               // Full tier scale
@@ -761,14 +811,14 @@ class _TipCard extends StatelessWidget {
 /// INFO REELS — Instagram-style horizontal scrollable cards
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Horizontal carousel of engaging hook cards — designed to hook users like YouTube/TikTok.
-/// Big bold text, urgency hooks, vibrant gradients, auto-scrolling.
-class _InfoReels extends StatefulWidget {
+/// Horizontal carousel of engaging hook cards — personalized based on user state.
+/// Big bold text, urgency hooks, vibrant gradients.
+class _InfoReels extends ConsumerStatefulWidget {
   @override
-  State<_InfoReels> createState() => _InfoReelsState();
+  ConsumerState<_InfoReels> createState() => _InfoReelsState();
 }
 
-class _InfoReelsState extends State<_InfoReels> {
+class _InfoReelsState extends ConsumerState<_InfoReels> {
   final _controller = PageController(viewportFraction: 0.85);
   int _currentPage = 0;
 
@@ -778,46 +828,72 @@ class _InfoReelsState extends State<_InfoReels> {
     super.dispose();
   }
 
-  static const _reels = [
+  /// New user reels — onboarding/tutorial focused
+  static const _newUserReels = [
     _ReelData(
-      emoji: '🔥',
-      title: '5 hexes away from Bronze II!',
-      body: 'Just one short walk and you level up. Don\'t let someone steal your spot!',
-      gradient: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
-      hook: 'LEVEL UP TODAY',
+      emoji: '👋',
+      title: 'Welcome to MyLoop!',
+      body: 'Walk around your neighborhood to capture hex territory. The more you walk, the more you own!',
+      gradient: [Color(0xFF00D4AA), Color(0xFF00897B)],
+      hook: 'GET STARTED',
     ),
     _ReelData(
+      emoji: '🚶',
+      title: 'How to capture territory',
+      body: 'Start a journey, walk at least 200m, and every hex you walk through becomes yours!',
+      gradient: [Color(0xFF6C5CE7), Color(0xFF4834D4)],
+      hook: 'LEARN MORE',
+    ),
+    _ReelData(
+      emoji: '⭕',
+      title: 'Pro move: Close a loop!',
+      body: 'Walk in a closed loop and capture EVERY hex inside it — not just the ones you walk through.',
+      gradient: [Color(0xFF0984E3), Color(0xFF0652DD)],
+      hook: 'PRO TIP',
+    ),
+    _ReelData(
+      emoji: '⚔️',
+      title: 'Steal others\' territory!',
+      body: 'Walk through hexes owned by other players to steal them. They can do the same to you!',
+      gradient: [Color(0xFFE17055), Color(0xFFB33B27)],
+      hook: 'PVP MODE',
+    ),
+    _ReelData(
+      emoji: '🔥',
+      title: 'Build your streak!',
+      body: 'Walk every day to build a streak. Longer streaks unlock achievements and bragging rights.',
+      gradient: [Color(0xFFFFA502), Color(0xFFFF6348)],
+      hook: 'DAILY GOAL',
+    ),
+  ];
+
+  /// Existing user reels — competitive/engagement focused
+  static const _existingUserReels = [
+    _ReelData(
       emoji: '⚡',
-      title: 'Kai just captured 12 hexes!',
-      body: 'Top player is on the move. Walk now to protect your territory!',
+      title: 'Someone\'s near your turf!',
+      body: 'Other players are active nearby. Walk now to defend or expand your territory!',
       gradient: [Color(0xFF6C5CE7), Color(0xFF4834D4)],
       hook: 'DEFEND NOW',
     ),
     _ReelData(
       emoji: '🗺️',
-      title: '47 unclaimed hexes nearby',
-      body: 'Free territory waiting! Be the first to walk there and claim them all.',
+      title: 'Unclaimed land nearby',
+      body: 'Free territory waiting! Be the first to walk there and claim it all.',
       gradient: [Color(0xFF00D4AA), Color(0xFF00897B)],
       hook: 'GRAB FREE HEXES',
     ),
     _ReelData(
       emoji: '🏆',
-      title: 'You\'re rank #8 — catch Leo!',
-      body: 'Only 106 hexes behind! One good loop walk and you overtake them.',
+      title: 'Climb the leaderboard!',
+      body: 'One good walk could move you up several ranks. Check who\'s ahead!',
       gradient: [Color(0xFFF59E0B), Color(0xFFD97706)],
       hook: 'CLIMB RANKS',
     ),
     _ReelData(
-      emoji: '💎',
-      title: '4 divisions to Silver tier',
-      body: 'Keep your streak alive! Daily walks compound fast toward Silver.',
-      gradient: [Color(0xFF60A5FA), Color(0xFF2563EB)],
-      hook: 'TIER UP',
-    ),
-    _ReelData(
       emoji: '⚔️',
-      title: 'Ravi stole 3 of your hexes!',
-      body: 'Walk through their territory to steal them back. Revenge time!',
+      title: 'Revenge is sweet!',
+      body: 'Someone took your hexes? Walk through their territory to steal them back!',
       gradient: [Color(0xFFE17055), Color(0xFFB33B27)],
       hook: 'FIGHT BACK',
     ),
@@ -828,7 +904,21 @@ class _InfoReelsState extends State<_InfoReels> {
       gradient: [Color(0xFF0984E3), Color(0xFF0652DD)],
       hook: 'PRO TIP',
     ),
+    _ReelData(
+      emoji: '💎',
+      title: 'Tier up with consistency!',
+      body: 'Daily walks compound fast. Keep your streak alive for faster tier progress.',
+      gradient: [Color(0xFF60A5FA), Color(0xFF2563EB)],
+      hook: 'TIER UP',
+    ),
   ];
+
+  List<_ReelData> get _reels {
+    final profile = ref.watch(userProfileProvider);
+    return profile.hexCount == 0 && profile.streak == 0
+        ? _newUserReels
+        : _existingUserReels;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1060,6 +1150,102 @@ class _SadHexPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _SadHexPainter old) => wobble != old.wobble;
+}
+
+/// Animated hex face for new users — energetic, ready-to-run pose with sparkle eyes.
+class _ReadyHexFace extends StatefulWidget {
+  final double size;
+  const _ReadyHexFace({this.size = 48});
+
+  @override
+  State<_ReadyHexFace> createState() => _ReadyHexFaceState();
+}
+
+class _ReadyHexFaceState extends State<_ReadyHexFace>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) => SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: CustomPaint(painter: _ReadyHexPainter(bounce: _ctrl.value)),
+      ),
+    );
+  }
+}
+
+class _ReadyHexPainter extends CustomPainter {
+  final double bounce;
+  _ReadyHexPainter({required this.bounce});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = size.width * 0.44;
+    final bounceOffset = bounce * 3;
+    canvas.save();
+    canvas.translate(cx, cy - bounceOffset);
+
+    // Hex body (vibrant green)
+    final path = Path();
+    for (int i = 0; i < 6; i++) {
+      final a = (math.pi / 3) * i - math.pi / 2;
+      if (i == 0) {
+        path.moveTo(r * math.cos(a), r * math.sin(a));
+      } else {
+        path.lineTo(r * math.cos(a), r * math.sin(a));
+      }
+    }
+    path.close();
+    canvas.drawPath(path, Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [Color(0xFF00D4AA), Color(0xFF00897B)],
+      ).createShader(Rect.fromCircle(center: Offset.zero, radius: r)));
+
+    // Sparkle eyes (star-shaped pupils)
+    final eyeY = -r * 0.15;
+    canvas.drawCircle(Offset(-r * 0.25, eyeY), r * 0.12, Paint()..color = Colors.white);
+    canvas.drawCircle(Offset(r * 0.25, eyeY), r * 0.12, Paint()..color = Colors.white);
+    // Star pupils
+    final starPaint = Paint()..color = const Color(0xFF2D3436);
+    canvas.drawCircle(Offset(-r * 0.25, eyeY), r * 0.06, starPaint);
+    canvas.drawCircle(Offset(r * 0.25, eyeY), r * 0.06, starPaint);
+    // Sparkle dots
+    final sparkPaint = Paint()..color = Colors.white;
+    canvas.drawCircle(Offset(-r * 0.22, eyeY - r * 0.04), r * 0.025, sparkPaint);
+    canvas.drawCircle(Offset(r * 0.28, eyeY - r * 0.04), r * 0.025, sparkPaint);
+
+    // Big excited grin
+    canvas.drawArc(Rect.fromCenter(center: Offset(0, r * 0.25), width: r * 0.6, height: r * 0.4),
+      0, math.pi, false,
+      Paint()..color = Colors.white..style = PaintingStyle.fill);
+
+    // Running motion lines (left side)
+    final linePaint = Paint()..color = Colors.white.withValues(alpha: 0.7)..strokeWidth = 2..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(-r * 0.8, r * 0.1), Offset(-r * 0.55, r * 0.1), linePaint);
+    canvas.drawLine(Offset(-r * 0.75, r * 0.3), Offset(-r * 0.5, r * 0.3), linePaint);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _ReadyHexPainter old) => bounce != old.bounce;
 }
 
 /// ─────────────────────────────────────────────────────────────────────────────

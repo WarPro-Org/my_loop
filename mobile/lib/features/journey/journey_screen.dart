@@ -89,12 +89,11 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
             ),
           ),
 
-          // Top bar with stats
+          // Top bar with stats — vertical left column
           if (journey.status == JourneyStatus.tracking)
             Positioned(
               top: 0,
               left: 0,
-              right: 0,
               child: _StatsBar(journey: journey),
             ),
 
@@ -501,6 +500,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userColor: const Color(0xFF636E72), // muted grey for all others
                 currentZoom: _currentZoom,
                 isNewCapture: false,
+                isOtherPlayer: true,
               ),
 
             // User's owned hex polygons (animated overlay with glow)
@@ -672,38 +672,34 @@ class _StatsBar extends StatelessWidget {
 
     return SafeArea(
       child: Container(
-        margin: const EdgeInsets.all(16),
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        margin: const EdgeInsets.only(left: 12, top: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
         decoration: BoxDecoration(
-          color: AppColors.white,
+          color: Colors.black.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.1),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ],
+          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
         ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             _StatItem(
-              emoji: '⏱️',
+              icon: Icons.timer_outlined,
+              gradient: const [Color(0xFF00D4AA), Color(0xFF00897B)],
               value: '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
-              label: 'Time',
             ),
+            const SizedBox(height: 14),
             _StatItem(
-              emoji: '📏',
+              icon: Icons.straighten_rounded,
+              gradient: const [Color(0xFF6C5CE7), Color(0xFF4834D4)],
               value: distanceKm >= 1
-                  ? '${distanceKm.toStringAsFixed(1)} km'
-                  : '${journey.distanceMeters.toInt()} m',
-              label: 'Distance',
+                  ? '${distanceKm.toStringAsFixed(1)}k'
+                  : '${journey.distanceMeters.toInt()}m',
             ),
+            const SizedBox(height: 14),
             _StatItem(
-              emoji: '⬡',
+              icon: Icons.hexagon_outlined,
+              gradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
               value: '—',
-              label: 'Hexes',
             ),
           ],
         ),
@@ -712,29 +708,34 @@ class _StatsBar extends StatelessWidget {
   }
 }
 
-/// A single stat column (emoji + value + label) used in [_StatsBar].
+/// A single stat row (gradient icon + value) used in [_StatsBar].
 class _StatItem extends StatelessWidget {
-  final String emoji;
+  final IconData icon;
+  final List<Color> gradient;
   final String value;
-  final String label;
-  const _StatItem({required this.emoji, required this.value, required this.label});
+  const _StatItem({required this.icon, required this.gradient, required this.value});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(emoji, style: const TextStyle(fontSize: 18)),
-        const SizedBox(height: 2),
+        ShaderMask(
+          shaderCallback: (bounds) => LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: gradient,
+          ).createShader(bounds),
+          child: Icon(icon, size: 22, color: Colors.white),
+        ),
+        const SizedBox(width: 8),
         Text(
           value,
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 16),
-        ),
-        Text(
-          label,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: AppColors.grey,
-            fontSize: 11,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
           ),
         ),
       ],
