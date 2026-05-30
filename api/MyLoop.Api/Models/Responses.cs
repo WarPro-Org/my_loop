@@ -97,6 +97,9 @@ public class UserProfileResponse
     public int MaxStreak { get; set; }
     public double DistanceKm { get; set; }
     public int TopThreeFinishes { get; set; }
+    public int TopTenFinishes { get; set; }
+    public int TopHundredFinishes { get; set; }
+    public int TopThousandFinishes { get; set; }
     public bool IsStreakActive { get; set; }
     public DateTime JoinedAt { get; set; }
     public int CurrentRank { get; set; }

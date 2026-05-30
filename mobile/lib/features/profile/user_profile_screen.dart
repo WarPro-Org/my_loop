@@ -117,6 +117,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     final maxStreak = (p['maxStreak'] as num?)?.toInt() ?? 0;
     final distanceKm = (p['distanceKm'] as num?)?.toDouble() ?? 0.0;
     final topThree = (p['topThreeFinishes'] as num?)?.toInt() ?? 0;
+    final topTen = (p['topTenFinishes'] as num?)?.toInt() ?? 0;
+    final topHundred = (p['topHundredFinishes'] as num?)?.toInt() ?? 0;
+    final topThousand = (p['topThousandFinishes'] as num?)?.toInt() ?? 0;
     final isStreakActive = p['isStreakActive'] as bool? ?? false;
     final joinedAt = p['joinedAt'] as String?;
     final title = getTitleForHexes(hexCount);
@@ -243,6 +246,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           _StatRow(icon: Icons.directions_walk, label: 'Distance Walked', value: '${distanceKm.toStringAsFixed(1)} km', color: AppColors.accent),
           _StatRow(icon: Icons.whatshot, label: 'Best Streak', value: '$maxStreak days', color: AppColors.orange),
           _StatRow(icon: Icons.emoji_events, label: 'Top 3 Finishes', value: '$topThree', color: AppColors.yellow),
+          _StatRow(icon: Icons.military_tech, label: 'Top 10 Finishes', value: '$topTen', color: AppColors.orange),
+          _StatRow(icon: Icons.star, label: 'Top 100 Finishes', value: '$topHundred', color: AppColors.accent),
+          _StatRow(icon: Icons.workspace_premium, label: 'Top 1000 Finishes', value: '$topThousand', color: AppColors.primary),
 
           const SizedBox(height: 24),
           // Joined date at bottom center

@@ -1075,21 +1075,22 @@ class _HexHistoryLazy extends StatefulWidget {
 }
 
 class _HexHistoryLazyState extends State<_HexHistoryLazy> {
-  static final _allDays = [
-    {'date': 'Today', 'earned': 5, 'lost': 1},
-    {'date': 'May 26', 'earned': 8, 'lost': 0},
-    {'date': 'May 25', 'earned': 3, 'lost': 2},
-    {'date': 'May 24', 'earned': 6, 'lost': 0},
-    {'date': 'May 23', 'earned': 2, 'lost': 3},
-    {'date': 'May 22', 'earned': 4, 'lost': 1},
-    {'date': 'May 21', 'earned': 7, 'lost': 0},
-    {'date': 'May 20', 'earned': 3, 'lost': 2},
-    {'date': 'May 19', 'earned': 5, 'lost': 1},
-    {'date': 'May 18', 'earned': 9, 'lost': 0},
-  ];
-
+  List<Map<String, dynamic>> _allDays = [];
   int _visibleCount = 5;
   bool _loadingMore = false;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchHistory();
+  }
+
+  Future<void> _fetchHistory() async {
+    // TODO: Replace with real API call when hex history endpoint exists
+    // For now, show empty state for new users
+    if (mounted) setState(() { _loading = false; });
+  }
 
   void _loadMore() {
     if (_loadingMore || _visibleCount >= _allDays.length) return;
@@ -1101,6 +1102,23 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_allDays.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('⬡', style: TextStyle(fontSize: 40)),
+            const SizedBox(height: 12),
+            Text('No hex history yet', style: TextStyle(color: AppColors.grey, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Start walking to capture territory!', style: TextStyle(color: AppColors.grey, fontSize: 12)),
+          ],
+        ),
+      );
+    }
     final visible = _allDays.take(_visibleCount).toList();
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
@@ -1188,23 +1206,22 @@ class _StreakHistoryLazy extends StatefulWidget {
 }
 
 class _StreakHistoryLazyState extends State<_StreakHistoryLazy> {
-  late List<Map<String, dynamic>> _days;
+  List<Map<String, dynamic>> _days = [];
   int _visibleCount = 7;
   bool _loadingMore = false;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    // Generate streak entries matching the actual streak count
-    final now = DateTime.now();
-    _days = List.generate(widget.streakDays.clamp(1, 60), (i) {
-      final date = now.subtract(Duration(days: i));
-      final label = i == 0 ? 'Today' : i == 1 ? 'Yesterday' : '${_monthName(date.month)} ${date.day}';
-      return {'date': label, 'hexes': (3 + (date.day * 7 + i) % 8), 'distance': '${(0.4 + (i * 0.3) % 2.0).toStringAsFixed(1)} km', 'time': '${8 + (date.day + i) % 25} min'};
-    });
+    _fetchHistory();
   }
 
-  String _monthName(int m) => const ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1];
+  Future<void> _fetchHistory() async {
+    // TODO: Replace with real API call when daily walk history endpoint exists
+    // For now, show empty state for users with no walk data
+    if (mounted) setState(() { _loading = false; });
+  }
 
   void _loadMore() {
     if (_loadingMore || _visibleCount >= _days.length) return;
@@ -1221,6 +1238,23 @@ class _StreakHistoryLazyState extends State<_StreakHistoryLazy> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_days.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🚶', style: TextStyle(fontSize: 40)),
+            const SizedBox(height: 12),
+            Text('No walk history yet', style: TextStyle(color: AppColors.grey, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Complete a walk to start your streak!', style: TextStyle(color: AppColors.grey, fontSize: 12)),
+          ],
+        ),
+      );
+    }
     final visible = _days.take(_visibleCount).toList();
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {

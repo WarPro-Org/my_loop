@@ -117,14 +117,14 @@ class LoginScreen extends ConsumerWidget {
 
   /// Initiates Google OAuth sign-in flow.
   ///
-  /// On success, navigates to `/avatar` for profile setup.
-  /// On failure, shows an error snackbar.
+  /// On success, checks if user already exists in DB. If so, loads profile
+  /// and goes to /home. If not, navigates to /avatar for profile setup.
   Future<void> _signInWithGoogle(BuildContext context, WidgetRef ref) async {
     try {
       final authService = ref.read(authServiceProvider);
       final user = await authService.signInWithGoogle();
       if (user != null && context.mounted) {
-        context.go('/avatar');
+        await _routeAfterAuth(context, ref, user.uid);
       }
     } catch (e) {
       if (context.mounted) {
@@ -137,14 +137,14 @@ class LoginScreen extends ConsumerWidget {
 
   /// Initiates Apple Sign-In flow.
   ///
-  /// On success, navigates to `/avatar` for profile setup.
-  /// On failure, shows an error snackbar.
+  /// On success, checks if user already exists in DB. If so, loads profile
+  /// and goes to /home. If not, navigates to /avatar for profile setup.
   Future<void> _signInWithApple(BuildContext context, WidgetRef ref) async {
     try {
       final authService = ref.read(authServiceProvider);
       final user = await authService.signInWithApple();
       if (user != null && context.mounted) {
-        context.go('/avatar');
+        await _routeAfterAuth(context, ref, user.uid);
       }
     } catch (e) {
       if (context.mounted) {
@@ -153,6 +153,32 @@ class LoginScreen extends ConsumerWidget {
         );
       }
     }
+  }
+
+  /// After successful auth, check if user is already registered.
+  /// If yes → load profile and go home. If no → go to avatar picker.
+  Future<void> _routeAfterAuth(BuildContext context, WidgetRef ref, String firebaseUid) async {
+    try {
+      final api = ref.read(apiServiceProvider);
+      final existing = await api.getUserByUid(firebaseUid);
+      if (existing != null && context.mounted) {
+        ref.read(userProfileProvider.notifier).setFromApi(
+          userId: existing.id,
+          avatarId: existing.avatarId,
+          color: existing.color,
+          displayName: existing.displayName,
+          hexCount: existing.hexCount,
+          streak: existing.streak,
+          distanceKm: existing.distanceKm,
+        );
+        context.go('/home');
+        return;
+      }
+    } catch (_) {
+      // API unreachable or user not found — proceed to avatar picker
+    }
+    if (context.mounted) context.go('/avatar');
+  }
   }
 
   /// Dev mode: loads seeded "Robin" user from DB without Firebase auth.
