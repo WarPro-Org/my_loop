@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "274879524094",
+    "project_id": "myloop-6aefc",
+    "storage_bucket": "myloop-6aefc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:274879524094:android:cb3d999c3e7a3e6e5f49af",
+        "android_client_info": {
+          "package_name": "com.promanxi.myloop"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "274879524094-3rda7p3t80mi67nahuvq0v58tf5oh114.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCbmbBmN052kGnIDxpQbmDIB_osA0bwE4k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "274879524094-3rda7p3t80mi67nahuvq0v58tf5oh114.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "274879524094-j0tca4klgueb62lm0orbbiubvmihi5of.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.promanxi.myloop"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
