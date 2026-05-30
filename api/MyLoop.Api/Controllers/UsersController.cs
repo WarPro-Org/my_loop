@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
@@ -9,6 +10,7 @@ namespace MyLoop.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/users")]
+[Authorize]
 public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
@@ -23,6 +25,7 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Register a new user. Called once after sign-in.
     /// </summary>
+    [AllowAnonymous]
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
@@ -54,6 +57,7 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Look up a user by Firebase UID — used for login.
     /// </summary>
+    [AllowAnonymous]
     [HttpGet("by-uid/{firebaseUid}")]
     public async Task<IActionResult> GetByFirebaseUid([FromRoute] string firebaseUid)
     {

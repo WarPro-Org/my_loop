@@ -169,6 +169,24 @@ public class LeaderboardService : ILeaderboardService
 
         _db.LeaderboardEntries.AddRange(entries);
         await _db.SaveChangesAsync();
+
+        // Increment achievement counters for ranked users
+        foreach (var entry in entries)
+        {
+            var user = await _db.Users.FindAsync(entry.UserId);
+            if (user == null) continue;
+
+            if (entry.Rank <= 3) user.TopThreeFinishes++;
+            if (entry.Rank <= 10) user.TopTenFinishes++;
+            if (entry.Rank <= 100) user.TopHundredFinishes++;
+            if (entry.Rank <= 1000) user.TopThousandFinishes++;
+        }
+
+        // Purge leaderboard entries older than 7 days
+        var cutoff = today.AddDays(-GameConstants.LeaderboardRetentionDays);
+        await _db.LeaderboardEntries.Where(l => l.Date < cutoff).ExecuteDeleteAsync();
+
+        await _db.SaveChangesAsync();
         await transaction.CommitAsync();
 
         return rankings.Count;

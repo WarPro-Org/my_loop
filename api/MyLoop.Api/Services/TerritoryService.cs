@@ -86,9 +86,6 @@ public class TerritoryService : ITerritoryService
                 };
                 transfers.Add(transfer);
 
-                existing.PreviousOwnerId = existing.OwnerId == userId
-                    ? existing.PreviousOwnerId
-                    : existing.OwnerId;
                 existing.OwnerId = userId;
                 existing.ClaimId = claim.Id;
                 existing.ClaimedAt = DateTime.UtcNow;
@@ -104,7 +101,6 @@ public class TerritoryService : ITerritoryService
                 {
                     CellId = hexCell.CellId,
                     OwnerId = userId,
-                    PreviousOwnerId = null,
                     ClaimId = claim.Id,
                     ClaimedAt = DateTime.UtcNow,
                     CenterLat = center.Lat,
@@ -131,6 +127,29 @@ public class TerritoryService : ITerritoryService
 
         _db.CellTransfers.AddRange(transfers);
         _db.Claims.Add(claim);
+
+        // Update the claiming user's hex count (net cells owned after this claim)
+        var user = await _db.Users.FindAsync(userId);
+        if (user != null)
+        {
+            var newCells = transfers.Count(t => t.FromUserId == null);
+            var stolenCells = transfers.Count(t => t.FromUserId != null);
+            user.HexCount += newCells + stolenCells;
+
+            // Decrement hex counts for users who lost cells
+            var stolenByUser = transfers
+                .Where(t => t.FromUserId != null && t.FromUserId != userId)
+                .GroupBy(t => t.FromUserId!.Value);
+            foreach (var group in stolenByUser)
+            {
+                var victim = await _db.Users.FindAsync(group.Key);
+                if (victim != null)
+                {
+                    victim.HexCount = Math.Max(0, victim.HexCount - group.Count());
+                }
+            }
+        }
+
         await _db.SaveChangesAsync();
 
         var stolenCount = transfers.Count(t => t.FromUserId != null);

@@ -132,25 +132,30 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   Position? _initialPosition;
   LatLng? _fallbackCenter; // Used when geolocation fails but hexes exist
   Timer? _locationTimer;
+  Timer? _hexRefreshTimer;
   bool _mapReady = false;
   bool _followUser = true; // User can toggle free exploration
   bool _locationError = false;
   double _currentZoom = 17.0;
   bool _useSatellite = true; // Map theme: true=satellite, false=dark
   List<List<List<double>>> _capturedHexBoundaries = [];
-  List<List<List<double>>> _ownedHexBoundaries = [];
+  List<List<List<double>>> _myHexBoundaries = [];
+  Map<String, List<List<List<double>>>> _otherHexesByColor = {};
+  int _myHexCount = 0;
 
   @override
   void initState() {
     super.initState();
     _acquireLocation();
-    _loadAllOwnedHexes(); // Also load hexes independent of geolocation
+    _loadAllHexes(); // Load hexes independent of geolocation
     _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
+    _hexRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshViewportHexes());
   }
 
   @override
   void dispose() {
     _locationTimer?.cancel();
+    _hexRefreshTimer?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -165,8 +170,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         if (_mapReady && _followUser) {
           _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
         }
-        // Load owned hexes near this position
-        _loadOwnedHexes(pos.latitude, pos.longitude);
+        // Load hexes near this position
+        _loadViewportHexes(pos.latitude, pos.longitude);
       } else if (mounted) {
         setState(() => _locationError = true);
       }
@@ -175,59 +180,82 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     }
   }
 
-  Future<void> _loadOwnedHexes(double lat, double lng) async {
+  Future<void> _loadViewportHexes(double lat, double lng) async {
     try {
       final api = ref.read(apiServiceProvider);
-      // Load hexes in ~2km radius around user
-      final offset = 0.02; // ~2.2km
+      final offset = 0.02; // ~2.2km radius
       final cells = await api.getTerritories(
         minLat: lat - offset,
         minLng: lng - offset,
         maxLat: lat + offset,
         maxLng: lng + offset,
       );
-      final profile = ref.read(userProfileProvider);
-      // Filter to only user's own hexes
-      final mine = cells.where((c) => c.ownerId == profile.userId).toList();
-      if (mounted && mine.isNotEmpty) {
-        setState(() {
-          _ownedHexBoundaries = mine.map((c) => c.boundary).toList();
-        });
-      }
+      _updateHexState(cells);
     } catch (_) {}
   }
 
-  /// Loads ALL owned hexes without depending on geolocation.
-  /// Uses a wide bounding box covering the user's known territory.
-  Future<void> _loadAllOwnedHexes() async {
+  /// Loads ALL hexes in a wide area (fallback when geolocation is unavailable).
+  Future<void> _loadAllHexes() async {
     try {
       final profile = ref.read(userProfileProvider);
       if (profile.userId == null) return;
       final api = ref.read(apiServiceProvider);
-      // Use a very wide search (whole city region)
       final cells = await api.getTerritories(
         minLat: 59.0,
         minLng: 17.8,
         maxLat: 59.5,
         maxLng: 18.3,
       );
-      final mine = cells.where((c) => c.ownerId == profile.userId).toList();
-      if (mounted && mine.isNotEmpty) {
-        setState(() {
-          _ownedHexBoundaries = mine.map((c) => c.boundary).toList();
-        });
-        // If geolocation failed, center map on owned hexes
-        if (_initialPosition == null && mine.isNotEmpty) {
-          final firstHex = mine.first.boundary;
-          if (firstHex.isNotEmpty) {
-            final center = firstHex[0];
-            setState(() {
-              _fallbackCenter = LatLng(center[0], center[1]);
-            });
-          }
+      _updateHexState(cells);
+      // If geolocation failed, center map on owned hexes
+      if (_initialPosition == null && _myHexBoundaries.isNotEmpty) {
+        final firstHex = _myHexBoundaries.first;
+        if (firstHex.isNotEmpty) {
+          setState(() {
+            _fallbackCenter = LatLng(firstHex[0][0], firstHex[0][1]);
+          });
         }
       }
     } catch (_) {}
+  }
+
+  /// Refreshes hexes based on current viewport bounds.
+  Future<void> _refreshViewportHexes() async {
+    if (!_mapReady) return;
+    final bounds = _mapController.camera.visibleBounds;
+    try {
+      final api = ref.read(apiServiceProvider);
+      final cells = await api.getTerritories(
+        minLat: bounds.south,
+        minLng: bounds.west,
+        maxLat: bounds.north,
+        maxLng: bounds.east,
+      );
+      _updateHexState(cells);
+    } catch (_) {}
+  }
+
+  /// Splits cells into user's own hexes and others grouped by color.
+  void _updateHexState(List<dynamic> cells) {
+    final profile = ref.read(userProfileProvider);
+    final mine = <List<List<double>>>[];
+    final others = <String, List<List<List<double>>>>{};
+
+    for (final c in cells) {
+      if (c.ownerId == profile.userId) {
+        mine.add(c.boundary);
+      } else {
+        others.putIfAbsent(c.ownerColor, () => []).add(c.boundary);
+      }
+    }
+
+    if (mounted) {
+      setState(() {
+        _myHexBoundaries = mine;
+        _myHexCount = mine.length;
+        _otherHexesByColor = others;
+      });
+    }
   }
 
   Future<void> _refreshPosition() async {
@@ -258,7 +286,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
 
   /// Called after claim submission — renders captured hexes on map
   void showCapturedHexes(List<List<List<double>>> boundaries) {
-    setState(() => _capturedHexBoundaries = boundaries);
+    setState(() {
+      _capturedHexBoundaries = boundaries;
+      // Immediately add to user's hex count + boundaries
+      _myHexBoundaries = [..._myHexBoundaries, ...boundaries];
+      _myHexCount = _myHexBoundaries.length;
+    });
   }
 
   @override
@@ -343,10 +376,21 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userAgentPackageName: 'com.myloop.app',
               ),
 
-            // User's owned hex polygons (animated overlay)
-            if (_ownedHexBoundaries.isNotEmpty)
+            // Other players' hex polygons (semi-transparent, their color)
+            ..._otherHexesByColor.entries.map((entry) {
+              final color = Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+              return AnimatedHexOverlay(
+                hexBoundaries: entry.value,
+                userColor: color,
+                currentZoom: _currentZoom,
+                isNewCapture: false,
+              );
+            }),
+
+            // User's owned hex polygons (animated overlay with glow)
+            if (_myHexBoundaries.isNotEmpty)
               AnimatedHexOverlay(
-                hexBoundaries: _ownedHexBoundaries,
+                hexBoundaries: _myHexBoundaries,
                 userColor: userColor,
                 currentZoom: _currentZoom,
               ),
@@ -459,6 +503,31 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 color: AppColors.dark,
                 size: 20,
               ),
+            ),
+          ),
+        ),
+
+        // Hex count badge (top-right, below theme toggle)
+        Positioned(
+          top: MediaQuery.of(context).padding.top + 60,
+          right: 16,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.hexagon, color: userColor, size: 18),
+                const SizedBox(width: 4),
+                Text(
+                  '$_myHexCount',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark),
+                ),
+              ],
             ),
           ),
         ),

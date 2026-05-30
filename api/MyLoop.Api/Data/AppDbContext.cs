@@ -49,7 +49,6 @@ public class AppDbContext : DbContext
         {
             e.HasKey(t => t.CellId);
             e.HasIndex(t => t.OwnerId); // fast lookup: "give me all cells owned by this user"
-            e.HasIndex(t => t.PreviousOwnerId); // revenge feature: "hexes stolen from me"
             e.HasIndex(t => new { t.CenterLat, t.CenterLng }); // viewport queries (will upgrade to point+GiST via raw SQL)
             e.HasIndex(t => t.ParentCellId); // geohash-style partition pruning by area
         });

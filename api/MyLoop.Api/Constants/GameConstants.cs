@@ -25,9 +25,11 @@ public static class GameConstants
 
     // --- Leaderboard ---
     public const int LeaderboardTopCount = 20;
+    public const int LeaderboardRetentionDays = 7;
     public const int MaxHistoryDepth = 50;
     public const int MaxStolenCellsResponse = 200;
     public const int MaxStolenDaysLookback = 30;
+    public const int RevengeDaysWindow = 7;
 
     // --- Validation ---
     public const int MinDisplayNameLength = 2;

@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MyLoop.Api.Services;
 
@@ -8,6 +9,7 @@ namespace MyLoop.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/leaderboard")]
+[Authorize]
 public class LeaderboardController : ControllerBase
 {
     private readonly ILeaderboardService _leaderboardService;

@@ -37,6 +37,15 @@ public class User
     /// <summary>Number of times this user finished in the top 3 of a daily leaderboard.</summary>
     public int TopThreeFinishes { get; set; }
 
+    /// <summary>Number of times this user finished in the top 10 of a daily leaderboard.</summary>
+    public int TopTenFinishes { get; set; }
+
+    /// <summary>Number of times this user finished in the top 100 of a daily leaderboard.</summary>
+    public int TopHundredFinishes { get; set; }
+
+    /// <summary>Number of times this user finished in the top 1000 of a daily leaderboard.</summary>
+    public int TopThousandFinishes { get; set; }
+
     /// <summary>Whether the user is currently on an active streak today.</summary>
     public bool IsStreakActive { get; set; } = true;
 

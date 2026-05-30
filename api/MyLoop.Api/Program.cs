@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
@@ -21,6 +23,22 @@ builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 // --- Controllers ---
 builder.Services.AddControllers();
 
+// --- Firebase JWT Authentication ---
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.Authority = "https://securetoken.google.com/myloop-6aefc";
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = "https://securetoken.google.com/myloop-6aefc",
+            ValidateAudience = true,
+            ValidAudience = "myloop-6aefc",
+            ValidateLifetime = true,
+        };
+    });
+builder.Services.AddAuthorization();
+
 // --- CORS ---
 builder.Services.AddCors(options =>
 {
@@ -35,6 +53,8 @@ builder.Services.AddCors(options =>
 var app = builder.Build();
 
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 // Ensure the database schema exists on startup.
@@ -49,21 +69,29 @@ using (var scope = app.Services.CreateScope())
     {
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AuthProvider\" text NOT NULL DEFAULT 'local'");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopTenFinishes\" integer NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopHundredFinishes\" integer NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopThousandFinishes\" integer NOT NULL DEFAULT 0");
     }
     catch { /* Column already exists or DB was just created with it */ }
 
     // Add territory ownership history columns and table (handles existing DBs)
     try
     {
-        // New columns on TerritoryCells for spatial queries and revenge feature
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"PreviousOwnerId\" uuid NULL");
+        // New columns on TerritoryCells for spatial queries
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CenterLat\" double precision NOT NULL DEFAULT 0");
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CenterLng\" double precision NOT NULL DEFAULT 0");
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"ParentCellId\" bigint NOT NULL DEFAULT 0");
+
+        // Drop PreviousOwnerId if it exists (replaced by CellTransfers table)
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" DROP COLUMN IF EXISTS \"PreviousOwnerId\"");
 
         // CellTransfers table — ownership history for revenge recapture feature
         db.Database.ExecuteSqlRaw(@"
@@ -87,10 +115,7 @@ using (var scope = app.Services.CreateScope())
             CREATE INDEX IF NOT EXISTS ""IX_CellTransfers_CellId""
             ON ""CellTransfers"" (""CellId"")");
 
-        // Indexes for TerritoryCells new columns
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_PreviousOwnerId""
-            ON ""TerritoryCells"" (""PreviousOwnerId"")");
+        // Indexes for TerritoryCells columns
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_CenterLatLng""
             ON ""TerritoryCells"" (""CenterLat"", ""CenterLng"")");

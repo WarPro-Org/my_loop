@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MyLoop.Api.Services;
 
@@ -8,6 +9,7 @@ namespace MyLoop.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/territories")]
+[Authorize]
 public class TerritoryController : ControllerBase
 {
     private readonly ITerritoryService _territoryService;

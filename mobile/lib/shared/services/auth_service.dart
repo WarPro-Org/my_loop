@@ -78,7 +78,9 @@ class AuthService {
     // Lazy-initialize the Google Sign-In SDK. Calling initialize() more than
     // once is a no-op in most versions, but we guard it explicitly.
     if (!_googleInitialized) {
-      await GoogleSignIn.instance.initialize();
+      await GoogleSignIn.instance.initialize(
+        serverClientId: '274879524094-3rda7p3t80mi67nahuvq0v58tf5oh114.apps.googleusercontent.com',
+      );
       _googleInitialized = true;
     }
 

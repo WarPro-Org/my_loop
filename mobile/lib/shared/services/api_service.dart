@@ -6,6 +6,7 @@
 library;
 
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
@@ -31,7 +32,18 @@ class ApiService {
           baseUrl: baseUrl ?? _defaultApiUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
-        ));
+        )) {
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final token = await user.getIdToken();
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        handler.next(options);
+      },
+    ));
+  }
 
   /// Registers a new user account on the backend.
   ///
