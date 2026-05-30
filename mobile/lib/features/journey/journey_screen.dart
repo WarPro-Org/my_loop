@@ -302,9 +302,10 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   double _currentZoom = 17.0;
   bool _useSatellite = true; // Map theme: true=satellite, false=dark
   List<List<List<double>>> _capturedHexBoundaries = [];
-  List<List<List<double>>> _myHexBoundaries = [];
+  List<List<List<double>>> _userOwnHexBoundaries = []; // ALL user hexes from /user/{id} endpoint
   List<List<List<double>>> _otherHexBoundaries = [];
   List<TerritoryCell> _allCells = []; // Keep full cell data for tap detection
+  Set<int> _userOwnCellIds = {}; // Track cell IDs loaded via getUserTerritories
 
   @override
   void initState() {
@@ -352,18 +353,16 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     try {
       final api = ref.read(apiServiceProvider);
       final cells = await api.getUserTerritories(profile.userId!);
-      if (mounted && cells.isNotEmpty) {
-        final mine = cells.map((c) => c.boundary).toList();
-        // Merge with any already-loaded other-player hexes; re-render immediately
+      if (mounted) {
         setState(() {
-          _myHexBoundaries = mine;
-          _allCells = [..._allCells.where((c) => c.ownerId != profile.userId), ...cells];
+          _userOwnHexBoundaries = cells.map((c) => c.boundary).toList();
+          _userOwnCellIds = cells.map((c) => c.cellId).toSet();
+          // Merge into _allCells: keep others, replace user's
+          _allCells = [
+            ..._allCells.where((c) => c.ownerId != profile.userId),
+            ...cells,
+          ];
         });
-        // If map is ready, fly to user's hexes center so they can see them
-        if (_mapReady && cells.isNotEmpty) {
-          final first = cells.first.boundary.first;
-          _mapController.move(LatLng(first[0], first[1]), _mapController.camera.zoom);
-        }
       }
     } catch (_) {}
   }
@@ -417,26 +416,29 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     } catch (_) {}
   }
 
-  /// Splits cells into user's own hexes and others (single uniform color).
+  /// Splits cells into user's own hexes and others.
+  /// Does NOT overwrite _userOwnHexBoundaries (the authoritative full list).
+  /// Only updates _otherHexBoundaries and merges new user cells into _allCells.
   void _updateHexState(List<dynamic> cells) {
     final profile = ref.read(userProfileProvider);
-    final mine = <List<List<double>>>[];
     final otherBounds = <List<List<double>>>[];
-    final allCells = <TerritoryCell>[];
+    final allCells = <TerritoryCell>[..._allCells.where((c) => c.ownerId == profile.userId)];
 
     for (final c in cells) {
       final cell = c as TerritoryCell;
-      allCells.add(cell);
       if (cell.ownerId == profile.userId) {
-        mine.add(cell.boundary);
+        // Only add to allCells if not already tracked
+        if (!_userOwnCellIds.contains(cell.cellId)) {
+          allCells.add(cell);
+        }
       } else {
         otherBounds.add(cell.boundary);
+        allCells.add(cell);
       }
     }
 
     if (mounted) {
       setState(() {
-        _myHexBoundaries = mine;
         _otherHexBoundaries = otherBounds;
         _allCells = allCells;
       });
@@ -591,7 +593,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     setState(() {
       _capturedHexBoundaries = boundaries;
       // Immediately add to user's hex polygon boundaries for rendering
-      _myHexBoundaries = [..._myHexBoundaries, ...boundaries];
+      _userOwnHexBoundaries = [..._userOwnHexBoundaries, ...boundaries];
     });
   }
 
@@ -700,9 +702,9 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               ),
 
             // User's owned hex polygons (animated overlay with glow)
-            if (_myHexBoundaries.isNotEmpty)
+            if (_userOwnHexBoundaries.isNotEmpty)
               AnimatedHexOverlay(
-                hexBoundaries: _myHexBoundaries,
+                hexBoundaries: _userOwnHexBoundaries,
                 userColor: userColor,
                 currentZoom: _currentZoom,
               ),

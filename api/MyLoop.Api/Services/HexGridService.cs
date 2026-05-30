@@ -101,7 +101,10 @@ public class HexGridService : IHexGridService
 
         foreach (var point in path)
         {
-            var index = H3Index.FromLatLng(new LatLng(point[0], point[1]), GameConstants.H3Resolution);
+            // H3's LatLng expects radians, not degrees
+            var latRad = point[0] * Math.PI / 180.0;
+            var lngRad = point[1] * Math.PI / 180.0;
+            var index = H3Index.FromLatLng(new LatLng(latRad, lngRad), GameConstants.H3Resolution);
             var cellId = (long)(ulong)index;
 
             if (!cells.ContainsKey(cellId))
