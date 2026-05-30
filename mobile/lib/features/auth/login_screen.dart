@@ -179,7 +179,6 @@ class LoginScreen extends ConsumerWidget {
     }
     if (context.mounted) context.go('/avatar');
   }
-  }
 
   /// Dev mode: loads seeded "Robin" user from DB without Firebase auth.
   Future<void> _devSkip(BuildContext context, WidgetRef ref) async {
