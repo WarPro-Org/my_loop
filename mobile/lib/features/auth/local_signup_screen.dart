@@ -43,11 +43,20 @@ class _LocalSignupScreenState extends State<LocalSignupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: SingleChildScrollView(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: MediaQuery.of(context).size.height -
+                    MediaQuery.of(context).padding.top -
+                    MediaQuery.of(context).padding.bottom,
+              ),
+              child: IntrinsicHeight(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 16),
               // Back button
@@ -116,6 +125,9 @@ class _LocalSignupScreenState extends State<LocalSignupScreen> {
               ),
               const SizedBox(height: 24),
             ],
+          ),
+        ),
+          ),
           ),
         ),
       ),

@@ -33,12 +33,18 @@ class AvatarPickerScreen extends ConsumerStatefulWidget {
 class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
   int _selectedAvatar = 0;
   int _selectedColor = 0;
-  late String _name;
+  late final TextEditingController _nameController;
 
   @override
   void initState() {
     super.initState();
-    _name = widget.prefillName ?? '';
+    _nameController = TextEditingController(text: widget.prefillName ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
   }
 
   /// Builds the scrollable form layout with name, avatar grid, colors, and CTA.
@@ -48,36 +54,39 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 32),
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 32),
 
-              // Title
-              Text(
-                'Create your player! 🎮',
-                style: Theme.of(context).textTheme.headlineMedium,
-              ),
-              const SizedBox(height: 32),
+                    // Title
+                    Text(
+                      'Create your player! 🎮',
+                      style: Theme.of(context).textTheme.headlineMedium,
+                    ),
+                    const SizedBox(height: 32),
 
-              // Name input
-              TextField(
-                controller: TextEditingController(text: _name),
-                onChanged: (v) => setState(() => _name = v),
-                decoration: InputDecoration(
-                  hintText: 'Your display name',
-                  prefixIcon: const Icon(Icons.person),
-                  filled: true,
-                  fillColor: AppColors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: AppColors.greyLight),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: const BorderSide(color: AppColors.greyLight, width: 2),
-                  ),
-                  focusedBorder: OutlineInputBorder(
+                    // Name input
+                    TextField(
+                      controller: _nameController,
+                      onChanged: (_) => setState(() {}),
+                      decoration: InputDecoration(
+                        hintText: 'Your display name',
+                        prefixIcon: const Icon(Icons.person),
+                        filled: true,
+                        fillColor: AppColors.white,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: AppColors.greyLight),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: const BorderSide(color: AppColors.greyLight, width: 2),
+                        ),
+                        focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(color: AppColors.primary, width: 2),
                   ),
@@ -153,16 +162,19 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
                 ),
               ),
 
-              const Spacer(),
+              const SizedBox(height: 32),
 
               // Continue button
               BigButton(
                 label: "LET'S GO! 🚀",
-                onPressed: _name.trim().isEmpty
-                    ? () {} // disabled look handled by opacity below
+                onPressed: _nameController.text.trim().isEmpty
+                    ? () {}
                     : () => _registerAndContinue(),
               ),
               const SizedBox(height: 24),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -171,7 +183,7 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
   }
 
   Future<void> _registerAndContinue() async {
-    final name = _name.trim();
+    final name = _nameController.text.trim();
     final color = playerColors[_selectedColor];
     final authService = ref.read(authServiceProvider);
     final api = ref.read(apiServiceProvider);
