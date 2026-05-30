@@ -86,14 +86,15 @@ class LoginScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
 
-              // Dev skip button — loads seeded user from DB for testing
-              TextButton(
-                onPressed: () => _devSkip(context, ref),
-                child: Text(
-                  'SKIP (DEV MODE)',
-                  style: TextStyle(color: AppColors.grey, fontSize: 12),
+              // Dev skip button — only visible in debug mode
+              if (const bool.fromEnvironment('dart.vm.product') == false)
+                TextButton(
+                  onPressed: () => _devSkip(context, ref),
+                  child: Text(
+                    'SKIP (DEV MODE)',
+                    style: TextStyle(color: AppColors.grey, fontSize: 12),
+                  ),
                 ),
-              ),
 
               const Spacer(flex: 1),
 

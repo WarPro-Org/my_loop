@@ -237,11 +237,18 @@ class _HomeTabState extends ConsumerState<HomeTab> {
 
 /// A gradient card showing today's challenge with a progress bar.
 ///
-/// Currently displays static mock data (2/5 hexes). Will be powered by
-/// a daily challenge system from the backend.
-class _DailyChallengeCard extends StatelessWidget {
+/// Shows the user's actual hex count toward a daily target of 5.
+class _DailyChallengeCard extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider);
+    final todayHexes = profile.hexCount; // TODO: replace with today-only count from API
+    const dailyTarget = 5;
+    final progress = (todayHexes / dailyTarget).clamp(0.0, 1.0);
+    final label = todayHexes == 0
+        ? 'Start your first walk!'
+        : '$todayHexes / $dailyTarget hexes captured';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -280,9 +287,9 @@ class _DailyChallengeCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Capture 5 new hexagons today!',
-            style: TextStyle(
+          Text(
+            todayHexes == 0 ? 'Capture 5 hexagons today!' : 'Capture 5 new hexagons today!',
+            style: const TextStyle(
               color: AppColors.white,
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -293,16 +300,16 @@ class _DailyChallengeCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
-              value: 0.4, // 2/5 done
+              value: progress,
               minHeight: 10,
               backgroundColor: AppColors.white.withValues(alpha: 0.3),
               valueColor: const AlwaysStoppedAnimation(AppColors.white),
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            '2 / 5 hexes captured',
-            style: TextStyle(
+          Text(
+            label,
+            style: const TextStyle(
               color: AppColors.white,
               fontSize: 12,
               fontWeight: FontWeight.w600,

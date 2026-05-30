@@ -51,7 +51,19 @@ public class UserService : IUserService
         };
 
         _db.Users.Add(user);
-        await _db.SaveChangesAsync();
+        try
+        {
+            await _db.SaveChangesAsync();
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException)
+        {
+            // Race condition: another request registered this UID between our check and insert.
+            // Detach the failed entity and return the existing one.
+            _db.Entry(user).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
+            var raced = await _db.Users.FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid);
+            if (raced != null) return raced;
+            throw; // Truly unexpected — rethrow
+        }
         return user;
     }
 

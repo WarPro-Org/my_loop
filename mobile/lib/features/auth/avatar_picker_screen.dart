@@ -228,6 +228,25 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
 
       if (mounted) context.go('/home');
     } catch (e) {
+      // If registration failed, try to look up existing user by UID
+      // (handles race conditions and re-registration)
+      try {
+        final existing = await api.getUserByUid(firebaseUid);
+        if (existing != null) {
+          ref.read(userProfileProvider.notifier).setFromApi(
+            userId: existing.id,
+            avatarId: existing.avatarId,
+            color: existing.color,
+            displayName: existing.displayName,
+            hexCount: existing.hexCount,
+            streak: existing.streak,
+            distanceKm: existing.distanceKm,
+          );
+          if (mounted) context.go('/home');
+          return;
+        }
+      } catch (_) {}
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Registration failed: $e'), backgroundColor: AppColors.red),
