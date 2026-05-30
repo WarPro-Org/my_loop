@@ -4,10 +4,12 @@
 /// bouncy animation at ALL zoom levels, and motion graphics effects.
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:myloop/shared/models/territory_cell.dart';
 
 /// Hex sizing constants — match H3 resolution 11 geometry.
 class HexConstants {
@@ -387,6 +389,178 @@ class _HexDot extends StatelessWidget {
             color: Colors.white.withValues(alpha: 0.95),
           ),
         ),
+      ],
+    );
+  }
+}
+
+/// Cooldown shield overlay — renders a pulsing shield/timer on hexes under cooldown.
+///
+/// Shows a translucent shield layer over protected hexes with a countdown timer
+/// badge at the center of each hex cluster. Animates with a slow pulse to indicate
+/// the hex is "locked" and cannot be stolen.
+class CooldownHexOverlay extends StatefulWidget {
+  final List<TerritoryCell> cooldownCells;
+  final double currentZoom;
+
+  const CooldownHexOverlay({
+    super.key,
+    required this.cooldownCells,
+    required this.currentZoom,
+  });
+
+  @override
+  State<CooldownHexOverlay> createState() => _CooldownHexOverlayState();
+}
+
+class _CooldownHexOverlayState extends State<CooldownHexOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _shieldPulse;
+  late Animation<double> _pulseAnim;
+  Timer? _countdownTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _shieldPulse = AnimationController(
+      duration: const Duration(milliseconds: 2000),
+      vsync: this,
+    )..repeat(reverse: true);
+    _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _shieldPulse, curve: Curves.easeInOut),
+    );
+    // Refresh countdown text every second
+    _countdownTimer = Timer.periodic(
+      const Duration(seconds: 1),
+      (_) { if (mounted) setState(() {}); },
+    );
+  }
+
+  @override
+  void dispose() {
+    _shieldPulse.dispose();
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  String _formatDuration(Duration d) {
+    if (d.inHours > 0) {
+      return '${d.inHours}h ${d.inMinutes.remainder(60)}m';
+    } else if (d.inMinutes > 0) {
+      return '${d.inMinutes}m ${d.inSeconds.remainder(60)}s';
+    }
+    return '${d.inSeconds}s';
+  }
+
+  LatLng _computeCenter(List<List<double>> boundary) {
+    double latSum = 0, lngSum = 0;
+    for (final p in boundary) {
+      latSum += p[0];
+      lngSum += p[1];
+    }
+    return LatLng(latSum / boundary.length, lngSum / boundary.length);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final activeCells = widget.cooldownCells.where((c) => c.isOnCooldown).toList();
+    if (activeCells.isEmpty) return const SizedBox.shrink();
+
+    return AnimatedBuilder(
+      animation: _pulseAnim,
+      builder: (context, _) {
+        final pulse = _pulseAnim.value;
+        final zoom = widget.currentZoom;
+
+        if (zoom < 14) {
+          // At far zoom, show shield badge at cluster center
+          return _buildShieldBadges(activeCells, pulse);
+        }
+        // At close zoom, render shield polygons + countdown markers
+        return _buildShieldPolygons(activeCells, pulse);
+      },
+    );
+  }
+
+  /// Far/medium zoom: shield icon badges at hex centers
+  Widget _buildShieldBadges(List<TerritoryCell> cells, double pulse) {
+    final markers = <Marker>[];
+    for (final cell in cells) {
+      final center = _computeCenter(cell.boundary);
+      markers.add(Marker(
+        point: center,
+        width: 32,
+        height: 32,
+        child: Icon(
+          Icons.shield,
+          size: 24 + pulse * 4,
+          color: Colors.cyan.withValues(alpha: 0.6 + pulse * 0.3),
+        ),
+      ));
+    }
+    return MarkerLayer(markers: markers);
+  }
+
+  /// Close zoom: translucent shield layer + countdown timer on each hex
+  Widget _buildShieldPolygons(List<TerritoryCell> cells, double pulse) {
+    final shieldPolygons = <Polygon>[];
+    final markers = <Marker>[];
+
+    for (final cell in cells) {
+      final points = cell.boundary.map((p) => LatLng(p[0], p[1])).toList();
+      final center = _computeCenter(cell.boundary);
+      final remaining = cell.cooldownRemaining;
+
+      // Shield polygon overlay — icy blue translucent with pulsing border
+      shieldPolygons.add(Polygon(
+        points: points,
+        color: Colors.cyan.withValues(alpha: 0.08 + pulse * 0.06),
+        borderColor: Colors.cyan.withValues(alpha: 0.5 + pulse * 0.3),
+        borderStrokeWidth: 2.0 + pulse,
+      ));
+
+      // Countdown badge at hex center
+      markers.add(Marker(
+        point: center,
+        width: 52,
+        height: 28,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.7),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: Colors.cyan.withValues(alpha: 0.6 + pulse * 0.3),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.shield,
+                size: 12,
+                color: Colors.cyan.withValues(alpha: 0.8 + pulse * 0.2),
+              ),
+              const SizedBox(width: 2),
+              Text(
+                _formatDuration(remaining),
+                style: TextStyle(
+                  color: Colors.cyan.withValues(alpha: 0.9),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ));
+    }
+
+    return Stack(
+      children: [
+        PolygonLayer(polygons: shieldPolygons),
+        MarkerLayer(markers: markers),
       ],
     );
   }

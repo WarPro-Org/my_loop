@@ -309,6 +309,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   List<List<List<double>>> _userOwnHexBoundaries = []; // ALL user hexes from /user/{id} endpoint
   Map<String, List<List<List<double>>>> _otherHexesByColor = {}; // Other players grouped by ownerColor
   List<TerritoryCell> _allCells = []; // Keep full cell data for tap detection
+  List<TerritoryCell> _cooldownCells = []; // Cells with active cooldown for shield overlay
   Set<int> _userOwnCellIds = {}; // Track cell IDs loaded via getUserTerritories
 
   @override
@@ -427,6 +428,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     final profile = ref.read(userProfileProvider);
     final otherByColor = <String, List<List<List<double>>>>{};
     final allCells = <TerritoryCell>[..._allCells.where((c) => c.ownerId == profile.userId)];
+    final cooldownCells = <TerritoryCell>[];
 
     for (final c in cells) {
       final cell = c as TerritoryCell;
@@ -439,11 +441,16 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         otherByColor.putIfAbsent(cell.ownerColor, () => []).add(cell.boundary);
         allCells.add(cell);
       }
+      // Collect cells with active cooldown (any owner)
+      if (cell.isOnCooldown) {
+        cooldownCells.add(cell);
+      }
     }
 
     if (mounted) {
       setState(() {
         _otherHexesByColor = otherByColor;
+        _cooldownCells = cooldownCells;
         _allCells = allCells;
       });
     }
@@ -719,6 +726,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userColor: userColor,
                 currentZoom: _currentZoom,
                 isNewCapture: true,
+              ),
+
+            // Cooldown shield overlay — shows countdown on protected hexes
+            if (_cooldownCells.isNotEmpty)
+              CooldownHexOverlay(
+                cooldownCells: _cooldownCells,
+                currentZoom: _currentZoom,
               ),
 
             // Draw the walked path
