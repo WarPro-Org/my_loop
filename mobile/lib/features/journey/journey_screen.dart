@@ -18,6 +18,8 @@ import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
+import 'package:myloop/shared/models/territory_cell.dart';
+import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
@@ -140,7 +142,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   bool _useSatellite = true; // Map theme: true=satellite, false=dark
   List<List<List<double>>> _capturedHexBoundaries = [];
   List<List<List<double>>> _myHexBoundaries = [];
-  Map<String, List<List<List<double>>>> _otherHexesByColor = {};
+  List<List<List<double>>> _otherHexBoundaries = [];
+  List<TerritoryCell> _allCells = []; // Keep full cell data for tap detection
   int _myHexCount = 0;
 
   @override
@@ -235,17 +238,20 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     } catch (_) {}
   }
 
-  /// Splits cells into user's own hexes and others grouped by color.
+  /// Splits cells into user's own hexes and others (single uniform color).
   void _updateHexState(List<dynamic> cells) {
     final profile = ref.read(userProfileProvider);
     final mine = <List<List<double>>>[];
-    final others = <String, List<List<List<double>>>>{};
+    final otherBounds = <List<List<double>>>[];
+    final allCells = <TerritoryCell>[];
 
     for (final c in cells) {
-      if (c.ownerId == profile.userId) {
-        mine.add(c.boundary);
+      final cell = c as TerritoryCell;
+      allCells.add(cell);
+      if (cell.ownerId == profile.userId) {
+        mine.add(cell.boundary);
       } else {
-        others.putIfAbsent(c.ownerColor, () => []).add(c.boundary);
+        otherBounds.add(cell.boundary);
       }
     }
 
@@ -253,9 +259,120 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       setState(() {
         _myHexBoundaries = mine;
         _myHexCount = mine.length;
-        _otherHexesByColor = others;
+        _otherHexBoundaries = otherBounds;
+        _allCells = allCells;
       });
     }
+  }
+
+  /// Handles map tap — checks if user tapped inside a hex polygon.
+  void _onMapTap(LatLng latLng) {
+    final tappedCell = _findTappedCell(latLng.latitude, latLng.longitude);
+    if (tappedCell != null) {
+      _showHexOwnerSheet(tappedCell);
+    }
+  }
+
+  /// Point-in-polygon test to find which cell was tapped.
+  TerritoryCell? _findTappedCell(double lat, double lng) {
+    for (final cell in _allCells) {
+      if (_pointInPolygon(lat, lng, cell.boundary)) {
+        return cell;
+      }
+    }
+    return null;
+  }
+
+  /// Ray-casting point-in-polygon algorithm.
+  bool _pointInPolygon(double lat, double lng, List<List<double>> polygon) {
+    var inside = false;
+    for (int i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      final yi = polygon[i][0], xi = polygon[i][1];
+      final yj = polygon[j][0], xj = polygon[j][1];
+      if (((yi > lat) != (yj > lat)) && (lng < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }
+
+  /// Shows a bottom sheet with hex owner info and link to their profile.
+  void _showHexOwnerSheet(TerritoryCell cell) {
+    final profile = ref.read(userProfileProvider);
+    final isOwn = cell.ownerId == profile.userId;
+    final ownerColor = Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(
+                    color: ownerColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: ownerColor, width: 2),
+                  ),
+                  child: const Icon(Icons.hexagon, size: 28, color: Colors.white70),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isOwn ? 'Your Hex' : '${cell.ownerName}\'s Hex',
+                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                      ),
+                      Text(
+                        isOwn ? 'You own this territory' : 'Owned by ${cell.ownerName}',
+                        style: TextStyle(color: AppColors.grey, fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (!isOwn) ...[
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => UserProfileScreen(
+                        userId: cell.ownerId,
+                        name: cell.ownerName,
+                        avatarId: 0,
+                        color: cell.ownerColor,
+                        rank: 0,
+                      ),
+                    ));
+                  },
+                  icon: const Icon(Icons.person, size: 18),
+                  label: Text('View ${cell.ownerName}\'s Profile'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _refreshPosition() async {
@@ -359,6 +476,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 setState(() => _followUser = false);
               }
             },
+            onTap: (tapPos, latLng) => _onMapTap(latLng),
           ),
           children: [
             TileLayer(
@@ -376,16 +494,14 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userAgentPackageName: 'com.myloop.app',
               ),
 
-            // Other players' hex polygons (semi-transparent, their color)
-            ..._otherHexesByColor.entries.map((entry) {
-              final color = Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000);
-              return AnimatedHexOverlay(
-                hexBoundaries: entry.value,
-                userColor: color,
+            // Other players' hex polygons (uniform muted color)
+            if (_otherHexBoundaries.isNotEmpty)
+              AnimatedHexOverlay(
+                hexBoundaries: _otherHexBoundaries,
+                userColor: const Color(0xFF636E72), // muted grey for all others
                 currentZoom: _currentZoom,
                 isNewCapture: false,
-              );
-            }),
+              ),
 
             // User's owned hex polygons (animated overlay with glow)
             if (_myHexBoundaries.isNotEmpty)

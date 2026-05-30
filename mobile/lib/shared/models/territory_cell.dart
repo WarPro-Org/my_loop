@@ -13,6 +13,7 @@ class TerritoryCell {
   final int cellId; // H3 index
   final String ownerId;
   final String ownerColor; // hex color
+  final String ownerName;
   final List<List<double>> boundary; // [[lat, lng], ...]
 
   const TerritoryCell({
@@ -20,6 +21,7 @@ class TerritoryCell {
     required this.ownerId,
     required this.ownerColor,
     required this.boundary,
+    this.ownerName = '',
   });
 
   /// Deserializes a territory cell from a JSON map returned by the API.
@@ -31,6 +33,7 @@ class TerritoryCell {
       cellId: json['cellId'] as int,
       ownerId: json['ownerId'] as String,
       ownerColor: json['ownerColor'] as String,
+      ownerName: json['ownerName'] as String? ?? '',
       boundary: (json['boundary'] as List)
           .map((p) => (p as List).map((v) => (v as num).toDouble()).toList())
           .toList(),
