@@ -817,6 +817,9 @@ class _BottomControls extends ConsumerWidget {
           icon: Icons.stop,
           color: AppColors.red,
           onPressed: () async {
+            // Save stats before stopJourney resets them
+            final walkDistance = journey.distanceMeters;
+            final walkDuration = journey.elapsed;
             final path = controller.stopJourney();
             if (path.length < 2) {
               if (context.mounted) {
@@ -836,6 +839,7 @@ class _BottomControls extends ConsumerWidget {
               if (profile.userId != null) {
                 final result = await api.submitClaim(userId: profile.userId!, path: path);
                 final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+                final stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
 
                 // Show captured hex boundaries on map
                 final rawBoundaries = result['boundaries'] as List<dynamic>?;
@@ -855,12 +859,16 @@ class _BottomControls extends ConsumerWidget {
                   streak: user.streak,
                   distanceKm: user.distanceKm,
                 );
+
+                // Show celebration dialog
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Captured $capturedCount hexes! 🎉'),
-                      backgroundColor: AppColors.primary,
-                    ),
+                  _showCelebration(
+                    context,
+                    hexCount: capturedCount,
+                    stolenCount: stolenCount,
+                    distance: walkDistance,
+                    duration: walkDuration,
+                    newStreak: user.streak,
                   );
                 }
               }
@@ -878,6 +886,92 @@ class _BottomControls extends ConsumerWidget {
           },
         ),
       ],
+    );
+  }
+
+  void _showCelebration(
+    BuildContext context, {
+    required int hexCount,
+    required int stolenCount,
+    required double distance,
+    required Duration duration,
+    required int newStreak,
+  }) {
+    final distanceStr = distance >= 1000
+        ? '${(distance / 1000).toStringAsFixed(2)} km'
+        : '${distance.toStringAsFixed(0)} m';
+    final minutes = duration.inMinutes;
+    final seconds = duration.inSeconds % 60;
+    final timeStr = minutes > 0 ? '${minutes}m ${seconds}s' : '${seconds}s';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('🎉', style: TextStyle(fontSize: 56)),
+              const SizedBox(height: 12),
+              const Text(
+                'Territory Captured!',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 20),
+              _CelebrationStat(icon: '⬡', label: 'Hexes earned', value: '$hexCount'),
+              if (stolenCount > 0)
+                _CelebrationStat(icon: '⚔️', label: 'Stolen from others', value: '$stolenCount'),
+              _CelebrationStat(icon: '📏', label: 'Distance walked', value: distanceStr),
+              _CelebrationStat(icon: '⏱️', label: 'Walk time', value: timeStr),
+              _CelebrationStat(icon: '🔥', label: 'Current streak', value: '$newStreak day${newStreak == 1 ? '' : 's'}'),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('AWESOME!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CelebrationStat extends StatelessWidget {
+  final String icon;
+  final String label;
+  final String value;
+  const _CelebrationStat({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Text(icon, style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(label, style: const TextStyle(fontSize: 15, color: Colors.grey)),
+          ),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
     );
   }
 }
