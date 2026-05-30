@@ -86,16 +86,32 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         _mapKey.currentState?.showCapturedHexes(boundaries);
       }
 
+      // Optimistic hex-count update so the badge reacts instantly
+      if (mounted && capturedCount > 0) {
+        ref.read(userProfileProvider.notifier).updateStats(
+          hexCount: profile.hexCount + capturedCount,
+        );
+      }
+
       // Force-reload all hexes from DB as a safety net (covers any edge cases)
       _mapKey.currentState?.forceReloadHexes();
 
-      // Refresh user stats from DB
+      // Refresh ALL user data from DB: hexCount, streak, distanceKm
       final user = await api.getUser(profile.userId!);
+
+      // Also refresh rank from leaderboard
+      int updatedRank = profile.rank;
+      try {
+        final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId!, scope: 'city');
+        updatedRank = lb.myRank ?? profile.rank;
+      } catch (_) {} // rank stays as-is if leaderboard is unreachable
+
       if (mounted) {
         ref.read(userProfileProvider.notifier).updateStats(
           hexCount: user.hexCount,
           streak: user.streak,
           distanceKm: user.distanceKm,
+          rank: updatedRank,
         );
       }
 
@@ -799,7 +815,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 Icon(Icons.hexagon, color: userColor, size: 18),
                 const SizedBox(width: 4),
                 Text(
-                  '$_myHexCount',
+                  '${profile.hexCount}',
                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark),
                 ),
               ],

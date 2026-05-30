@@ -17,14 +17,46 @@ import 'package:myloop/shared/widgets/big_button.dart';
 /// The initial login/welcome screen shown to unauthenticated users.
 ///
 /// Follows a simple vertical layout: mascot, branding, spacer, CTA buttons,
-/// and legal text. Uses [ConsumerWidget] to access the auth service via
-/// Riverpod for sign-in operations.
-class LoginScreen extends ConsumerWidget {
+/// and legal text. On startup, if a Firebase session is already restored
+/// (e.g., after an app restart), the user is automatically routed to /home
+/// without seeing the login UI.
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends ConsumerState<LoginScreen> {
+  bool _autoSigningIn = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // After first frame: check whether Firebase already has a restored session.
+    // This fires every time the login screen mounts (e.g., after app restart).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final authService = ref.read(authServiceProvider);
+      final currentUser = authService.currentUser;
+      if (currentUser != null) {
+        setState(() => _autoSigningIn = true);
+        _routeAfterAuth(currentUser.uid);
+      }
+    });
+  }
 
   /// Builds the full-screen login layout with branding and sign-in CTAs.
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
+    // While auto-routing an already-authenticated session, show a spinner
+    // so the login buttons never flash on screen.
+    if (_autoSigningIn) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       body: SafeArea(
         child: Padding(
@@ -58,7 +90,7 @@ class LoginScreen extends ConsumerWidget {
               BigButton(
                 label: 'CONTINUE WITH GOOGLE',
                 icon: Icons.login,
-                onPressed: () => _signInWithGoogle(context, ref),
+                onPressed: () => _signInWithGoogle(),
               ),
               const SizedBox(height: 12),
 
@@ -67,7 +99,7 @@ class LoginScreen extends ConsumerWidget {
                 label: 'CONTINUE WITH APPLE',
                 icon: Icons.apple,
                 color: AppColors.dark,
-                onPressed: () => _signInWithApple(context, ref),
+                onPressed: () => _signInWithApple(),
               ),
               const SizedBox(height: 16),
 
@@ -89,7 +121,7 @@ class LoginScreen extends ConsumerWidget {
               // Dev skip button — only visible in debug mode
               if (const bool.fromEnvironment('dart.vm.product') == false)
                 TextButton(
-                  onPressed: () => _devSkip(context, ref),
+                  onPressed: () => _devSkip(),
                   child: Text(
                     'SKIP (DEV MODE)',
                     style: TextStyle(color: AppColors.grey, fontSize: 12),
@@ -115,19 +147,15 @@ class LoginScreen extends ConsumerWidget {
     );
   }
 
-  /// Initiates Google OAuth sign-in flow.
-  ///
-  /// On success, checks if user already exists in DB. If so, loads profile
-  /// and goes to /home. If not, navigates to /avatar for profile setup.
-  Future<void> _signInWithGoogle(BuildContext context, WidgetRef ref) async {
+  Future<void> _signInWithGoogle() async {
     try {
       final authService = ref.read(authServiceProvider);
       final user = await authService.signInWithGoogle();
-      if (user != null && context.mounted) {
-        await _routeAfterAuth(context, ref, user.uid);
+      if (user != null && mounted) {
+        await _routeAfterAuth(user.uid);
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Sign in failed: $e'), backgroundColor: AppColors.red),
         );
@@ -135,19 +163,15 @@ class LoginScreen extends ConsumerWidget {
     }
   }
 
-  /// Initiates Apple Sign-In flow.
-  ///
-  /// On success, checks if user already exists in DB. If so, loads profile
-  /// and goes to /home. If not, navigates to /avatar for profile setup.
-  Future<void> _signInWithApple(BuildContext context, WidgetRef ref) async {
+  Future<void> _signInWithApple() async {
     try {
       final authService = ref.read(authServiceProvider);
       final user = await authService.signInWithApple();
-      if (user != null && context.mounted) {
-        await _routeAfterAuth(context, ref, user.uid);
+      if (user != null && mounted) {
+        await _routeAfterAuth(user.uid);
       }
     } catch (e) {
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Sign in failed: $e'), backgroundColor: AppColors.red),
         );
@@ -155,13 +179,20 @@ class LoginScreen extends ConsumerWidget {
     }
   }
 
-  /// After successful auth, check if user is already registered.
-  /// If yes → load profile and go home. If no → go to avatar picker.
-  Future<void> _routeAfterAuth(BuildContext context, WidgetRef ref, String firebaseUid) async {
+  /// After auth (fresh or restored session): load profile and go to /home,
+  /// or go to /avatar if this is a new user.
+  Future<void> _routeAfterAuth(String firebaseUid) async {
     try {
       final api = ref.read(apiServiceProvider);
       final existing = await api.getUserByUid(firebaseUid);
-      if (existing != null && context.mounted) {
+      if (existing != null && mounted) {
+        // Fetch rank while we have the API connection
+        int rank = 0;
+        try {
+          final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: existing.id, scope: 'city');
+          rank = lb.myRank ?? 0;
+        } catch (_) {}
+
         ref.read(userProfileProvider.notifier).setFromApi(
           userId: existing.id,
           avatarId: existing.avatarId,
@@ -170,22 +201,31 @@ class LoginScreen extends ConsumerWidget {
           hexCount: existing.hexCount,
           streak: existing.streak,
           distanceKm: existing.distanceKm,
+          rank: rank,
         );
-        context.go('/home');
+        if (mounted) context.go('/home');
         return;
       }
     } catch (_) {
       // API unreachable or user not found — proceed to avatar picker
     }
-    if (context.mounted) context.go('/avatar');
+    if (mounted) {
+      setState(() => _autoSigningIn = false);
+      context.go('/avatar');
+    }
   }
 
-  /// Dev mode: loads seeded "Robin" user from DB without Firebase auth.
-  Future<void> _devSkip(BuildContext context, WidgetRef ref) async {
+  Future<void> _devSkip() async {
     try {
       final api = ref.read(apiServiceProvider);
       final user = await api.getUserByUid('uid_robin');
       if (user != null) {
+        int rank = 0;
+        try {
+          final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: user.id, scope: 'city');
+          rank = lb.myRank ?? 0;
+        } catch (_) {}
+
         ref.read(userProfileProvider.notifier).setFromApi(
           userId: user.id,
           avatarId: user.avatarId,
@@ -194,17 +234,12 @@ class LoginScreen extends ConsumerWidget {
           hexCount: user.hexCount,
           streak: user.streak,
           distanceKm: user.distanceKm,
+          rank: rank,
         );
-        // Fetch rank from leaderboard API
-        final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: user.id, scope: 'city');
-        if (lb.myRank != null) {
-          ref.read(userProfileProvider.notifier).updateStats(rank: lb.myRank);
-        }
       }
-      if (context.mounted) context.go('/home');
+      if (mounted) context.go('/home');
     } catch (e) {
-      // If API is down, still navigate for testing
-      if (context.mounted) context.go('/home');
+      if (mounted) context.go('/home');
     }
   }
 }
