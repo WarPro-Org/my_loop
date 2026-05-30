@@ -9,11 +9,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 
-/// Hex sizing constants.
+/// Hex sizing constants — match H3 resolution 11 geometry.
 class HexConstants {
-  static const double hexRadiusMeters = 25.0;
-  static const double hexAreaM2 = 1623.0;
-  static const double minLoopAreaForClaim = 400.0;
+  static const double hexRadiusMeters = 29.0; // circumradius at H3 res 11
+  static const double hexAreaM2 = 2150.0;
+  static const double minLoopAreaForClaim = 5000.0; // matches API MinFillAreaSquareMeters
 }
 
 /// Animated hex territory layer with:

@@ -14,10 +14,22 @@ public static class GameConstants
     public const double MinFillAreaSquareMeters = 5_000.0;
 
     // --- H3 Hex Grid ---
-    public const int H3Resolution = 10;
+    /// <summary>
+    /// H3 resolution 11: edge ~29m, circumradius ~29m, area ~2,150 m².
+    /// Produces edge-to-edge tessellating hexes that feel "earnable" per walk.
+    /// </summary>
+    public const int H3Resolution = 11;
     public const int H3ParentResolution = 3;
-    public const double CellAreaSquareMeters = 15_047.0;
-    public const double HexVisualRadiusMeters = 25.0;
+    public const double CellAreaSquareMeters = 2_150.0;
+
+    /// <summary>
+    /// Apothem (center-to-edge midpoint) at res 11, ~25m.
+    /// Used for polygon buffer in fill algorithm: captures cells ≥50% inside the loop.
+    /// </summary>
+    public const double HexApothemMeters = 25.0;
+
+    // --- Viewport / Query Limits ---
+    public const int MaxViewportCells = 500;
 
     // --- GPS / Geolocation ---
     public const double EarthRadiusMeters = 6_371_000.0;

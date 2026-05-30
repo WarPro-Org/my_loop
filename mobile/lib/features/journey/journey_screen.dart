@@ -21,6 +21,7 @@ import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// JOURNEY SCREEN — Full-screen map with overlay controls
@@ -121,7 +122,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
       // Delay celebration so user sees hexes flash on the map first
       if (mounted) {
-        await Future.delayed(const Duration(milliseconds: 800));
+        await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
         if (mounted) {
           _showCelebration(
             hexCount: capturedCount,
@@ -306,7 +307,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   bool _useSatellite = true; // Map theme: true=satellite, false=dark
   List<List<List<double>>> _capturedHexBoundaries = [];
   List<List<List<double>>> _userOwnHexBoundaries = []; // ALL user hexes from /user/{id} endpoint
-  List<List<List<double>>> _otherHexBoundaries = [];
+  Map<String, List<List<List<double>>>> _otherHexesByColor = {}; // Other players grouped by ownerColor
   List<TerritoryCell> _allCells = []; // Keep full cell data for tap detection
   Set<int> _userOwnCellIds = {}; // Track cell IDs loaded via getUserTerritories
 
@@ -315,7 +316,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     super.initState();
     _acquireLocation(); // After GPS resolves → calls _loadAllHexes with wide radius
     // Don't start continuous GPS polling until journey starts — saves battery
-    _hexRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshViewportHexes());
+    _hexRefreshTimer = Timer.periodic(const Duration(seconds: AppConstants.hexRefreshIntervalSeconds), (_) => _refreshViewportHexes());
   }
 
   @override
@@ -373,7 +374,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   Future<void> _loadViewportHexes(double lat, double lng) async {
     try {
       final api = ref.read(apiServiceProvider);
-      final offset = 0.02; // ~2.2km radius
+      const offset = AppConstants.nearbyViewportOffset;
       final cells = await api.getTerritories(
         minLat: lat - offset,
         minLng: lng - offset,
@@ -392,7 +393,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       final api = ref.read(apiServiceProvider);
       final lat = _initialPosition!.latitude;
       final lng = _initialPosition!.longitude;
-      final offset = 0.05; // ~5.5km radius — wider than viewport to preload nearby hexes
+      const offset = AppConstants.wideViewportOffset;
       final cells = await api.getTerritories(
         minLat: lat - offset,
         minLng: lng - offset,
@@ -419,12 +420,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     } catch (_) {}
   }
 
-  /// Splits cells into user's own hexes and others.
+  /// Splits cells into user's own hexes and others (grouped by owner color).
   /// Does NOT overwrite _userOwnHexBoundaries (the authoritative full list).
-  /// Only updates _otherHexBoundaries and merges new user cells into _allCells.
+  /// Groups other-player hexes by their chosen color for per-player rendering.
   void _updateHexState(List<dynamic> cells) {
     final profile = ref.read(userProfileProvider);
-    final otherBounds = <List<List<double>>>[];
+    final otherByColor = <String, List<List<List<double>>>>{};
     final allCells = <TerritoryCell>[..._allCells.where((c) => c.ownerId == profile.userId)];
 
     for (final c in cells) {
@@ -435,14 +436,14 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
           allCells.add(cell);
         }
       } else {
-        otherBounds.add(cell.boundary);
+        otherByColor.putIfAbsent(cell.ownerColor, () => []).add(cell.boundary);
         allCells.add(cell);
       }
     }
 
     if (mounted) {
       setState(() {
-        _otherHexBoundaries = otherBounds;
+        _otherHexesByColor = otherByColor;
         _allCells = allCells;
       });
     }
@@ -695,14 +696,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userAgentPackageName: 'com.myloop.app',
               ),
 
-            // Other players' hex polygons (visible on both satellite + dark themes)
-            if (_otherHexBoundaries.isNotEmpty)
-              AnimatedHexOverlay(
-                hexBoundaries: _otherHexBoundaries,
-                userColor: const Color(0xFFFF6B6B), // coral red — visible on satellite + dark
-                currentZoom: _currentZoom,
-                isNewCapture: false,
-              ),
+            // Other players' hex polygons — each player's own chosen color
+            ..._otherHexesByColor.entries.map((entry) => AnimatedHexOverlay(
+              hexBoundaries: entry.value,
+              userColor: Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000),
+              currentZoom: _currentZoom,
+              isNewCapture: false,
+            )),
 
             // User's owned hex polygons (animated overlay with glow)
             if (_userOwnHexBoundaries.isNotEmpty)

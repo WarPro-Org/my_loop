@@ -10,11 +10,14 @@ namespace MyLoop.Api.Services;
 
 /// <summary>
 /// Hex grid operations — converts GPS data into H3 hex cells.
-/// Uses the H3 hierarchical geospatial indexing system at resolution 10.
+/// Uses the H3 hierarchical geospatial indexing system at resolution 11.
+/// All boundaries are real H3 cell polygons (not fabricated), so hexes
+/// tessellate edge-to-edge on the map with no gaps.
 /// </summary>
 public class HexGridService : IHexGridService
 {
     private readonly IGeoService _geoService;
+    private static readonly GeometryFactory _geometryFactory = new();
 
     public HexGridService(IGeoService geoService)
     {
@@ -109,8 +112,7 @@ public class HexGridService : IHexGridService
 
             if (!cells.ContainsKey(cellId))
             {
-                var latLng = index.ToLatLng();
-                var boundary = BuildHexBoundary(latLng.LatitudeDegrees, latLng.LongitudeDegrees);
+                var boundary = GetRealCellBoundary(index);
                 cells[cellId] = boundary;
             }
         }
@@ -126,7 +128,7 @@ public class HexGridService : IHexGridService
     /// <summary>
     /// Fills a closed polygon with all H3 cells whose centers fall inside,
     /// PLUS boundary cells that are at least ~50% inside the polygon.
-    /// Uses a buffer approach: expands polygon by half a hex-width before filling.
+    /// Buffers the polygon outward by the hex apothem before filling.
     /// </summary>
     private List<HexCell> FillPolygon(double[][] polygon)
     {
@@ -142,13 +144,13 @@ public class HexGridService : IHexGridService
         }
 
         // Build NTS polygon
-        var factory = new GeometryFactory();
-        var ring = factory.CreateLinearRing(coordinates.ToArray());
-        var ntsPolygon = factory.CreatePolygon(ring);
+        var ring = _geometryFactory.CreateLinearRing(coordinates.ToArray());
+        var ntsPolygon = _geometryFactory.CreatePolygon(ring);
 
-        // Buffer outward by ~half a hex-width in degrees (~32.5m ≈ 0.00029°)
-        // This captures boundary cells that are ≥50% inside the loop
-        var bufferDegrees = (GameConstants.HexVisualRadiusMeters * 1.3) / GameConstants.MetersPerDegreeLat;
+        // Buffer outward by the hex apothem (~25m at res 11) in degrees.
+        // This captures cells whose center is within one apothem of the edge,
+        // meaning the cell is approximately ≥50% inside the loop.
+        var bufferDegrees = GameConstants.HexApothemMeters / GameConstants.MetersPerDegreeLat;
         var bufferedPolygon = ntsPolygon.Buffer(bufferDegrees);
 
         // Fill the buffered polygon with H3 cells
@@ -158,40 +160,28 @@ public class HexGridService : IHexGridService
         foreach (var cell in cells)
         {
             var cellId = (long)(ulong)cell;
-            var latLng = cell.ToLatLng();
-            var boundary = BuildHexBoundary(latLng.LatitudeDegrees, latLng.LongitudeDegrees);
+            var boundary = GetRealCellBoundary(cell);
             result.Add(new HexCell { CellId = cellId, Boundary = boundary });
         }
         return result;
     }
 
     /// <summary>
-    /// Builds a visually-perfect regular hexagon for map display.
-    /// Uses latitude-corrected radius so hexes look uniform at any latitude.
+    /// Gets the REAL H3 cell boundary polygon vertices.
+    /// Returns the actual hex corners from the H3 library, ensuring cells
+    /// tessellate perfectly edge-to-edge with no gaps on the map.
     /// </summary>
-    private static double[][] BuildHexBoundary(double centerLat, double centerLng)
+    private static double[][] GetRealCellBoundary(H3Index index)
     {
-        double radiusMeters = GameConstants.HexVisualRadiusMeters;
-        double metersPerDegreeLat = GameConstants.MetersPerDegreeLat;
-        var metersPerDegreeLng = metersPerDegreeLat * Math.Cos(centerLat * Math.PI / 180.0);
+        var polygon = index.GetCellBoundary(_geometryFactory);
+        var coords = polygon.ExteriorRing.Coordinates;
 
-        var latRadius = radiusMeters / metersPerDegreeLat;
-        var lngRadius = radiusMeters / metersPerDegreeLng;
-
-        // 6 vertices of a flat-top hexagon at 0°, 60°, 120°, 180°, 240°, 300°
-        var vertices = new double[7][];
-        for (int i = 0; i < 6; i++)
+        // NTS coordinates are (X=lng, Y=lat). Convert to [lat, lng] format.
+        var vertices = new double[coords.Length][];
+        for (int i = 0; i < coords.Length; i++)
         {
-            var angleRad = (60.0 * i) * Math.PI / 180.0;
-            vertices[i] = new double[]
-            {
-                centerLat + latRadius * Math.Cos(angleRad),
-                centerLng + lngRadius * Math.Sin(angleRad)
-            };
+            vertices[i] = [coords[i].Y, coords[i].X];
         }
-
-        // Close the polygon
-        vertices[6] = vertices[0];
         return vertices;
     }
 }

@@ -38,6 +38,15 @@ public class TerritoryService : ITerritoryService
             return Fail("Walk at least 200 meters before claiming");
         }
 
+        // Validate: enforce daily claim cap (anti-abuse)
+        var todayStart = DateTime.UtcNow.Date;
+        var todayClaimCount = await _db.Claims
+            .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart);
+        if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
+        {
+            return Fail($"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day");
+        }
+
         // Compute captured hexes (trail + fill)
         var cells = _hexGrid.ComputeCapturedCells(path);
         if (cells.Count == 0)
@@ -196,6 +205,7 @@ public class TerritoryService : ITerritoryService
             .Include(t => t.Owner)
             .Where(t => t.CenterLat >= minLat && t.CenterLat <= maxLat
                      && t.CenterLng >= minLng && t.CenterLng <= maxLng)
+            .Take(GameConstants.MaxViewportCells)
             .Select(t => new
             {
                 t.CellId,
