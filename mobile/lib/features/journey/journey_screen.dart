@@ -44,8 +44,12 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
   /// Handles Stop & Capture — runs from the screen's stable ConsumerState context
   /// so showDialog and ScaffoldMessenger always work correctly.
-  Future<void> _onStopCapture(JourneyState journey, JourneyController controller) async {
+  Future<void> _onStopCapture() async {
     if (_isSubmitting) return;
+
+    // Read the CURRENT state fresh from the provider (not a stale closure capture)
+    final journey = ref.read(journeyControllerProvider);
+    final controller = ref.read(journeyControllerProvider.notifier);
 
     // Capture walk stats before stopJourney() resets the state
     final walkDistance = journey.distanceMeters;
@@ -263,7 +267,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
               journey: journey,
               isSubmitting: _isSubmitting,
               onStartJourney: controller.startJourney,
-              onStopCapture: () => _onStopCapture(journey, controller),
+              onStopCapture: _onStopCapture,
             ),
           ),
         ],
@@ -301,13 +305,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   List<List<List<double>>> _myHexBoundaries = [];
   List<List<List<double>>> _otherHexBoundaries = [];
   List<TerritoryCell> _allCells = []; // Keep full cell data for tap detection
-  int _myHexCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _acquireLocation();
-    _loadAllHexes(); // Load hexes independent of geolocation
+    _acquireLocation(); // After GPS resolves → calls _loadAllHexes with wide radius
     // Don't start continuous GPS polling until journey starts — saves battery
     _hexRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshViewportHexes());
   }
@@ -330,8 +332,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         if (_mapReady && _followUser) {
           _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
         }
-        // Load hexes near this position
-        _loadViewportHexes(pos.latitude, pos.longitude);
+        // Load hexes in a wide area around the user's actual position
+        _loadAllHexes();
       } else if (mounted) {
         setState(() => _locationError = true);
       }
@@ -354,28 +356,22 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     } catch (_) {}
   }
 
-  /// Loads ALL hexes in a wide area (fallback when geolocation is unavailable).
+  /// Loads hexes in a wide area around the user's known position.
+  /// Called by _acquireLocation after GPS resolves successfully.
   Future<void> _loadAllHexes() async {
+    if (_initialPosition == null) return;
     try {
-      final profile = ref.read(userProfileProvider);
-      if (profile.userId == null) return;
       final api = ref.read(apiServiceProvider);
+      final lat = _initialPosition!.latitude;
+      final lng = _initialPosition!.longitude;
+      final offset = 0.05; // ~5.5km radius — wider than viewport to preload nearby hexes
       final cells = await api.getTerritories(
-        minLat: 59.0,
-        minLng: 17.8,
-        maxLat: 59.5,
-        maxLng: 18.3,
+        minLat: lat - offset,
+        minLng: lng - offset,
+        maxLat: lat + offset,
+        maxLng: lng + offset,
       );
       _updateHexState(cells);
-      // If geolocation failed, center map on owned hexes
-      if (_initialPosition == null && _myHexBoundaries.isNotEmpty) {
-        final firstHex = _myHexBoundaries.first;
-        if (firstHex.isNotEmpty) {
-          setState(() {
-            _fallbackCenter = LatLng(firstHex[0][0], firstHex[0][1]);
-          });
-        }
-      }
     } catch (_) {}
   }
 
@@ -415,7 +411,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     if (mounted) {
       setState(() {
         _myHexBoundaries = mine;
-        _myHexCount = mine.length;
         _otherHexBoundaries = otherBounds;
         _allCells = allCells;
       });
@@ -569,9 +564,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void showCapturedHexes(List<List<List<double>>> boundaries) {
     setState(() {
       _capturedHexBoundaries = boundaries;
-      // Immediately add to user's hex count + boundaries
+      // Immediately add to user's hex polygon boundaries for rendering
       _myHexBoundaries = [..._myHexBoundaries, ...boundaries];
-      _myHexCount = _myHexBoundaries.length;
     });
   }
 
@@ -643,8 +637,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
             },
             onPositionChanged: (pos, hasGesture) {
               // Track zoom for adaptive hex rendering
-              if (pos.zoom != null && pos.zoom != _currentZoom) {
-                setState(() => _currentZoom = pos.zoom!);
+              if (pos.zoom != _currentZoom) {
+                setState(() => _currentZoom = pos.zoom);
               }
               // User panned manually — disable auto-follow
               if (hasGesture && _followUser) {
