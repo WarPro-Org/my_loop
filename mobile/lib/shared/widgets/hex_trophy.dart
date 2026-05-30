@@ -508,51 +508,168 @@ class _HexTrophyPainter extends CustomPainter {
 }
 
 /// Row showing all 6 tier hexagons with current highlighted.
-class HexTierShowcase extends StatelessWidget {
+class HexTierShowcase extends StatefulWidget {
   final int currentHexes;
   const HexTierShowcase({super.key, required this.currentHexes});
 
   @override
+  State<HexTierShowcase> createState() => _HexTierShowcaseState();
+}
+
+class _HexTierShowcaseState extends State<HexTierShowcase>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _particleCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _particleCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3000),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _particleCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final currentTier = HexTier.fromHexes(currentHexes);
-    final currentDiv = HexTier.divisionFromHexes(currentHexes);
+    final currentTier = HexTier.fromHexes(widget.currentHexes);
+    final currentDiv = HexTier.divisionFromHexes(widget.currentHexes);
     return SizedBox(
-      height: 82,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: HexTier.values.map((tier) {
-          final isActive = tier.level <= currentTier.level;
-          final isCurrent = tier == currentTier;
-          return Opacity(
-            opacity: isActive ? 1.0 : 0.8,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  width: isCurrent ? 46 : 26,
-                  height: isCurrent ? 46 : 26,
-                  child: CustomPaint(
-                    painter: _HexTrophyPainter(
-                      tier: tier,
-                      division: isCurrent ? currentDiv : (isActive ? 4 : 1),
+      height: 90,
+      child: AnimatedBuilder(
+        animation: _particleCtrl,
+        builder: (context, _) => CustomPaint(
+          painter: _TierLinePainter(
+            currentTierLevel: currentTier.level,
+            particleProgress: _particleCtrl.value,
+            tierColors: HexTier.values.map((t) => t.color).toList(),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: HexTier.values.map((tier) {
+              final isActive = tier.level <= currentTier.level;
+              final isCurrent = tier == currentTier;
+              return Opacity(
+                opacity: isActive ? 1.0 : 0.8,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      width: isCurrent ? 46 : 26,
+                      height: isCurrent ? 46 : 26,
+                      child: CustomPaint(
+                        painter: _HexTrophyPainter(
+                          tier: tier,
+                          division: isCurrent ? currentDiv : (isActive ? 4 : 1),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 3),
+                    Text(
+                      tier.label,
+                      style: TextStyle(
+                        fontSize: isCurrent ? 9 : 7,
+                        fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w500,
+                        color: isCurrent ? tier.color : (isActive ? tier.color : AppColors.grey),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  tier.label,
-                  style: TextStyle(
-                    fontSize: isCurrent ? 9 : 7,
-                    fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w500,
-                    color: isCurrent ? tier.color : (isActive ? tier.color : AppColors.grey),
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+              );
+            }).toList(),
+          ),
+        ),
       ),
     );
   }
+}
+
+/// Draws a connecting line between tiers with a traveling light particle.
+class _TierLinePainter extends CustomPainter {
+  final int currentTierLevel;
+  final double particleProgress;
+  final List<Color> tierColors;
+
+  _TierLinePainter({
+    required this.currentTierLevel,
+    required this.particleProgress,
+    required this.tierColors,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final tierCount = tierColors.length;
+    if (tierCount < 2) return;
+
+    // Compute center X positions of each tier (evenly spaced)
+    final spacing = size.width / tierCount;
+    final centers = List.generate(tierCount, (i) => spacing * i + spacing / 2);
+    final lineY = size.height * 0.35; // roughly at badge center height
+
+    // Draw connecting line segments
+    final linePaint = Paint()
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round;
+
+    for (int i = 0; i < tierCount - 1; i++) {
+      final isSegmentActive = i < currentTierLevel;
+      linePaint.color = isSegmentActive
+          ? tierColors[i].withValues(alpha: 0.5)
+          : AppColors.greyLight.withValues(alpha: 0.4);
+      canvas.drawLine(Offset(centers[i], lineY), Offset(centers[i + 1], lineY), linePaint);
+    }
+
+    // Draw traveling light particle from current tier to end
+    final startX = centers[currentTierLevel];
+    final endX = centers[tierCount - 1];
+    final totalDistance = endX - startX;
+    if (totalDistance > 0) {
+      final particleX = startX + totalDistance * particleProgress;
+      // Find which segment we're in to get the right color
+      int segIdx = currentTierLevel;
+      for (int i = currentTierLevel; i < tierCount - 1; i++) {
+        if (particleX >= centers[i] && particleX <= centers[i + 1]) {
+          segIdx = i;
+          break;
+        }
+      }
+      final particleColor = tierColors[segIdx.clamp(0, tierCount - 1)];
+
+      // Glow behind particle
+      canvas.drawCircle(
+        Offset(particleX, lineY),
+        6,
+        Paint()..color = particleColor.withValues(alpha: 0.3),
+      );
+      // Bright particle dot
+      canvas.drawCircle(
+        Offset(particleX, lineY),
+        3,
+        Paint()..color = particleColor,
+      );
+
+      // Make the tier the particle just passed glow briefly
+      for (int i = currentTierLevel + 1; i < tierCount; i++) {
+        final dist = (particleX - centers[i]).abs();
+        if (dist < 12) {
+          final glowIntensity = (1 - dist / 12) * 0.4;
+          canvas.drawCircle(
+            Offset(centers[i], lineY),
+            10,
+            Paint()..color = tierColors[i].withValues(alpha: glowIntensity),
+          );
+        }
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TierLinePainter old) =>
+      particleProgress != old.particleProgress || currentTierLevel != old.currentTierLevel;
 }

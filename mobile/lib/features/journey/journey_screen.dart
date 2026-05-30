@@ -493,11 +493,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userAgentPackageName: 'com.myloop.app',
               ),
 
-            // Other players' hex polygons (uniform muted color, full animation)
+            // Other players' hex polygons (black, full animation)
             if (_otherHexBoundaries.isNotEmpty)
               AnimatedHexOverlay(
                 hexBoundaries: _otherHexBoundaries,
-                userColor: const Color(0xFF636E72), // muted grey for all others
+                userColor: const Color(0xFF1A1A2E), // near-black for others
                 currentZoom: _currentZoom,
                 isNewCapture: false,
               ),
@@ -671,68 +671,72 @@ class _StatsBar extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(left: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _StatItem(
-            icon: Icons.timer_outlined,
-            gradient: const [Color(0xFF00D4AA), Color(0xFF00897B)],
-            value: '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
-          ),
-          const SizedBox(height: 14),
-          _StatItem(
-            icon: Icons.straighten_rounded,
-            gradient: const [Color(0xFF6C5CE7), Color(0xFF4834D4)],
-            value: distanceKm >= 1
-                ? '${distanceKm.toStringAsFixed(1)}k'
-                : '${journey.distanceMeters.toInt()}m',
-          ),
-          const SizedBox(height: 14),
-          _StatItem(
-            icon: Icons.hexagon_outlined,
-            gradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
-            value: '—',
-          ),
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4)),
         ],
+      ),
+      child: IntrinsicWidth(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StatItem(
+              icon: Icons.schedule_rounded,
+              color: const Color(0xFF00D4AA),
+              value: '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            _StatItem(
+              icon: Icons.route_rounded,
+              color: const Color(0xFF6C5CE7),
+              value: distanceKm >= 1
+                  ? '${distanceKm.toStringAsFixed(2)} km'
+                  : '${journey.distanceMeters.toInt()} m',
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            _StatItem(
+              icon: Icons.hexagon_rounded,
+              color: const Color(0xFFF59E0B),
+              value: '—',
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// A single stat row (gradient icon + value) used in [_StatsBar].
+/// A single stat row used in [_StatsBar] — icon + value, tightly aligned.
 class _StatItem extends StatelessWidget {
   final IconData icon;
-  final List<Color> gradient;
+  final Color color;
   final String value;
-  const _StatItem({required this.icon, required this.gradient, required this.value});
+  const _StatItem({required this.icon, required this.color, required this.value});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ShaderMask(
-          shaderCallback: (bounds) => LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: gradient,
-          ).createShader(bounds),
-          child: Icon(icon, size: 22, color: Colors.white),
-        ),
+        Icon(icon, size: 18, color: color),
         const SizedBox(width: 8),
         Text(
           value,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 15,
+            fontSize: 14,
             fontWeight: FontWeight.w700,
-            letterSpacing: -0.3,
+            fontFeatures: [FontFeature.tabularFigures()],
           ),
         ),
       ],

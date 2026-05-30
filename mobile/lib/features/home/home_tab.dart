@@ -512,7 +512,7 @@ class _QuickStats extends ConsumerWidget {
             children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
-              // Trophy hero with current badge LEFT and next badge RIGHT
+              // Trophy hero with current badge and info
               Row(
                 children: [
                   HexTrophyBadge(hexes: userHexes, size: 64, showProgress: false, showLabel: false),
@@ -527,16 +527,10 @@ class _QuickStats extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  // Next tier/division badge (target)
-                  if (nextTier != null || division < 4)
-                    Opacity(
-                      opacity: 0.8,
-                      child: HexTrophyBadge(hexes: nextDivThreshold, size: 48, showProgress: false, showLabel: true),
-                    ),
                 ],
               ),
               const SizedBox(height: 16),
-              // Division progress bar with target label
+              // Division progress bar with target badge at end
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
@@ -551,11 +545,12 @@ class _QuickStats extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    nextLabel,
-                    style: TextStyle(color: (nextTier?.color ?? tier.color), fontWeight: FontWeight.w700, fontSize: 12),
-                  ),
+                  const SizedBox(width: 12),
+                  if (nextTier != null || division < 4)
+                    Opacity(
+                      opacity: 0.8,
+                      child: HexTrophyBadge(hexes: nextDivThreshold, size: 36, showProgress: false, showLabel: false),
+                    ),
                 ],
               ),
               const SizedBox(height: 20),
