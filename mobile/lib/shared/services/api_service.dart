@@ -13,10 +13,10 @@ import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/models/user.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
-/// Defaults to local network IP for development.
+/// Defaults to ngrok tunnel for mobile testing over cellular.
 const _defaultApiUrl = String.fromEnvironment(
   'API_URL',
-  defaultValue: 'http://192.168.1.8:5048',
+  defaultValue: 'https://destitute-living-bullpen.ngrok-free.dev',
 );
 
 /// Service class that encapsulates all HTTP communication with the backend.

@@ -136,6 +136,29 @@ public class TerritoryService : ITerritoryService
             var stolenCells = transfers.Count(t => t.FromUserId != null);
             user.HexCount += newCells + stolenCells;
 
+            // Update total distance walked
+            user.DistanceKm += totalDistance / 1000.0;
+
+            // Update streak: consecutive days with at least one claim
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            if (user.LastClaimDate == null || user.LastClaimDate < today.AddDays(-1))
+            {
+                // First claim ever, or streak broken (gap > 1 day)
+                user.Streak = 1;
+            }
+            else if (user.LastClaimDate == today.AddDays(-1))
+            {
+                // Consecutive day — extend streak
+                user.Streak += 1;
+            }
+            // else: same day, streak unchanged
+
+            user.LastClaimDate = today;
+            if (user.Streak > user.MaxStreak)
+            {
+                user.MaxStreak = user.Streak;
+            }
+
             // Decrement hex counts for users who lost cells
             var stolenByUser = transfers
                 .Where(t => t.FromUserId != null && t.FromUserId != userId)

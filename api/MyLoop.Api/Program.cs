@@ -75,6 +75,8 @@ using (var scope = app.Services.CreateScope())
             "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopHundredFinishes\" integer NOT NULL DEFAULT 0");
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopThousandFinishes\" integer NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"LastClaimDate\" date");
     }
     catch { /* Column already exists or DB was just created with it */ }
 

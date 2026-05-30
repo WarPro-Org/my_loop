@@ -49,6 +49,9 @@ public class User
     /// <summary>Whether the user is currently on an active streak today.</summary>
     public bool IsStreakActive { get; set; } = true;
 
+    /// <summary>Date of the user's last successful claim (for streak calculation).</summary>
+    public DateOnly? LastClaimDate { get; set; }
+
     /// <summary>Timestamp when the user account was created (defaults to UTC now).</summary>
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
