@@ -89,10 +89,10 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
             ),
           ),
 
-          // Top bar with stats — vertical left column
+          // Top bar with stats — vertical left column (below close button)
           if (journey.status == JourneyStatus.tracking)
             Positioned(
-              top: 0,
+              top: MediaQuery.of(context).padding.top + 64,
               left: 0,
               child: _StatsBar(journey: journey),
             ),
@@ -493,14 +493,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userAgentPackageName: 'com.myloop.app',
               ),
 
-            // Other players' hex polygons (uniform muted color)
+            // Other players' hex polygons (uniform muted color, full animation)
             if (_otherHexBoundaries.isNotEmpty)
               AnimatedHexOverlay(
                 hexBoundaries: _otherHexBoundaries,
                 userColor: const Color(0xFF636E72), // muted grey for all others
                 currentZoom: _currentZoom,
                 isNewCapture: false,
-                isOtherPlayer: true,
               ),
 
             // User's owned hex polygons (animated overlay with glow)
@@ -670,39 +669,37 @@ class _StatsBar extends StatelessWidget {
     final seconds = journey.elapsed.inSeconds % 60;
     final distanceKm = journey.distanceMeters / 1000;
 
-    return SafeArea(
-      child: Container(
-        margin: const EdgeInsets.only(left: 12, top: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.65),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _StatItem(
-              icon: Icons.timer_outlined,
-              gradient: const [Color(0xFF00D4AA), Color(0xFF00897B)],
-              value: '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
-            ),
-            const SizedBox(height: 14),
-            _StatItem(
-              icon: Icons.straighten_rounded,
-              gradient: const [Color(0xFF6C5CE7), Color(0xFF4834D4)],
-              value: distanceKm >= 1
-                  ? '${distanceKm.toStringAsFixed(1)}k'
-                  : '${journey.distanceMeters.toInt()}m',
-            ),
-            const SizedBox(height: 14),
-            _StatItem(
-              icon: Icons.hexagon_outlined,
-              gradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
-              value: '—',
-            ),
-          ],
-        ),
+    return Container(
+      margin: const EdgeInsets.only(left: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _StatItem(
+            icon: Icons.timer_outlined,
+            gradient: const [Color(0xFF00D4AA), Color(0xFF00897B)],
+            value: '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
+          ),
+          const SizedBox(height: 14),
+          _StatItem(
+            icon: Icons.straighten_rounded,
+            gradient: const [Color(0xFF6C5CE7), Color(0xFF4834D4)],
+            value: distanceKm >= 1
+                ? '${distanceKm.toStringAsFixed(1)}k'
+                : '${journey.distanceMeters.toInt()}m',
+          ),
+          const SizedBox(height: 14),
+          _StatItem(
+            icon: Icons.hexagon_outlined,
+            gradient: const [Color(0xFFF59E0B), Color(0xFFD97706)],
+            value: '—',
+          ),
+        ],
       ),
     );
   }

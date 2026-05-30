@@ -26,7 +26,6 @@ class AnimatedHexOverlay extends StatefulWidget {
   final Color userColor;
   final double currentZoom;
   final bool isNewCapture;
-  final bool isOtherPlayer;
 
   const AnimatedHexOverlay({
     super.key,
@@ -34,7 +33,6 @@ class AnimatedHexOverlay extends StatefulWidget {
     required this.userColor,
     required this.currentZoom,
     this.isNewCapture = false,
-    this.isOtherPlayer = false,
   });
 
   @override
@@ -190,7 +188,6 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
   Widget _buildAnimatedPolygons(double pulse, double wave, double entrance) {
     final baseColor = widget.userColor;
     final isNew = widget.isNewCapture;
-    final isOther = widget.isOtherPlayer;
     final hexCount = widget.hexBoundaries.length;
 
     final glowPolygons = <Polygon>[];
@@ -205,34 +202,27 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
       final phase = (wave + (i / math.max(hexCount, 1))) % 1.0;
       final hexWave = (math.sin(phase * 2 * math.pi) + 1) / 2;
 
-      double fillAlpha;
-      double borderAlpha;
-      double borderWidth;
+      // Strong dark fill — highly visible on dark map
+      final fillAlpha = isNew
+          ? 0.55 + (hexWave * 0.15) // 0.55–0.70 for new captures
+          : 0.40 + (hexWave * 0.15); // 0.40–0.55 for owned
 
-      if (isOther) {
-        // Others: dark, subdued, slow breathing
-        fillAlpha = 0.55 + (hexWave * 0.05); // 0.55–0.60 — dark and solid
-        borderAlpha = 0.50 + (pulse * 0.10); // 0.50–0.60 — subtle border
-        borderWidth = 1.5; // thin border
-      } else if (isNew) {
-        fillAlpha = 0.55 + (hexWave * 0.15);
-        borderAlpha = 0.85 + (pulse * 0.15);
-        borderWidth = 3.0 + (pulse * 1.5);
-      } else {
-        fillAlpha = 0.40 + (hexWave * 0.15);
-        borderAlpha = 0.70 + (pulse * 0.20);
-        borderWidth = 2.5 + (pulse * 1.0);
-      }
+      // Neon glow border intensity
+      final borderAlpha = isNew
+          ? 0.85 + (pulse * 0.15) // 0.85–1.0
+          : 0.70 + (pulse * 0.20); // 0.70–0.90
+
+      final borderWidth = isNew
+          ? 3.0 + (pulse * 1.5) // 3.0–4.5
+          : 2.5 + (pulse * 1.0); // 2.5–3.5
 
       // Outer neon glow (wider, softer — creates the "glow" effect)
-      if (!isOther) {
-        glowPolygons.add(Polygon(
-          points: points,
-          color: Colors.transparent,
-          borderColor: baseColor.withValues(alpha: borderAlpha * 0.35 * entrance),
-          borderStrokeWidth: borderWidth + 6.0,
-        ));
-      }
+      glowPolygons.add(Polygon(
+        points: points,
+        color: Colors.transparent,
+        borderColor: baseColor.withValues(alpha: borderAlpha * 0.35 * entrance),
+        borderStrokeWidth: borderWidth + 6.0,
+      ));
 
       // Main polygon — dark, strong, visible
       mainPolygons.add(Polygon(
@@ -242,82 +232,23 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
         borderStrokeWidth: borderWidth,
       ));
 
-      // Inner shimmer — only for own hexes
-      if (!isOther) {
-        final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
-        innerPolygons.add(Polygon(
-          points: points,
-          color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
-          borderColor: Colors.transparent,
-          borderStrokeWidth: 0,
-        ));
-      }
-    }
-
-    // Cluster outer boundary glow for others (convex hull effect)
-    if (isOther && hexCount > 1) {
-      // Compute all boundary points for a unified outer glow
-      final allPoints = <LatLng>[];
-      for (final boundary in widget.hexBoundaries) {
-        for (final p in boundary) {
-          allPoints.add(LatLng(p[0], p[1]));
-        }
-      }
-      // Simple convex hull approach: draw a glow around the cluster centroid
-      if (allPoints.isNotEmpty) {
-        final outerGlow = Polygon(
-          points: _computeConvexHull(allPoints),
-          color: Colors.transparent,
-          borderColor: baseColor.withValues(alpha: 0.25 + pulse * 0.15),
-          borderStrokeWidth: 3.0 + pulse * 2.0,
-        );
-        glowPolygons.add(outerGlow);
-      }
+      // Inner shimmer — white flash sweeping through hexes
+      final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
+      innerPolygons.add(Polygon(
+        points: points,
+        color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
+        borderColor: Colors.transparent,
+        borderStrokeWidth: 0,
+      ));
     }
 
     return Stack(
       children: [
         PolygonLayer(polygons: glowPolygons),
         PolygonLayer(polygons: mainPolygons),
-        if (innerPolygons.isNotEmpty) PolygonLayer(polygons: innerPolygons),
+        PolygonLayer(polygons: innerPolygons),
       ],
     );
-  }
-
-  /// Compute convex hull of a set of LatLng points using Graham scan.
-  List<LatLng> _computeConvexHull(List<LatLng> points) {
-    if (points.length < 3) return points;
-
-    // Find lowest point (highest lat = lowest on map)
-    final sorted = List<LatLng>.from(points);
-    sorted.sort((a, b) {
-      if (a.latitude != b.latitude) return a.latitude.compareTo(b.latitude);
-      return a.longitude.compareTo(b.longitude);
-    });
-
-    final pivot = sorted.first;
-
-    // Sort by polar angle relative to pivot
-    sorted.removeAt(0);
-    sorted.sort((a, b) {
-      final angleA = math.atan2(a.latitude - pivot.latitude, a.longitude - pivot.longitude);
-      final angleB = math.atan2(b.latitude - pivot.latitude, b.longitude - pivot.longitude);
-      return angleA.compareTo(angleB);
-    });
-
-    final hull = <LatLng>[pivot];
-    for (final p in sorted) {
-      while (hull.length > 1 && _cross(hull[hull.length - 2], hull.last, p) <= 0) {
-        hull.removeLast();
-      }
-      hull.add(p);
-    }
-    return hull;
-  }
-
-  double _cross(LatLng o, LatLng a, LatLng b) {
-    return (a.longitude - o.longitude) * (b.latitude - o.latitude) -
-        (a.latitude - o.latitude) * (b.longitude - o.longitude);
   }
 }
 

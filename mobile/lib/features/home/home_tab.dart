@@ -527,24 +527,19 @@ class _QuickStats extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  // Next tier/division badge (greyed out target)
+                  // Next tier/division badge (target)
                   if (nextTier != null || division < 4)
                     Opacity(
-                      opacity: 0.4,
+                      opacity: 0.8,
                       child: HexTrophyBadge(hexes: nextDivThreshold, size: 48, showProgress: false, showLabel: true),
                     ),
                 ],
               ),
               const SizedBox(height: 16),
-              // Division progress with labels at endpoints
+              // Division progress bar with target label
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: tier.color.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
-                    child: Text(tier.label[0], style: TextStyle(color: tier.color, fontWeight: FontWeight.w800, fontSize: 12)),
-                  ),
-                  const SizedBox(width: 8),
                   Expanded(
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
@@ -556,11 +551,10 @@ class _QuickStats extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: (nextTier?.color ?? tier.color).withValues(alpha: 0.2), borderRadius: BorderRadius.circular(6)),
-                    child: Text(nextTier?.label[0] ?? '★', style: TextStyle(color: nextTier?.color ?? tier.color, fontWeight: FontWeight.w800, fontSize: 12)),
+                  const SizedBox(width: 10),
+                  Text(
+                    nextLabel,
+                    style: TextStyle(color: (nextTier?.color ?? tier.color), fontWeight: FontWeight.w700, fontSize: 12),
                   ),
                 ],
               ),

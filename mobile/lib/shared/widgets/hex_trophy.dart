@@ -524,7 +524,7 @@ class HexTierShowcase extends StatelessWidget {
           final isActive = tier.level <= currentTier.level;
           final isCurrent = tier == currentTier;
           return Opacity(
-            opacity: isActive ? 1.0 : 0.3,
+            opacity: isActive ? 1.0 : 0.8,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
