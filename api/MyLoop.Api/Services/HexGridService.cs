@@ -124,7 +124,9 @@ public class HexGridService : IHexGridService
     }
 
     /// <summary>
-    /// Fills a closed polygon with all H3 cells whose centers fall inside.
+    /// Fills a closed polygon with all H3 cells whose centers fall inside,
+    /// PLUS boundary cells that are at least ~50% inside the polygon.
+    /// Uses a buffer approach: expands polygon by half a hex-width before filling.
     /// </summary>
     private List<HexCell> FillPolygon(double[][] polygon)
     {
@@ -139,11 +141,18 @@ public class HexGridService : IHexGridService
             coordinates.Add(coordinates[0]);
         }
 
-        // Build NTS polygon and fill with H3 cells
+        // Build NTS polygon
         var factory = new GeometryFactory();
         var ring = factory.CreateLinearRing(coordinates.ToArray());
         var ntsPolygon = factory.CreatePolygon(ring);
-        var cells = ntsPolygon.Fill(GameConstants.H3Resolution);
+
+        // Buffer outward by ~half a hex-width in degrees (~32.5m ≈ 0.00029°)
+        // This captures boundary cells that are ≥50% inside the loop
+        var bufferDegrees = (GameConstants.HexVisualRadiusMeters * 1.3) / GameConstants.MetersPerDegreeLat;
+        var bufferedPolygon = ntsPolygon.Buffer(bufferDegrees);
+
+        // Fill the buffered polygon with H3 cells
+        var cells = bufferedPolygon.Fill(GameConstants.H3Resolution);
 
         var result = new List<HexCell>();
         foreach (var cell in cells)

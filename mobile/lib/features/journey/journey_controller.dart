@@ -172,7 +172,7 @@ class JourneyController extends Notifier<JourneyState> {
     _positionSub?.cancel();
     _timer?.cancel();
     final path = state.path;
-    state = state.copyWith(status: JourneyStatus.idle);
+    state = state.copyWith(status: JourneyStatus.idle, path: const []);
     return path;
   }
 }

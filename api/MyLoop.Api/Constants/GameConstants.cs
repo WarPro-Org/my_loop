@@ -11,7 +11,7 @@ public static class GameConstants
     public const double MaxClaimAreaSquareMeters = 5_000_000.0; // 5 km²
     public const int MaxClaimsPerDay = 20;
     public const double LoopClosureDistanceMeters = 50.0;
-    public const double MinFillAreaSquareMeters = 30_000.0;
+    public const double MinFillAreaSquareMeters = 5_000.0;
 
     // --- H3 Hex Grid ---
     public const int H3Resolution = 10;

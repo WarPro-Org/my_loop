@@ -119,15 +119,18 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         );
       }
 
-      // Show celebration using this screen's stable context
+      // Delay celebration so user sees hexes flash on the map first
       if (mounted) {
-        _showCelebration(
-          hexCount: capturedCount,
-          stolenCount: stolenCount,
-          distance: walkDistance,
-          duration: walkDuration,
-          newStreak: user.streak,
-        );
+        await Future.delayed(const Duration(milliseconds: 800));
+        if (mounted) {
+          _showCelebration(
+            hexCount: capturedCount,
+            stolenCount: stolenCount,
+            distance: walkDistance,
+            duration: walkDuration,
+            newStreak: user.streak,
+          );
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -692,11 +695,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userAgentPackageName: 'com.myloop.app',
               ),
 
-            // Other players' hex polygons (black, full animation)
+            // Other players' hex polygons (visible on both satellite + dark themes)
             if (_otherHexBoundaries.isNotEmpty)
               AnimatedHexOverlay(
                 hexBoundaries: _otherHexBoundaries,
-                userColor: const Color(0xFF1A1A2E), // near-black for others
+                userColor: const Color(0xFFFF6B6B), // coral red — visible on satellite + dark
                 currentZoom: _currentZoom,
                 isNewCapture: false,
               ),
