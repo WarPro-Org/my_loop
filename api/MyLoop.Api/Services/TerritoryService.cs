@@ -296,4 +296,44 @@ public class TerritoryService : ITerritoryService
     {
         return new ClaimResult { Success = false, Error = error };
     }
+
+    public async Task<List<TerritoryCellResponse>> GetUserTerritories(Guid userId)
+    {
+        var cells = await _db.TerritoryCells
+            .Include(t => t.Owner)
+            .Where(t => t.OwnerId == userId)
+            .Select(t => new
+            {
+                t.CellId,
+                t.BoundaryJson,
+                t.OwnerId,
+                OwnerColor = t.Owner!.Color,
+                OwnerName = t.Owner!.DisplayName
+            })
+            .ToListAsync();
+
+        return cells.Select(t => new TerritoryCellResponse
+        {
+            CellId = t.CellId,
+            Boundary = System.Text.Json.JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
+            OwnerId = t.OwnerId,
+            OwnerColor = t.OwnerColor,
+            OwnerName = t.OwnerName,
+        }).ToList();
+    }
+
+    public async Task<List<ClaimHistoryEntry>> GetClaimHistory(Guid userId)
+    {
+        return await _db.Claims
+            .Where(c => c.UserId == userId)
+            .OrderByDescending(c => c.CreatedAt)
+            .Select(c => new ClaimHistoryEntry
+            {
+                ClaimId = c.Id,
+                CellCount = c.CellCount,
+                AreaM2 = c.AreaM2,
+                Date = c.CreatedAt,
+            })
+            .ToListAsync();
+    }
 }

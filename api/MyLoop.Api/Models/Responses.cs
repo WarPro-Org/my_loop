@@ -59,6 +59,17 @@ public class StolenCellDetail
 }
 
 /// <summary>
+/// A single entry in a user's claim history (hex history on home page).
+/// </summary>
+public class ClaimHistoryEntry
+{
+    public Guid ClaimId { get; set; }
+    public int CellCount { get; set; }
+    public double AreaM2 { get; set; }
+    public DateTime Date { get; set; }
+}
+
+/// <summary>
 /// Response for a cell's ownership history.
 /// </summary>
 public class CellHistoryResponse

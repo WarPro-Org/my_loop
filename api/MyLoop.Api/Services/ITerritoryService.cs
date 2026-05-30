@@ -34,6 +34,16 @@ public interface ITerritoryService
     /// Gets the ownership history of a specific hex cell.
     /// </summary>
     Task<CellHistoryResponse> GetCellHistory(long cellId);
+
+    /// <summary>
+    /// Gets ALL territory cells owned by a specific user (regardless of viewport).
+    /// </summary>
+    Task<List<TerritoryCellResponse>> GetUserTerritories(Guid userId);
+
+    /// <summary>
+    /// Gets a user's claim history — one entry per claim submission.
+    /// </summary>
+    Task<List<ClaimHistoryEntry>> GetClaimHistory(Guid userId);
 }
 
 /// <summary>

@@ -1233,22 +1233,23 @@ class _ReadyHexPainter extends CustomPainter {
 }
 
 /// ─────────────────────────────────────────────────────────────────────────────
-/// HEX HISTORY LAZY (shows top 5 then loads more)
+/// HEX HISTORY LAZY (shows real claim history from API)
 /// ─────────────────────────────────────────────────────────────────────────────
 
-class _HexHistoryLazy extends StatefulWidget {
+class _HexHistoryLazy extends ConsumerStatefulWidget {
   final ScrollController scroll;
   const _HexHistoryLazy({required this.scroll});
 
   @override
-  State<_HexHistoryLazy> createState() => _HexHistoryLazyState();
+  ConsumerState<_HexHistoryLazy> createState() => _HexHistoryLazyState();
 }
 
-class _HexHistoryLazyState extends State<_HexHistoryLazy> {
-  List<Map<String, dynamic>> _allDays = [];
+class _HexHistoryLazyState extends ConsumerState<_HexHistoryLazy> {
+  List<Map<String, dynamic>> _claims = [];
   int _visibleCount = 5;
   bool _loadingMore = false;
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -1257,16 +1258,28 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
   }
 
   Future<void> _fetchHistory() async {
-    // TODO: Replace with real API call when hex history endpoint exists
-    // For now, show empty state for new users
-    if (mounted) setState(() { _loading = false; });
+    final profile = ref.read(userProfileProvider);
+    if (profile.userId == null) {
+      if (mounted) setState(() { _loading = false; });
+      return;
+    }
+    try {
+      final api = ref.read(apiServiceProvider);
+      final history = await api.getClaimHistory(profile.userId!);
+      if (mounted) setState(() { _claims = history; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
+    }
   }
 
   void _loadMore() {
-    if (_loadingMore || _visibleCount >= _allDays.length) return;
+    if (_loadingMore || _visibleCount >= _claims.length) return;
     setState(() => _loadingMore = true);
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) setState(() { _visibleCount = (_visibleCount + 5).clamp(0, _allDays.length); _loadingMore = false; });
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() {
+        _visibleCount = (_visibleCount + 5).clamp(0, _claims.length);
+        _loadingMore = false;
+      });
     });
   }
 
@@ -1275,7 +1288,10 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
-    if (_allDays.isEmpty) {
+    if (_error != null) {
+      return Center(child: Text('Could not load history', style: TextStyle(color: AppColors.grey, fontSize: 13)));
+    }
+    if (_claims.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1289,7 +1305,7 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
         ),
       );
     }
-    final visible = _allDays.take(_visibleCount).toList();
+    final visible = _claims.take(_visibleCount).toList();
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollEndNotification &&
@@ -1303,16 +1319,22 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
         itemCount: visible.length + (_loadingMore ? 3 : 0),
         itemBuilder: (context, index) {
           if (index >= visible.length) {
-            // Shimmer placeholder
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: ShimmerBox(height: 72, borderRadius: 12),
             );
           }
-          final day = visible[index];
-          final earned = day['earned'] as int;
-          final lost = day['lost'] as int;
-          final net = earned - lost;
+          final claim = visible[index];
+          final earned = (claim['cellCount'] as num?)?.toInt() ?? 0;
+          final areaM2 = (claim['areaM2'] as num?)?.toDouble() ?? 0;
+          final rawDate = claim['date'] as String? ?? '';
+          final dateStr = rawDate.isNotEmpty
+              ? _formatDate(DateTime.tryParse(rawDate))
+              : 'Unknown date';
+          final areaStr = areaM2 >= 1000000
+              ? '${(areaM2 / 1000000).toStringAsFixed(2)} km²'
+              : '${(areaM2 / 1000).toStringAsFixed(1)} k m²';
+
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
@@ -1325,7 +1347,10 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
               children: [
                 Container(
                   width: 44, height: 44,
-                  decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   child: const Center(child: Text('⬡', style: TextStyle(fontSize: 20))),
                 ),
                 const SizedBox(width: 12),
@@ -1333,25 +1358,19 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(day['date'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
+                      Text(dateStr, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 2),
-                      Row(children: [
-                        Text('+$earned captured', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
-                        if (lost > 0) ...[
-                          const SizedBox(width: 8),
-                          Text('-$lost stolen', style: const TextStyle(color: AppColors.red, fontWeight: FontWeight.w600, fontSize: 12)),
-                        ],
-                      ]),
+                      Text(areaStr, style: const TextStyle(color: AppColors.grey, fontSize: 11)),
                     ],
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: net >= 0 ? AppColors.primary.withValues(alpha: 0.1) : AppColors.red.withValues(alpha: 0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text('${net >= 0 ? '+' : ''}$net', style: TextStyle(fontWeight: FontWeight.w800, color: net >= 0 ? AppColors.primary : AppColors.red)),
+                  child: Text('+$earned ⬡', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primary)),
                 ),
               ],
             ),
@@ -1360,7 +1379,18 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
       ),
     );
   }
+
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return 'Unknown date';
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) return 'Today';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
 }
+
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// STREAK HISTORY LAZY (shows 10 then loads more)

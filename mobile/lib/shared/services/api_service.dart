@@ -86,6 +86,22 @@ class ApiService {
     return list.map((j) => TerritoryCell.fromJson(j)).toList();
   }
 
+  /// Returns ALL territory cells owned by [userId], regardless of viewport.
+  /// Used to ensure the user's hexes always render on the map.
+  Future<List<TerritoryCell>> getUserTerritories(String userId) async {
+    final response = await _dio.get('/api/territories/user/$userId');
+    final list = response.data as List;
+    return list.map((j) => TerritoryCell.fromJson(j)).toList();
+  }
+
+  /// Returns a user's full claim history (one entry per walk submission).
+  /// Used for the Hex History section on the home page.
+  Future<List<Map<String, dynamic>>> getClaimHistory(String userId) async {
+    final response = await _dio.get('/api/territories/claims/$userId');
+    final list = response.data as List;
+    return list.map((j) => j as Map<String, dynamic>).toList();
+  }
+
   /// Submits a completed walk path to the backend for territory claiming.
   ///
   /// The backend runs H3 hex resolution, loop detection, and territory

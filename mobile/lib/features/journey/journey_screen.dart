@@ -332,7 +332,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         if (_mapReady && _followUser) {
           _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
         }
-        // Load hexes in a wide area around the user's actual position
+        // Load the user's own hexes (all of them) + nearby hexes from other players
+        _loadUserOwnHexes();
         _loadAllHexes();
       } else if (mounted) {
         setState(() => _locationError = true);
@@ -340,6 +341,31 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     } catch (_) {
       if (mounted) setState(() => _locationError = true);
     }
+  }
+
+  /// Loads ALL hexes owned by this user from the server — no viewport limit.
+  /// This guarantees the user always sees their territory even if they captured
+  /// it elsewhere and just opened the map from a different location.
+  Future<void> _loadUserOwnHexes() async {
+    final profile = ref.read(userProfileProvider);
+    if (profile.userId == null) return;
+    try {
+      final api = ref.read(apiServiceProvider);
+      final cells = await api.getUserTerritories(profile.userId!);
+      if (mounted && cells.isNotEmpty) {
+        final mine = cells.map((c) => c.boundary).toList();
+        // Merge with any already-loaded other-player hexes; re-render immediately
+        setState(() {
+          _myHexBoundaries = mine;
+          _allCells = [..._allCells.where((c) => c.ownerId != profile.userId), ...cells];
+        });
+        // If map is ready, fly to user's hexes center so they can see them
+        if (_mapReady && cells.isNotEmpty) {
+          final first = cells.first.boundary.first;
+          _mapController.move(LatLng(first[0], first[1]), _mapController.camera.zoom);
+        }
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadViewportHexes(double lat, double lng) async {
@@ -573,8 +599,9 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   /// Called after claim submission so newly captured hexes appear without
   /// waiting for the periodic 30-second timer.
   void forceReloadHexes() {
+    _loadUserOwnHexes(); // Always reload user's full territory first
     if (_mapReady) {
-      _refreshViewportHexes();
+      _refreshViewportHexes(); // Also refresh viewport for nearby players
     } else if (_initialPosition != null) {
       _loadViewportHexes(_initialPosition!.latitude, _initialPosition!.longitude);
     }
