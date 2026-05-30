@@ -22,6 +22,9 @@ public class TerritoryCell
     /// <summary>Timestamp when this cell was last claimed/stolen.</summary>
     public DateTime ClaimedAt { get; set; }
 
+    /// <summary>UTC time when the cooldown expires and the cell becomes stealable again.</summary>
+    public DateTime? CooldownExpiresAt { get; set; }
+
     /// <summary>Latitude of the hexagon's center point. Used for spatial viewport queries with indexed range scans.</summary>
     public double CenterLat { get; set; }
 

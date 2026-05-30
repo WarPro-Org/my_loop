@@ -126,9 +126,10 @@ public class HexGridService : IHexGridService
     }
 
     /// <summary>
-    /// Fills a closed polygon with all H3 cells whose centers fall inside,
-    /// PLUS boundary cells that are at least ~50% inside the polygon.
-    /// Buffers the polygon outward by the hex apothem before filling.
+    /// Fills a closed polygon with H3 cells using exact geometric intersection.
+    /// Step 1: All cells whose centers are fully inside the polygon (interior cluster).
+    /// Step 2: Boundary candidates (ring-1 neighbors) included if ≥51% of cell area overlaps.
+    /// Uses parallel computation for the intersection checks.
     /// </summary>
     private List<HexCell> FillPolygon(double[][] polygon)
     {
@@ -147,17 +148,48 @@ public class HexGridService : IHexGridService
         var ring = _geometryFactory.CreateLinearRing(coordinates.ToArray());
         var ntsPolygon = _geometryFactory.CreatePolygon(ring);
 
-        // Buffer outward by the hex apothem (~25m at res 11) in degrees.
-        // This captures cells whose center is within one apothem of the edge,
-        // meaning the cell is approximately ≥50% inside the loop.
-        var bufferDegrees = GameConstants.HexApothemMeters / GameConstants.MetersPerDegreeLat;
-        var bufferedPolygon = ntsPolygon.Buffer(bufferDegrees);
+        // Step 1: Fill interior — all cells whose center is inside the polygon
+        var interiorCells = ntsPolygon.Fill(GameConstants.H3Resolution).ToList();
+        var interiorSet = new HashSet<ulong>(interiorCells.Select(c => (ulong)c));
 
-        // Fill the buffered polygon with H3 cells
-        var cells = bufferedPolygon.Fill(GameConstants.H3Resolution);
+        // Step 2: Find boundary candidates — ring-1 neighbors of interior cells
+        // that are NOT already in the interior set
+        var boundaryCandidates = new HashSet<ulong>();
+        foreach (var cell in interiorCells)
+        {
+            foreach (var ringCell in cell.GridDiskDistances(1))
+            {
+                var id = (ulong)ringCell.Index;
+                if (!interiorSet.Contains(id))
+                {
+                    boundaryCandidates.Add(id);
+                }
+            }
+        }
 
-        var result = new List<HexCell>();
-        foreach (var cell in cells)
+        // Step 3: Parallel intersection check — include boundary cells with ≥51% overlap
+        var qualifiedBoundary = new System.Collections.Concurrent.ConcurrentBag<H3Index>();
+        Parallel.ForEach(boundaryCandidates, candidateId =>
+        {
+            var candidate = (H3Index)candidateId;
+            var cellPolygon = candidate.GetCellBoundary(_geometryFactory);
+            var intersection = ntsPolygon.Intersection(cellPolygon);
+            var ratio = intersection.Area / cellPolygon.Area;
+            if (ratio >= GameConstants.MinIntersectionRatio)
+            {
+                qualifiedBoundary.Add(candidate);
+            }
+        });
+
+        // Combine interior + qualified boundary cells
+        var result = new List<HexCell>(interiorCells.Count + qualifiedBoundary.Count);
+        foreach (var cell in interiorCells)
+        {
+            var cellId = (long)(ulong)cell;
+            var boundary = GetRealCellBoundary(cell);
+            result.Add(new HexCell { CellId = cellId, Boundary = boundary });
+        }
+        foreach (var cell in qualifiedBoundary)
         {
             var cellId = (long)(ulong)cell;
             var boundary = GetRealCellBoundary(cell);

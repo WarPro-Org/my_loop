@@ -74,6 +74,8 @@ public class TerritoryService : ITerritoryService
         // Assign hexes to the user and record transfers
         var transfers = new List<CellTransfer>();
         var boundaries = new List<double[][]>();
+        var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
+        var skippedCooldown = 0;
 
         foreach (var hexCell in cells)
         {
@@ -83,6 +85,13 @@ public class TerritoryService : ITerritoryService
             var existing = await _db.TerritoryCells.FindAsync(hexCell.CellId);
             if (existing != null)
             {
+                // Skip cells still on cooldown (protected from everyone including owner)
+                if (existing.CooldownExpiresAt.HasValue && existing.CooldownExpiresAt.Value > DateTime.UtcNow)
+                {
+                    skippedCooldown++;
+                    continue;
+                }
+
                 // Steal: overwrite the previous owner
                 var transfer = new CellTransfer
                 {
@@ -98,6 +107,7 @@ public class TerritoryService : ITerritoryService
                 existing.OwnerId = userId;
                 existing.ClaimId = claim.Id;
                 existing.ClaimedAt = DateTime.UtcNow;
+                existing.CooldownExpiresAt = cooldownExpiry;
                 existing.CenterLat = center.Lat;
                 existing.CenterLng = center.Lng;
                 existing.ParentCellId = parentId;
@@ -112,6 +122,7 @@ public class TerritoryService : ITerritoryService
                     OwnerId = userId,
                     ClaimId = claim.Id,
                     ClaimedAt = DateTime.UtcNow,
+                    CooldownExpiresAt = cooldownExpiry,
                     CenterLat = center.Lat,
                     CenterLng = center.Lng,
                     ParentCellId = parentId,
@@ -212,7 +223,8 @@ public class TerritoryService : ITerritoryService
                 t.BoundaryJson,
                 t.OwnerId,
                 OwnerColor = t.Owner!.Color,
-                OwnerName = t.Owner!.DisplayName
+                OwnerName = t.Owner!.DisplayName,
+                t.CooldownExpiresAt
             })
             .ToListAsync();
 
@@ -226,6 +238,7 @@ public class TerritoryService : ITerritoryService
                 OwnerId = t.OwnerId,
                 OwnerColor = t.OwnerColor,
                 OwnerName = t.OwnerName,
+                CooldownExpiresAtUtc = t.CooldownExpiresAt,
             });
         }
         return result;

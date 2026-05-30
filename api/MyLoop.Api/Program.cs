@@ -90,6 +90,8 @@ using (var scope = app.Services.CreateScope())
             "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CenterLng\" double precision NOT NULL DEFAULT 0");
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"ParentCellId\" bigint NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CooldownExpiresAt\" timestamp with time zone");
 
         // Drop PreviousOwnerId if it exists (replaced by CellTransfers table)
         db.Database.ExecuteSqlRaw(

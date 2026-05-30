@@ -12,6 +12,8 @@ public static class GameConstants
     public const int MaxClaimsPerDay = 20;
     public const double LoopClosureDistanceMeters = 50.0;
     public const double MinFillAreaSquareMeters = 5_000.0;
+    public const double CellCooldownHours = 5.0;
+    public const double MinIntersectionRatio = 0.51;
 
     // --- H3 Hex Grid ---
     /// <summary>

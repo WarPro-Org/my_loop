@@ -22,6 +22,7 @@ public class TerritoryCellResponse
     public Guid OwnerId { get; set; }
     public string? OwnerColor { get; set; }
     public string? OwnerName { get; set; }
+    public DateTime? CooldownExpiresAtUtc { get; set; }
 }
 
 /// <summary>
