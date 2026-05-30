@@ -184,7 +184,7 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
     return MarkerLayer(markers: markers);
   }
 
-  /// CLOSE ZOOM (14+): Full hex polygons with 3D depth, neon glow, wave motion.
+  /// CLOSE ZOOM (14+): Full hex polygons with dark fill, neon glow, wave motion.
   Widget _buildAnimatedPolygons(double pulse, double wave, double entrance) {
     final baseColor = widget.userColor;
     final isNew = widget.isNewCapture;
@@ -192,7 +192,7 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
 
     final glowPolygons = <Polygon>[];
     final mainPolygons = <Polygon>[];
-    final depthPolygons = <Polygon>[];
+    final innerPolygons = <Polygon>[];
 
     for (int i = 0; i < hexCount; i++) {
       final boundary = widget.hexBoundaries[i];
@@ -232,26 +232,11 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
         borderStrokeWidth: borderWidth,
       ));
 
-      // 3D depth effect: top-highlight layer (white gradient on upper half)
-      // and inner shimmer sweep combined
-      final highlightAlpha = 0.08 + (hexWave * 0.06); // subtle top shine
-      depthPolygons.add(Polygon(
+      // Inner shimmer — white flash sweeping through hexes
+      final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
+      innerPolygons.add(Polygon(
         points: points,
-        color: Colors.white.withValues(alpha: highlightAlpha * entrance),
-        borderColor: Colors.transparent,
-        borderStrokeWidth: 0,
-      ));
-    }
-
-    // 3D shadow layer: offset polygons slightly down to simulate depth
-    final shadowPolygons = <Polygon>[];
-    for (int i = 0; i < hexCount; i++) {
-      final boundary = widget.hexBoundaries[i];
-      // Offset points slightly south (lower lat) for shadow
-      final shadowPoints = boundary.map((p) => LatLng(p[0] - 0.000015, p[1])).toList();
-      shadowPolygons.add(Polygon(
-        points: shadowPoints,
-        color: Colors.black.withValues(alpha: 0.25 * entrance),
+        color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
         borderColor: Colors.transparent,
         borderStrokeWidth: 0,
       ));
@@ -259,10 +244,9 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
 
     return Stack(
       children: [
-        PolygonLayer(polygons: shadowPolygons),
         PolygonLayer(polygons: glowPolygons),
         PolygonLayer(polygons: mainPolygons),
-        PolygonLayer(polygons: depthPolygons),
+        PolygonLayer(polygons: innerPolygons),
       ],
     );
   }

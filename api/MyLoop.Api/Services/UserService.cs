@@ -64,6 +64,21 @@ public class UserService : IUserService
             if (raced != null) return raced;
             throw; // Truly unexpected — rethrow
         }
+
+        // Auto-assign leaderboard rank (last place) so new users see a rank immediately
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var totalUsers = await _db.Users.CountAsync();
+        _db.Set<LeaderboardEntry>().Add(new LeaderboardEntry
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Date = today,
+            CellCount = 0,
+            AreaM2 = 0,
+            Rank = totalUsers, // Last place
+        });
+        await _db.SaveChangesAsync();
+
         return user;
     }
 

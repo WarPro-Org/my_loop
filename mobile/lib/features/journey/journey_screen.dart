@@ -150,7 +150,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     super.initState();
     _acquireLocation();
     _loadAllHexes(); // Load hexes independent of geolocation
-    _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
+    // Don't start continuous GPS polling until journey starts — saves battery
     _hexRefreshTimer = Timer.periodic(const Duration(seconds: 30), (_) => _refreshViewportHexes());
   }
 
@@ -393,6 +393,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   @override
   void didUpdateWidget(covariant _JourneyMap old) {
     super.didUpdateWidget(old);
+    // Start/stop location polling based on tracking state
+    if (widget.journey.status == JourneyStatus.tracking && _locationTimer == null) {
+      _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
+    } else if (widget.journey.status != JourneyStatus.tracking && _locationTimer != null) {
+      _locationTimer?.cancel();
+      _locationTimer = null;
+    }
     // Only follow during tracking if followUser is enabled
     final pos = widget.journey.currentPosition;
     if (pos != null && _mapReady && _followUser && pos.latitude.isFinite && pos.longitude.isFinite) {
@@ -812,7 +819,14 @@ class _BottomControls extends ConsumerWidget {
           onPressed: () async {
             final path = controller.stopJourney();
             if (path.length < 2) {
-              if (context.mounted) Navigator.of(context).pop();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Walk a bit more to capture territory!'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
               return;
             }
             // Submit claim to API and update user state
@@ -851,8 +865,15 @@ class _BottomControls extends ConsumerWidget {
                 }
               }
             } catch (_) {
-              // Silently fail — user can still see their walk ended
-              if (context.mounted) Navigator.of(context).pop();
+              // Show error but stay on map
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not submit claim. Try again later.'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+              }
             }
           },
         ),
