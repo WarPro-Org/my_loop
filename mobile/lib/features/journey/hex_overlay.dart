@@ -44,11 +44,9 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
   late AnimationController _pulseController;
   late AnimationController _waveController;
   late AnimationController _entranceController;
-  late AnimationController _particleController;
   late Animation<double> _pulseAnim;
   late Animation<double> _waveAnim;
   late Animation<double> _entranceBounce;
-  late Animation<double> _particleAnim;
 
   @override
   void initState() {
@@ -79,13 +77,6 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
       CurvedAnimation(parent: _entranceController, curve: Curves.elasticOut),
     );
     _entranceController.forward();
-
-    // Edge particle travel animation — particles flow along hex edges
-    _particleController = AnimationController(
-      duration: const Duration(milliseconds: 2500),
-      vsync: this,
-    )..repeat();
-    _particleAnim = Tween<double>(begin: 0.0, end: 1.0).animate(_particleController);
   }
 
   @override
@@ -102,7 +93,6 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
     _pulseController.dispose();
     _waveController.dispose();
     _entranceController.dispose();
-    _particleController.dispose();
     super.dispose();
   }
 
@@ -120,12 +110,11 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
     if (widget.hexBoundaries.isEmpty) return const SizedBox.shrink();
 
     return AnimatedBuilder(
-      animation: Listenable.merge([_pulseAnim, _waveAnim, _entranceBounce, _particleAnim]),
+      animation: Listenable.merge([_pulseAnim, _waveAnim, _entranceBounce]),
       builder: (context, _) {
         final pulse = _pulseAnim.value;
         final wave = _waveAnim.value;
         final entrance = _entranceBounce.value;
-        final particle = _particleAnim.value;
         final zoom = widget.currentZoom;
 
         if (zoom < 10) {
@@ -133,7 +122,7 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
         } else if (zoom < 14) {
           return _buildBeaconMarkers(pulse, wave, entrance);
         } else {
-          return _buildAnimatedPolygons(pulse, wave, entrance, particle);
+          return _buildAnimatedPolygons(pulse, wave, entrance);
         }
       },
     );
@@ -195,16 +184,15 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
     return MarkerLayer(markers: markers);
   }
 
-  /// CLOSE ZOOM (14+): Full hex polygons with dark fill, neon glow, wave motion, edge particles.
-  Widget _buildAnimatedPolygons(double pulse, double wave, double entrance, double particle) {
+  /// CLOSE ZOOM (14+): Full hex polygons with 3D depth, neon glow, wave motion.
+  Widget _buildAnimatedPolygons(double pulse, double wave, double entrance) {
     final baseColor = widget.userColor;
     final isNew = widget.isNewCapture;
     final hexCount = widget.hexBoundaries.length;
 
     final glowPolygons = <Polygon>[];
     final mainPolygons = <Polygon>[];
-    final innerPolygons = <Polygon>[];
-    final particleMarkers = <Marker>[];
+    final depthPolygons = <Polygon>[];
 
     for (int i = 0; i < hexCount; i++) {
       final boundary = widget.hexBoundaries[i];
@@ -244,56 +232,37 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
         borderStrokeWidth: borderWidth,
       ));
 
-      // Inner shimmer — white flash sweeping through hexes
-      final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
-      innerPolygons.add(Polygon(
+      // 3D depth effect: top-highlight layer (white gradient on upper half)
+      // and inner shimmer sweep combined
+      final highlightAlpha = 0.08 + (hexWave * 0.06); // subtle top shine
+      depthPolygons.add(Polygon(
         points: points,
-        color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
+        color: Colors.white.withValues(alpha: highlightAlpha * entrance),
         borderColor: Colors.transparent,
         borderStrokeWidth: 0,
       ));
+    }
 
-      // Edge particles — light dots traveling along hex edges
-      // Each hex gets a particle at a different phase offset
-      if (boundary.length >= 6) {
-        final particlePhase = (particle + (i * 0.17)) % 1.0;
-        // Total perimeter = 6 edges. Particle position along perimeter:
-        final totalEdges = boundary.length;
-        final edgeProgress = particlePhase * totalEdges;
-        final edgeIndex = edgeProgress.floor() % totalEdges;
-        final t = edgeProgress - edgeIndex;
-        final p1 = boundary[edgeIndex];
-        final p2 = boundary[(edgeIndex + 1) % totalEdges];
-        final pLat = p1[0] + (p2[0] - p1[0]) * t;
-        final pLng = p1[1] + (p2[1] - p1[1]) * t;
-
-        particleMarkers.add(Marker(
-          point: LatLng(pLat, pLng),
-          width: 8,
-          height: 8,
-          child: Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.9),
-              boxShadow: [
-                BoxShadow(
-                  color: baseColor.withValues(alpha: 0.8),
-                  blurRadius: 6,
-                  spreadRadius: 2,
-                ),
-              ],
-            ),
-          ),
-        ));
-      }
+    // 3D shadow layer: offset polygons slightly down to simulate depth
+    final shadowPolygons = <Polygon>[];
+    for (int i = 0; i < hexCount; i++) {
+      final boundary = widget.hexBoundaries[i];
+      // Offset points slightly south (lower lat) for shadow
+      final shadowPoints = boundary.map((p) => LatLng(p[0] - 0.000015, p[1])).toList();
+      shadowPolygons.add(Polygon(
+        points: shadowPoints,
+        color: Colors.black.withValues(alpha: 0.25 * entrance),
+        borderColor: Colors.transparent,
+        borderStrokeWidth: 0,
+      ));
     }
 
     return Stack(
       children: [
+        PolygonLayer(polygons: shadowPolygons),
         PolygonLayer(polygons: glowPolygons),
         PolygonLayer(polygons: mainPolygons),
-        PolygonLayer(polygons: innerPolygons),
-        if (particleMarkers.isNotEmpty) MarkerLayer(markers: particleMarkers),
+        PolygonLayer(polygons: depthPolygons),
       ],
     );
   }

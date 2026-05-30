@@ -512,8 +512,9 @@ class _QuickStats extends ConsumerWidget {
             children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
-              // Trophy hero with current badge and info
+              // Trophy hero: current badge | info | target badge
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   HexTrophyBadge(hexes: userHexes, size: 64, showProgress: false, showLabel: false),
                   const SizedBox(width: 16),
@@ -527,31 +528,25 @@ class _QuickStats extends ConsumerWidget {
                       ],
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Division progress bar with target badge at end
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: LinearProgressIndicator(
-                        value: HexTier.divisionProgress(userHexes),
-                        minHeight: 10,
-                        backgroundColor: tier.color.withValues(alpha: 0.15),
-                        valueColor: AlwaysStoppedAnimation(tier.color),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  if (nextTier != null || division < 4)
+                  if (nextTier != null || division < 4) ...[
+                    const SizedBox(width: 12),
                     Opacity(
                       opacity: 0.8,
-                      child: HexTrophyBadge(hexes: nextDivThreshold, size: 36, showProgress: false, showLabel: false),
+                      child: HexTrophyBadge(hexes: nextDivThreshold, size: 44, showProgress: false, showLabel: true),
                     ),
+                  ],
                 ],
+              ),
+              const SizedBox(height: 14),
+              // Division progress bar
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: LinearProgressIndicator(
+                  value: HexTier.divisionProgress(userHexes),
+                  minHeight: 10,
+                  backgroundColor: tier.color.withValues(alpha: 0.15),
+                  valueColor: AlwaysStoppedAnimation(tier.color),
+                ),
               ),
               const SizedBox(height: 20),
               // Full tier scale

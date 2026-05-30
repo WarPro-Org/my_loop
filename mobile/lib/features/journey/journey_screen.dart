@@ -671,74 +671,61 @@ class _StatsBar extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(left: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.7),
+        color: Colors.black.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
         boxShadow: [
           BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4)),
         ],
       ),
-      child: IntrinsicWidth(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _StatItem(
-              icon: Icons.schedule_rounded,
-              color: const Color(0xFF00D4AA),
-              value: '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            _StatItem(
-              icon: Icons.route_rounded,
-              color: const Color(0xFF6C5CE7),
-              value: distanceKm >= 1
-                  ? '${distanceKm.toStringAsFixed(2)} km'
-                  : '${journey.distanceMeters.toInt()} m',
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Container(height: 1, color: Colors.white.withValues(alpha: 0.1)),
-            ),
-            _StatItem(
-              icon: Icons.hexagon_rounded,
-              color: const Color(0xFFF59E0B),
-              value: '—',
-            ),
-          ],
-        ),
+      child: Table(
+        columnWidths: const {
+          0: FixedColumnWidth(24),
+          1: IntrinsicColumnWidth(),
+        },
+        defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+        children: [
+          _buildStatRow(Icons.schedule_rounded, const Color(0xFF00D4AA),
+            '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'),
+          _buildSpacerRow(),
+          _buildStatRow(Icons.route_rounded, const Color(0xFF6C5CE7),
+            distanceKm >= 1 ? '${distanceKm.toStringAsFixed(2)} km' : '${journey.distanceMeters.toInt()} m'),
+          _buildSpacerRow(),
+          _buildStatRow(Icons.hexagon_rounded, const Color(0xFFF59E0B), '—'),
+        ],
       ),
     );
   }
-}
 
-/// A single stat row used in [_StatsBar] — icon + value, tightly aligned.
-class _StatItem extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String value;
-  const _StatItem({required this.icon, required this.color, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+  TableRow _buildStatRow(IconData icon, Color color, String value) {
+    return TableRow(
       children: [
-        Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            fontWeight: FontWeight.w700,
-            fontFeatures: [FontFeature.tabularFigures()],
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Center(child: Icon(icon, size: 18, color: color)),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 10, top: 6, bottom: 6),
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
+      ],
+    );
+  }
+
+  TableRow _buildSpacerRow() {
+    return TableRow(
+      children: [
+        const SizedBox(height: 1),
+        Container(height: 1, color: Colors.white.withValues(alpha: 0.08)),
       ],
     );
   }
