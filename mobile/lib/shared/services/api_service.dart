@@ -160,6 +160,11 @@ class ApiService {
     final response = await _dio.get('/api/users/$id/profile');
     return response.data as Map<String, dynamic>;
   }
+
+  /// Permanently deletes the user account and all associated data.
+  Future<void> deleteAccount(String userId) async {
+    await _dio.delete('/api/users/$userId');
+  }
 }
 
 /// Riverpod provider exposing a singleton [ApiService] instance.

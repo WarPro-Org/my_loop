@@ -13,4 +13,5 @@ public interface IUserService
     Task<User?> GetByFirebaseUid(string firebaseUid);
     Task<User?> UpdateProfile(Guid id, UpdateUserRequest request);
     Task<UserProfileResponse?> GetRichProfile(Guid id);
+    Task<bool> DeleteAccount(Guid userId);
 }

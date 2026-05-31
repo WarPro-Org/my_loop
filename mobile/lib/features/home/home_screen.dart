@@ -1,6 +1,7 @@
 ﻿/// Home screen shell - main navigation container for authenticated users.
 library;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +11,7 @@ import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
+import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
@@ -197,6 +199,13 @@ class _ProfileDrawer extends ConsumerWidget {
               context.go('/login');
             },
           ),
+          const SizedBox(height: 4),
+          _DrawerTile(
+            icon: Icons.delete_forever_outlined,
+            label: 'Delete Account',
+            iconColor: Colors.red.shade900,
+            onTap: () => _confirmDeleteAccount(context, ref),
+          ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
         ],
       ),
@@ -267,6 +276,43 @@ class _ProfileDrawer extends ConsumerWidget {
     final valid = RegExp(r"^[a-zA-Z0-9 \-_']+$");
     if (!valid.hasMatch(name)) return 'Only letters, numbers, spaces, hyphens allowed';
     return null;
+  }
+
+  void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: const Text(
+          'This will permanently delete your account, all territory, stats, and progress. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // close dialog
+              Navigator.pop(context); // close drawer
+              final profile = ref.read(userProfileProvider);
+              final api = ref.read(apiServiceProvider);
+              final uid = profile.userId;
+              if (uid == null) return;
+              try {
+                await api.deleteAccount(uid);
+                await FirebaseAuth.instance.currentUser?.delete();
+              } catch (_) {
+                // Firebase delete may fail if re-auth needed — account is already gone server-side
+                await FirebaseAuth.instance.signOut();
+              }
+              if (context.mounted) context.go('/login');
+            },
+            child: Text('Delete', style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 }
 

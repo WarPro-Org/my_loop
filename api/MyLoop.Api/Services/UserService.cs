@@ -152,4 +152,40 @@ public class UserService : IUserService
             TotalPlayers = totalPlayers,
         };
     }
+
+    public async Task<bool> DeleteAccount(Guid userId)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return false;
+
+        // Delete all territory cells owned by this user
+        var cells = await _db.TerritoryCells
+            .Where(c => c.OwnerId == userId)
+            .ToListAsync();
+        _db.TerritoryCells.RemoveRange(cells);
+
+        // Delete all cell transfers involving this user
+        var transfers = await _db.Set<CellTransfer>()
+            .Where(t => t.FromUserId == userId || t.ToUserId == userId)
+            .ToListAsync();
+        _db.Set<CellTransfer>().RemoveRange(transfers);
+
+        // Delete all claims by this user
+        var claims = await _db.Claims
+            .Where(c => c.UserId == userId)
+            .ToListAsync();
+        _db.Claims.RemoveRange(claims);
+
+        // Delete leaderboard entries
+        var leaderboard = await _db.LeaderboardEntries
+            .Where(l => l.UserId == userId)
+            .ToListAsync();
+        _db.LeaderboardEntries.RemoveRange(leaderboard);
+
+        // Delete the user
+        _db.Users.Remove(user);
+
+        await _db.SaveChangesAsync();
+        return true;
+    }
 }

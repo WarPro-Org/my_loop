@@ -5,6 +5,7 @@
 /// authentication, navigates to the avatar picker screen.
 library;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -13,6 +14,7 @@ import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 /// The initial login/welcome screen shown to unauthenticated users.
 ///
@@ -130,13 +132,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
               const Spacer(flex: 1),
 
-              // Terms text
-              Text(
-                'By continuing, you agree to our Terms & Privacy Policy',
+              // Terms text with tappable links
+              RichText(
                 textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.grey,
-                  fontSize: 12,
+                text: TextSpan(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: AppColors.grey,
+                    fontSize: 12,
+                  ),
+                  children: [
+                    const TextSpan(text: 'By continuing, you agree to our '),
+                    TextSpan(
+                      text: 'Terms',
+                      style: const TextStyle(decoration: TextDecoration.underline, fontWeight: FontWeight.w600),
+                      recognizer: TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse('https://destitute-living-bullpen.ngrok-free.dev/terms')),
+                    ),
+                    const TextSpan(text: ' & '),
+                    TextSpan(
+                      text: 'Privacy Policy',
+                      style: const TextStyle(decoration: TextDecoration.underline, fontWeight: FontWeight.w600),
+                      recognizer: TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse('https://destitute-living-bullpen.ngrok-free.dev/privacy')),
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 24),

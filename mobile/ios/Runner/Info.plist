@@ -55,6 +55,10 @@
 	<string>MyLoop needs your location to track your walking path and capture territory.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>MyLoop uses background location to continue tracking your walk even when the app is minimized.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

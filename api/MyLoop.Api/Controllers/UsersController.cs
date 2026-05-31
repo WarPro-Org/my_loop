@@ -104,4 +104,16 @@ public class UsersController : ControllerBase
         if (profile == null) return NotFound();
         return Ok(profile);
     }
+
+    /// <summary>
+    /// Delete user account and all associated data.
+    /// Apple App Store Guideline 5.1.1(v) requires this.
+    /// </summary>
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> DeleteAccount([FromRoute] Guid id)
+    {
+        var deleted = await _userService.DeleteAccount(id);
+        if (!deleted) return NotFound();
+        return NoContent();
+    }
 }

@@ -57,6 +57,63 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
+// Privacy Policy & Terms — required by Apple App Store (Guideline 5.1.1)
+app.MapGet("/privacy", () => Results.Content("""
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MyLoop — Privacy Policy</title>
+<style>body{font-family:system-ui,sans-serif;max-width:700px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#222}h1{font-size:1.5rem}h2{font-size:1.1rem;margin-top:2rem}</style>
+</head><body>
+<h1>Privacy Policy</h1>
+<p><strong>Last updated:</strong> May 31, 2026</p>
+<p>MyLoop ("we", "our", "the app") is a territory-capture walking game. This policy explains what data we collect and how we use it.</p>
+<h2>1. Data We Collect</h2>
+<ul>
+<li><strong>Account info:</strong> Display name, avatar selection, chosen color. If you sign in with Google or Apple, we receive your email and name from the provider.</li>
+<li><strong>Location data:</strong> GPS coordinates while you actively record a journey. We do NOT track your location when you are not on an active walk.</li>
+<li><strong>Game data:</strong> Territory cells claimed, walk paths, leaderboard statistics, streaks.</li>
+</ul>
+<h2>2. How We Use Your Data</h2>
+<ul>
+<li>To operate the game: claim territory, compute leaderboards, display your hexes on the map.</li>
+<li>To show other players' territory on your map (anonymized by color, not personal info).</li>
+<li>We do NOT sell your data. We do NOT run ads. We do NOT share data with third parties beyond Firebase Authentication.</li>
+</ul>
+<h2>3. Data Retention</h2>
+<p>Your data is stored as long as your account is active. You can delete your account at any time from the app's profile menu. Deletion removes all your data permanently within 24 hours.</p>
+<h2>4. Location Permission</h2>
+<p>The app requests "Always" location access so your walk continues tracking if you briefly switch apps. You can choose "While Using" instead — walks will only record when the app is in the foreground.</p>
+<h2>5. Children</h2>
+<p>MyLoop is not directed at children under 13. We do not knowingly collect data from minors.</p>
+<h2>6. Contact</h2>
+<p>Questions? Email us at <a href="mailto:support@myloop.app">support@myloop.app</a></p>
+</body></html>
+""", "text/html"));
+
+app.MapGet("/terms", () => Results.Content("""
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MyLoop — Terms of Service</title>
+<style>body{font-family:system-ui,sans-serif;max-width:700px;margin:2rem auto;padding:0 1rem;line-height:1.6;color:#222}h1{font-size:1.5rem}h2{font-size:1.1rem;margin-top:2rem}</style>
+</head><body>
+<h1>Terms of Service</h1>
+<p><strong>Last updated:</strong> May 31, 2026</p>
+<p>By using MyLoop you agree to these terms.</p>
+<h2>1. Fair Play</h2>
+<p>GPS spoofing, automation, or any form of cheating will result in permanent account suspension.</p>
+<h2>2. Content</h2>
+<p>Display names must not contain offensive, hateful, or inappropriate language. We reserve the right to force-rename or ban violating accounts.</p>
+<h2>3. Availability</h2>
+<p>The service is provided "as is". We may modify or discontinue features at any time.</p>
+<h2>4. Account Termination</h2>
+<p>You may delete your account at any time. We may suspend accounts that violate these terms.</p>
+<h2>5. Liability</h2>
+<p>Play safely. Do not trespass or enter dangerous areas to capture territory. MyLoop is not responsible for injuries sustained while using the app.</p>
+</body></html>
+""", "text/html"));
+
 // Ensure the database schema exists on startup.
 // This is a dev convenience — in production, use EF Core migrations instead.
 using (var scope = app.Services.CreateScope())
