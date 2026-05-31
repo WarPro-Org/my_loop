@@ -41,6 +41,13 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
     final journey = ref.read(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
+
+    // Let user tap anytime, but warn if no loop detected
+    if (journey.loopCount == 0) {
+      _showSnackbar('No loop completed yet — keep walking to close a loop!', Colors.orange);
+      return;
+    }
+
     final walkDistance = journey.distanceMeters;
     final walkDuration = journey.elapsed;
     final path = controller.stopJourney();
@@ -935,17 +942,9 @@ class _BottomControls extends StatelessWidget {
         BigButton(
           label: isSubmitting ? 'SUBMITTING...' : 'STOP & CAPTURE',
           icon: isSubmitting ? Icons.hourglass_empty : Icons.stop,
-          color: hasLoop ? AppColors.primary : AppColors.grey,
-          onPressed: isSubmitting || !hasLoop ? null : onStopCapture,
+          color: hasLoop ? AppColors.primary : Colors.orange,
+          onPressed: isSubmitting ? null : onStopCapture,
         ),
-        if (!hasLoop)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              'Close a loop to enable capture',
-              style: TextStyle(fontSize: 11, color: AppColors.grey.withValues(alpha: 0.7)),
-            ),
-          ),
       ],
     );
   }
