@@ -152,6 +152,12 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     );
   }
 
+  void _onJustStop() {
+    final controller = ref.read(journeyControllerProvider.notifier);
+    controller.stopJourney();
+    _showSnackbar('Walk ended — no territory captured.', AppColors.grey);
+  }
+
   @override
   Widget build(BuildContext context) {
     final journey = ref.watch(journeyControllerProvider);
@@ -181,6 +187,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
               isSubmitting: _isSubmitting,
               onStartJourney: controller.startJourney,
               onStopCapture: _onStopCapture,
+              onJustStop: _onJustStop,
             ),
           ),
         ],
@@ -899,12 +906,14 @@ class _BottomControls extends StatelessWidget {
   final bool isSubmitting;
   final VoidCallback onStartJourney;
   final VoidCallback onStopCapture;
+  final VoidCallback onJustStop;
 
   const _BottomControls({
     required this.journey,
     required this.isSubmitting,
     required this.onStartJourney,
     required this.onStopCapture,
+    required this.onJustStop,
   });
 
   @override
@@ -957,6 +966,19 @@ class _BottomControls extends StatelessWidget {
           icon: isSubmitting ? Icons.hourglass_empty : Icons.stop,
           color: hasLoop ? AppColors.primary : Colors.orange,
           onPressed: isSubmitting ? null : onStopCapture,
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: isSubmitting ? null : onJustStop,
+          child: Text(
+            'End walk without capturing',
+            style: TextStyle(
+              fontSize: 13,
+              color: AppColors.grey,
+              decoration: TextDecoration.underline,
+              decorationColor: AppColors.grey,
+            ),
+          ),
         ),
       ],
     );
