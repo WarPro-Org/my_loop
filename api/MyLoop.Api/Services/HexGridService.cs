@@ -4,7 +4,6 @@ using H3.Extensions;
 using H3.Model;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
-using NetTopologySuite.Operation.Union;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Models;
 
@@ -54,90 +53,73 @@ public class HexGridService : IHexGridService
         // Deduplicate: merge polygons that overlap >80% (same loop walked multiple times)
         var uniquePolygons = DeduplicatePolygons(ntsPolygons);
 
-        // PHASE 1: Fill interiors of ALL loops — cells whose center is inside ANY loop
-        var interiorSet = new HashSet<ulong>();
+        // Process each loop independently: fill interior + 51% boundary check PER LOOP.
+        // The 51% rule is per-loop only — no cross-loop accumulation.
+        // You must loop around >51% of a hex in a SINGLE loop to capture it.
+        // This prevents the exploit of clipping a hex from multiple angles without
+        // ever meaningfully encircling it.
         foreach (var poly in uniquePolygons)
         {
             try
             {
-                var filled = poly.Fill(GameConstants.H3Resolution);
-                foreach (var cell in filled)
-                    interiorSet.Add((ulong)cell);
-            }
-            catch { /* Skip polygons that fail Fill */ }
-        }
+                // Phase 1: Interior fill — cells whose center is inside this loop
+                var interiorCells = poly.Fill(GameConstants.H3Resolution).ToList();
+                var interiorSet = new HashSet<ulong>(interiorCells.Select(c => (ulong)c));
 
-        // Add all interior cells to result
-        foreach (var cellId in interiorSet)
-        {
-            var id = (long)cellId;
-            if (!allCells.ContainsKey(id))
-            {
-                var boundary = GetRealCellBoundary((H3Index)cellId);
-                allCells[id] = boundary;
-            }
-        }
-
-        // PHASE 2: Boundary check with 51% rule against the UNION of all loops
-        // Union means a cell 30% in loop A + 25% in loop B = 55% total → captured
-        Geometry unionPolygon;
-        try
-        {
-            unionPolygon = uniquePolygons.Count == 1
-                ? uniquePolygons[0]
-                : UnaryUnionOp.Union(uniquePolygons);
-        }
-        catch
-        {
-            // If union fails, fall back to largest polygon
-            unionPolygon = uniquePolygons[0];
-        }
-
-        if (unionPolygon != null && !unionPolygon.IsEmpty)
-        {
-            // Find boundary candidates: ring-1 neighbors of ALL interior cells
-            // that are NOT already captured
-            var boundaryCandidates = new HashSet<ulong>();
-            foreach (var cellId in interiorSet)
-            {
-                var cell = (H3Index)cellId;
-                foreach (var ringCell in cell.GridDiskDistances(1))
+                // Add interior cells
+                foreach (var cell in interiorCells)
                 {
-                    var neighborId = (ulong)ringCell.Index;
-                    if (!interiorSet.Contains(neighborId) && !allCells.ContainsKey((long)neighborId))
+                    var id = (long)(ulong)cell;
+                    if (!allCells.ContainsKey(id))
                     {
-                        boundaryCandidates.Add(neighborId);
+                        var boundary = GetRealCellBoundary(cell);
+                        allCells[id] = boundary;
+                    }
+                }
+
+                // Phase 2: Boundary cells — ring-1 neighbors checked against THIS loop only
+                var boundaryCandidates = new HashSet<ulong>();
+                foreach (var cell in interiorCells)
+                {
+                    foreach (var ringCell in cell.GridDiskDistances(1))
+                    {
+                        var neighborId = (ulong)ringCell.Index;
+                        if (!interiorSet.Contains(neighborId) && !allCells.ContainsKey((long)neighborId))
+                        {
+                            boundaryCandidates.Add(neighborId);
+                        }
+                    }
+                }
+
+                // Parallel 51% intersection check against THIS loop's polygon
+                var qualifiedBoundary = new System.Collections.Concurrent.ConcurrentBag<ulong>();
+                Parallel.ForEach(boundaryCandidates, candidateId =>
+                {
+                    try
+                    {
+                        var candidate = (H3Index)candidateId;
+                        var cellPolygon = candidate.GetCellBoundary(_geometryFactory);
+                        var intersection = poly.Intersection(cellPolygon);
+                        var ratio = intersection.Area / cellPolygon.Area;
+                        if (ratio >= GameConstants.MinIntersectionRatio)
+                        {
+                            qualifiedBoundary.Add(candidateId);
+                        }
+                    }
+                    catch (TopologyException) { /* Skip ambiguous boundary cells */ }
+                });
+
+                foreach (var cellId in qualifiedBoundary)
+                {
+                    var id = (long)cellId;
+                    if (!allCells.ContainsKey(id))
+                    {
+                        var boundary = GetRealCellBoundary((H3Index)cellId);
+                        allCells[id] = boundary;
                     }
                 }
             }
-
-            // Parallel 51% intersection check against the union polygon
-            var qualifiedBoundary = new System.Collections.Concurrent.ConcurrentBag<ulong>();
-            Parallel.ForEach(boundaryCandidates, candidateId =>
-            {
-                try
-                {
-                    var candidate = (H3Index)candidateId;
-                    var cellPolygon = candidate.GetCellBoundary(_geometryFactory);
-                    var intersection = unionPolygon.Intersection(cellPolygon);
-                    var ratio = intersection.Area / cellPolygon.Area;
-                    if (ratio >= GameConstants.MinIntersectionRatio)
-                    {
-                        qualifiedBoundary.Add(candidateId);
-                    }
-                }
-                catch (TopologyException) { /* Skip ambiguous boundary cells */ }
-            });
-
-            foreach (var cellId in qualifiedBoundary)
-            {
-                var id = (long)cellId;
-                if (!allCells.ContainsKey(id))
-                {
-                    var boundary = GetRealCellBoundary((H3Index)cellId);
-                    allCells[id] = boundary;
-                }
-            }
+            catch { /* Skip loops that fail entirely */ }
         }
 
         done:
