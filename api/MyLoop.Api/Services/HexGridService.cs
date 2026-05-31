@@ -146,7 +146,15 @@ public class HexGridService : IHexGridService
 
         // Build NTS polygon
         var ring = _geometryFactory.CreateLinearRing(coordinates.ToArray());
-        var ntsPolygon = _geometryFactory.CreatePolygon(ring);
+        var rawPolygon = _geometryFactory.CreatePolygon(ring);
+
+        // ALWAYS repair — GPS trails routinely have self-intersections from noise.
+        // Buffer(0) is the standard NTS trick to fix topology; GeometryFixer is fallback.
+        NetTopologySuite.Geometries.Geometry ntsPolygon;
+        try { ntsPolygon = rawPolygon.Buffer(0); }
+        catch { ntsPolygon = NetTopologySuite.Geometries.Utilities.GeometryFixer.Fix(rawPolygon); }
+        if (ntsPolygon.IsEmpty || ntsPolygon.Area == 0)
+            return [];
 
         // Step 1: Fill interior — all cells whose center is inside the polygon
         var interiorCells = ntsPolygon.Fill(GameConstants.H3Resolution).ToList();
@@ -168,16 +176,25 @@ public class HexGridService : IHexGridService
         }
 
         // Step 3: Parallel intersection check — include boundary cells with ≥51% overlap
+        // Wrap in try/catch: NTS overlay can still fail on edge-case geometries.
+        // Cells that fail are marginal boundary cells — safe to skip.
         var qualifiedBoundary = new System.Collections.Concurrent.ConcurrentBag<H3Index>();
         Parallel.ForEach(boundaryCandidates, candidateId =>
         {
-            var candidate = (H3Index)candidateId;
-            var cellPolygon = candidate.GetCellBoundary(_geometryFactory);
-            var intersection = ntsPolygon.Intersection(cellPolygon);
-            var ratio = intersection.Area / cellPolygon.Area;
-            if (ratio >= GameConstants.MinIntersectionRatio)
+            try
             {
-                qualifiedBoundary.Add(candidate);
+                var candidate = (H3Index)candidateId;
+                var cellPolygon = candidate.GetCellBoundary(_geometryFactory);
+                var intersection = ntsPolygon.Intersection(cellPolygon);
+                var ratio = intersection.Area / cellPolygon.Area;
+                if (ratio >= GameConstants.MinIntersectionRatio)
+                {
+                    qualifiedBoundary.Add(candidate);
+                }
+            }
+            catch (NetTopologySuite.Geometries.TopologyException)
+            {
+                // Skip this boundary cell — overlap was ambiguous anyway
             }
         });
 
