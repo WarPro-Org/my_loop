@@ -21,6 +21,7 @@ builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<ITerritoryNotifier, TerritoryNotifier>();
 builder.Services.AddScoped<IPathValidationService, PathValidationService>();
+builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
 
 // --- SignalR ---
 builder.Services.AddSignalR();
@@ -196,6 +197,23 @@ using (var scope = app.Services.CreateScope())
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Center_GiST""
             ON ""TerritoryCells"" USING gist (point(""CenterLng"", ""CenterLat""))");
+
+        // DeviceTokens table for push notifications
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""DeviceTokens"" (
+                ""Id"" uuid PRIMARY KEY,
+                ""UserId"" uuid NOT NULL,
+                ""Token"" text NOT NULL,
+                ""Platform"" text NOT NULL DEFAULT 'ios',
+                ""CreatedAt"" timestamp with time zone NOT NULL,
+                ""LastUsedAt"" timestamp with time zone NOT NULL
+            )");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_DeviceTokens_UserId""
+            ON ""DeviceTokens"" (""UserId"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DeviceTokens_Token""
+            ON ""DeviceTokens"" (""Token"")");
     }
     catch { /* Tables/columns already exist or DB was just created with them */ }
 

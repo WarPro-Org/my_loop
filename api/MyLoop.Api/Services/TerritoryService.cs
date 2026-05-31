@@ -14,15 +14,18 @@ public class TerritoryService : ITerritoryService
     private readonly IGeoService _geo;
     private readonly ITerritoryNotifier _notifier;
     private readonly IPathValidationService _pathValidator;
+    private readonly IPushNotificationService _pushService;
 
     public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo,
-        ITerritoryNotifier notifier, IPathValidationService pathValidator)
+        ITerritoryNotifier notifier, IPathValidationService pathValidator,
+        IPushNotificationService pushService)
     {
         _db = db;
         _hexGrid = hexGrid;
         _geo = geo;
         _notifier = notifier;
         _pathValidator = pathValidator;
+        _pushService = pushService;
     }
 
     public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
@@ -61,6 +64,7 @@ public class TerritoryService : ITerritoryService
             await transaction.CommitAsync();
 
             await BroadcastOwnershipChanges(userId, cells, transfers);
+            await NotifyVictimsOfTheft(userId, transfers);
 
             return ClaimResult.Succeeded(new ClaimResponse
             {
@@ -417,5 +421,20 @@ public class TerritoryService : ITerritoryService
         }).ToList();
 
         await _notifier.NotifyHexOwnershipChanged(changes);
+    }
+
+    private async Task NotifyVictimsOfTheft(Guid thiefUserId, List<CellTransfer> transfers)
+    {
+        var thief = await _db.Users.FindAsync(thiefUserId);
+        if (thief == null) return;
+
+        var victimGroups = transfers
+            .Where(t => t.FromUserId != null && t.FromUserId != thiefUserId)
+            .GroupBy(t => t.FromUserId!.Value);
+
+        foreach (var group in victimGroups)
+        {
+            await _pushService.NotifyHexStolen(group.Key, thief.DisplayName, group.Count());
+        }
     }
 }

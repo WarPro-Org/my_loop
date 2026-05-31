@@ -166,6 +166,14 @@ class ApiService {
     await _dio.delete('/api/users/$userId');
   }
 
+  /// Registers an FCM device token for push notifications.
+  Future<void> registerDeviceToken({required String userId, required String token}) async {
+    await _dio.post('/api/users/$userId/device-token', data: {
+      'token': token,
+      'platform': 'ios',
+    });
+  }
+
   /// Preview which hexes a path would capture — no DB writes.
   /// Called during a walk when a loop is detected to show live hex fills.
   Future<List<List<List<double>>>> previewClaim({
