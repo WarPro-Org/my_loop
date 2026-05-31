@@ -95,7 +95,8 @@ public class TerritoryService : ITerritoryService
                 t.CellId, t.BoundaryJson, t.OwnerId,
                 OwnerColor = t.Owner!.Color,
                 OwnerName = t.Owner!.DisplayName,
-                t.CooldownExpiresAt
+                t.CooldownExpiresAt,
+                t.ParentCellId
             })
             .ToListAsync();
 
@@ -107,6 +108,7 @@ public class TerritoryService : ITerritoryService
             OwnerColor = t.OwnerColor,
             OwnerName = t.OwnerName,
             CooldownExpiresAtUtc = t.CooldownExpiresAt,
+            ParentCellId = t.ParentCellId,
         }).ToList();
     }
 
@@ -193,7 +195,8 @@ public class TerritoryService : ITerritoryService
                 t.CellId, t.BoundaryJson, t.OwnerId,
                 OwnerColor = t.Owner!.Color,
                 OwnerName = t.Owner!.DisplayName,
-                t.CooldownExpiresAt
+                t.CooldownExpiresAt,
+                t.ParentCellId
             })
             .ToListAsync();
 
@@ -205,6 +208,7 @@ public class TerritoryService : ITerritoryService
             OwnerColor = t.OwnerColor,
             OwnerName = t.OwnerName,
             CooldownExpiresAtUtc = t.CooldownExpiresAt,
+            ParentCellId = t.ParentCellId,
         }).ToList();
     }
 

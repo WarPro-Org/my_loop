@@ -285,6 +285,15 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     });
   }
 
+  void _updateRealtimeRegions() {
+    final realtimeService = ref.read(territoryRealtimeProvider);
+    if (!realtimeService.isConnected) return;
+    final regionIds = _hexManager.getActiveRegionIds();
+    if (regionIds.isNotEmpty) {
+      realtimeService.updateRegions(regionIds);
+    }
+  }
+
   Future<void> _acquireLocation() async {
     try {
       final locationService = ref.read(locationServiceProvider);
@@ -297,6 +306,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         }
         await _hexManager.loadUserOwnHexes();
         await _hexManager.loadWideArea(pos.latitude, pos.longitude);
+        _updateRealtimeRegions();
         if (mounted) setState(() {});
       } else if (mounted) {
         setState(() => _locationError = true);
@@ -313,6 +323,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       minLat: bounds.south, minLng: bounds.west,
       maxLat: bounds.north, maxLng: bounds.east,
     );
+    _updateRealtimeRegions();
     if (mounted) setState(() {});
   }
 

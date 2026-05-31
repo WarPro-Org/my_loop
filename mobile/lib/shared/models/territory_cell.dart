@@ -16,6 +16,7 @@ class TerritoryCell {
   final String ownerName;
   final List<List<double>> boundary; // [[lat, lng], ...]
   final DateTime? cooldownExpiresAtUtc;
+  final int parentCellId; // H3 res-3 parent (SignalR region group key)
 
   const TerritoryCell({
     required this.cellId,
@@ -24,6 +25,7 @@ class TerritoryCell {
     required this.boundary,
     this.ownerName = '',
     this.cooldownExpiresAtUtc,
+    this.parentCellId = 0,
   });
 
   /// Whether this cell is currently under cooldown protection.
@@ -54,6 +56,7 @@ class TerritoryCell {
       cooldownExpiresAtUtc: json['cooldownExpiresAtUtc'] != null
           ? DateTime.parse(json['cooldownExpiresAtUtc'] as String)
           : null,
+      parentCellId: json['parentCellId'] as int? ?? 0,
     );
   }
 }

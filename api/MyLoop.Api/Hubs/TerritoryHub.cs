@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace MyLoop.Api.Hubs;
@@ -7,8 +6,9 @@ namespace MyLoop.Api.Hubs;
 /// SignalR hub for real-time territory updates.
 /// Clients join geographic region groups (H3 resolution-3 parent cells)
 /// and receive broadcasts when hex ownership changes in their area.
+/// NOTE: No [Authorize] — territory map state is public data. Auth would
+/// require complex WebSocket token plumbing with no security benefit.
 /// </summary>
-[Authorize]
 public class TerritoryHub : Hub
 {
     /// <summary>

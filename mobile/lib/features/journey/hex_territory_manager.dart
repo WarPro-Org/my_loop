@@ -70,31 +70,43 @@ class HexTerritoryManager {
 
   /// Splits cells into user-owned and others (grouped by owner color).
   void updateFromCells(List<dynamic> cells) {
-    final otherByColor = <String, List<List<List<double>>>>{};
-    final updatedCells = <TerritoryCell>[...allCells.where((c) => c.ownerId == _userId)];
-
+    // Merge new cells into allCells by cellId (dedup)
+    final cellMap = <int, TerritoryCell>{};
+    for (final c in allCells) {
+      cellMap[c.cellId] = c;
+    }
     for (final c in cells) {
       final cell = c as TerritoryCell;
+      cellMap[cell.cellId] = cell; // newer data wins
+    }
+
+    // Update user-owned tracking from ALL cells (viewport may reveal owned cells)
+    final newUserBoundaries = <List<List<double>>>[];
+    final newUserCellIds = <int>{};
+    final otherByColor = <String, List<List<List<double>>>>{};
+
+    for (final cell in cellMap.values) {
       if (cell.ownerId == _userId) {
-        if (!userOwnCellIds.contains(cell.cellId)) {
-          updatedCells.add(cell);
-        }
+        newUserCellIds.add(cell.cellId);
+        newUserBoundaries.add(cell.boundary);
       } else {
         otherByColor.putIfAbsent(cell.ownerColor, () => []).add(cell.boundary);
-        updatedCells.add(cell);
       }
     }
 
+    userOwnHexBoundaries = newUserBoundaries;
+    userOwnCellIds = newUserCellIds;
     otherHexesByColor = otherByColor;
 
     // Evict oldest non-owned cells if cache exceeds limit
-    if (updatedCells.length > AppConstants.maxCachedCells) {
-      final ownCells = updatedCells.where((c) => c.ownerId == _userId).toList();
-      final otherCells = updatedCells.where((c) => c.ownerId != _userId).toList();
+    final allList = cellMap.values.toList();
+    if (allList.length > AppConstants.maxCachedCells) {
+      final ownCells = allList.where((c) => c.ownerId == _userId).toList();
+      final otherCells = allList.where((c) => c.ownerId != _userId).toList();
       final keepCount = AppConstants.maxCachedCells - ownCells.length;
       allCells = [...ownCells, ...otherCells.take(keepCount.clamp(0, otherCells.length))];
     } else {
-      allCells = updatedCells;
+      allCells = allList;
     }
   }
 
@@ -140,5 +152,17 @@ class HexTerritoryManager {
     avgLat /= boundary.length;
     avgLng /= boundary.length;
     return (avgLat - lat).abs() < 0.0001 && (avgLng - lng).abs() < 0.0001;
+  }
+
+  /// Returns all unique H3 res-3 parent cell IDs from currently loaded cells.
+  /// These are the SignalR group keys the client should subscribe to.
+  Set<String> getActiveRegionIds() {
+    final ids = <String>{};
+    for (final cell in allCells) {
+      if (cell.parentCellId != 0) {
+        ids.add(cell.parentCellId.toString());
+      }
+    }
+    return ids;
   }
 }
