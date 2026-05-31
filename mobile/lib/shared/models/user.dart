@@ -17,6 +17,7 @@ class AppUser {
   final String color; // hex color like #FF5733
   final int avatarId;
   final int hexCount;
+  final int totalHexesCaptured;
   final int streak;
   final double distanceKm;
 
@@ -27,6 +28,7 @@ class AppUser {
     required this.color,
     required this.avatarId,
     this.hexCount = 0,
+    this.totalHexesCaptured = 0,
     this.streak = 0,
     this.distanceKm = 0,
   });
@@ -40,6 +42,7 @@ class AppUser {
       color: json['color'] as String,
       avatarId: (json['avatarId'] as num).toInt(),
       hexCount: (json['hexCount'] as num?)?.toInt() ?? 0,
+      totalHexesCaptured: (json['totalHexesCaptured'] as num?)?.toInt() ?? 0,
       streak: (json['streak'] as num?)?.toInt() ?? 0,
       distanceKm: (json['distanceKm'] as num?)?.toDouble() ?? 0,
     );
