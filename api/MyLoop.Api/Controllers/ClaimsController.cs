@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
@@ -16,11 +17,16 @@ public class ClaimsController : ControllerBase
 {
     private readonly ITerritoryService _territoryService;
     private readonly IHexGridService _hexGridService;
+    private readonly ILogger<ClaimsController> _logger;
 
-    public ClaimsController(ITerritoryService territoryService, IHexGridService hexGridService)
+    public ClaimsController(
+        ITerritoryService territoryService,
+        IHexGridService hexGridService,
+        ILogger<ClaimsController> logger)
     {
         _territoryService = territoryService;
         _hexGridService = hexGridService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -30,14 +36,23 @@ public class ClaimsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> SubmitClaim([FromBody] ClaimRequest request)
     {
-        var result = await _territoryService.ProcessClaim(request.UserId, request.Path);
+        if (!ValidatePathCoordinates(request.Path))
+            return BadRequest("Invalid GPS coordinates in path");
 
-        if (!result.Success)
+        try
         {
-            return BadRequest(result.Error);
-        }
+            var result = await _territoryService.ProcessClaim(request.UserId, request.Path);
 
-        return Created($"/api/claims/{result.Data!.Id}", result.Data);
+            if (!result.Success)
+                return BadRequest(new { error = result.Error });
+
+            return Created($"/api/claims/{result.Data!.Id}", result.Data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Claim processing failed for user {UserId}", request.UserId);
+            return StatusCode(500, new { error = "Claim processing failed. Please try again." });
+        }
     }
 
     /// <summary>
@@ -51,9 +66,11 @@ public class ClaimsController : ControllerBase
         if (request.Path.Length < GameConstants.MinPointsForPolygon)
             return Ok(new { boundaries = Array.Empty<double[][]>() });
 
-        // Cap path length to prevent CPU abuse (same as claim validation spirit)
         if (request.Path.Length > GameConstants.MaxPreviewPathLength)
             return BadRequest("Path too long for preview");
+
+        if (!ValidatePathCoordinates(request.Path))
+            return Ok(new { boundaries = Array.Empty<double[][]>() });
 
         try
         {
@@ -63,8 +80,20 @@ public class ClaimsController : ControllerBase
         }
         catch (Exception)
         {
-            // Preview is best-effort — return empty on any computation failure
             return Ok(new { boundaries = Array.Empty<double[][]>() });
         }
+    }
+
+    private static bool ValidatePathCoordinates(double[][] path)
+    {
+        foreach (var point in path)
+        {
+            if (point.Length < 2) return false;
+            if (point[0] < -90 || point[0] > 90) return false;
+            if (point[1] < -180 || point[1] > 180) return false;
+            if (double.IsNaN(point[0]) || double.IsNaN(point[1])) return false;
+            if (double.IsInfinity(point[0]) || double.IsInfinity(point[1])) return false;
+        }
+        return true;
     }
 }

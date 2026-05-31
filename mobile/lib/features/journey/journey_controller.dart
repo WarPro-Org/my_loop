@@ -26,6 +26,7 @@ class JourneyState {
   final Position? currentPosition;
   final String? error;
   final List<List<List<double>>> previewBoundaries;
+  final int loopCount;
 
   const JourneyState({
     this.status = JourneyStatus.idle,
@@ -35,6 +36,7 @@ class JourneyState {
     this.currentPosition,
     this.error,
     this.previewBoundaries = const [],
+    this.loopCount = 0,
   });
 
   JourneyState copyWith({
@@ -45,6 +47,7 @@ class JourneyState {
     Position? currentPosition,
     String? error,
     List<List<List<double>>>? previewBoundaries,
+    int? loopCount,
   }) {
     return JourneyState(
       status: status ?? this.status,
@@ -54,6 +57,7 @@ class JourneyState {
       currentPosition: currentPosition ?? this.currentPosition,
       error: error,
       previewBoundaries: previewBoundaries ?? this.previewBoundaries,
+      loopCount: loopCount ?? this.loopCount,
     );
   }
 }
@@ -179,9 +183,12 @@ class JourneyController extends Notifier<JourneyState> {
     _pointsSinceLastCheck = 0;
 
     final loopCount = LoopDetector.countLoops(path);
-    if (loopCount > _lastLoopCount) {
+    if (loopCount != _lastLoopCount) {
       _lastLoopCount = loopCount;
-      _fetchPreview(List.from(path));
+      state = state.copyWith(loopCount: loopCount);
+      if (loopCount > 0) {
+        _fetchPreview(List.from(path));
+      }
     }
   }
 
@@ -195,7 +202,11 @@ class JourneyController extends Notifier<JourneyState> {
 
     try {
       final api = ref.read(apiServiceProvider);
-      final boundaries = await api.previewClaim(path: path);
+      // Cap path to avoid sending huge payloads — server enforces same limit
+      final cappedPath = path.length > AppConstants.maxPreviewPathPoints
+          ? path.sublist(path.length - AppConstants.maxPreviewPathPoints)
+          : path;
+      final boundaries = await api.previewClaim(path: cappedPath);
       if (boundaries.isNotEmpty && state.status == JourneyStatus.tracking) {
         state = state.copyWith(previewBoundaries: boundaries);
       }

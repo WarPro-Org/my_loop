@@ -164,7 +164,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
             Positioned(
               top: MediaQuery.of(context).padding.top + 64,
               left: 0,
-              child: _StatsBar(journey: journey),
+              child: _StatsBar(journey: journey, loopCount: journey.loopCount),
             ),
           Positioned(
             bottom: 0, left: 0, right: 0,
@@ -501,9 +501,57 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
             solidMode: _solidHexes,
           ),
         if (journey.path.length > 1) _buildPathPolyline(journey),
+        if (_currentZoom >= 15) _buildCooldownMarkers(),
         _buildPositionMarker(journey, profile, userColor),
       ],
     );
+  }
+
+  MarkerLayer _buildCooldownMarkers() {
+    final frozenCells = _hexManager.allCells
+        .where((c) => c.isOnCooldown)
+        .toList();
+
+    return MarkerLayer(
+      markers: frozenCells.map((cell) {
+        final center = _cellCenter(cell.boundary);
+        final remaining = cell.cooldownRemaining;
+        final label = remaining.inMinutes >= 60
+            ? '${remaining.inHours}h${remaining.inMinutes % 60}m'
+            : '${remaining.inMinutes}m';
+
+        return Marker(
+          point: LatLng(center[0], center[1]),
+          width: 48,
+          height: 20,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.shield, color: Color(0xFF64B5F6), size: 10),
+                const SizedBox(width: 2),
+                Text(label, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  List<double> _cellCenter(List<List<double>> boundary) {
+    if (boundary.isEmpty) return [0, 0];
+    double lat = 0, lng = 0;
+    for (final p in boundary) {
+      lat += p[0];
+      lng += p[1];
+    }
+    return [lat / boundary.length, lng / boundary.length];
   }
 
   TileLayer _buildTileLayer() {
@@ -716,6 +764,10 @@ class _HexOwnerSheet extends StatelessWidget {
               ),
             ],
           ),
+          if (cell.isOnCooldown) ...[
+            const SizedBox(height: 16),
+            _CooldownBanner(cell: cell),
+          ],
           if (!isOwn) ...[
             const SizedBox(height: 20),
             SizedBox(
@@ -739,13 +791,52 @@ class _HexOwnerSheet extends StatelessWidget {
   }
 }
 
+class _CooldownBanner extends StatelessWidget {
+  final TerritoryCell cell;
+  const _CooldownBanner({required this.cell});
+
+  @override
+  Widget build(BuildContext context) {
+    final remaining = cell.cooldownRemaining;
+    final text = remaining.inMinutes >= 60
+        ? '${remaining.inHours}h ${remaining.inMinutes % 60}m'
+        : '${remaining.inMinutes}m';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2196F3).withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFF2196F3).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.shield, color: Color(0xFF2196F3), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Protected — $text remaining',
+              style: const TextStyle(
+                color: Color(0xFF2196F3),
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Stats & Controls
 // ──────────────────────────────────────────────────────────────────────────────
 
 class _StatsBar extends StatelessWidget {
   final JourneyState journey;
-  const _StatsBar({required this.journey});
+  final int loopCount;
+  const _StatsBar({required this.journey, this.loopCount = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -772,7 +863,8 @@ class _StatsBar extends StatelessWidget {
           _statRow(Icons.route_rounded, const Color(0xFF6C5CE7),
             distanceKm >= 1 ? '${distanceKm.toStringAsFixed(2)} km' : '${journey.distanceMeters.toInt()} m'),
           _spacerRow(),
-          _statRow(Icons.hexagon_rounded, const Color(0xFFF59E0B), '—'),
+          _statRow(Icons.loop_rounded, const Color(0xFFF59E0B),
+            loopCount > 0 ? '$loopCount loop${loopCount > 1 ? 's' : ''}' : 'No loop'),
         ],
       ),
     );
@@ -840,19 +932,34 @@ class _BottomControls extends StatelessWidget {
   }
 
   Widget _buildTrackingControls() {
+    final hasLoop = journey.loopCount > 0;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('🔴 Recording your path...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        Text(
+          hasLoop ? '✅ ${journey.loopCount} loop${journey.loopCount > 1 ? 's' : ''} detected!' : '🔴 Recording your path...',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+        ),
         const SizedBox(height: 4),
-        Text('Walk back to your start to close the loop!', style: TextStyle(fontSize: 13, color: AppColors.grey)),
+        Text(
+          hasLoop ? 'Ready to capture! Or keep walking for more loops.' : 'Walk back near your path to close a loop.',
+          style: TextStyle(fontSize: 13, color: AppColors.grey),
+        ),
         const SizedBox(height: 16),
         BigButton(
           label: isSubmitting ? 'SUBMITTING...' : 'STOP & CAPTURE',
           icon: isSubmitting ? Icons.hourglass_empty : Icons.stop,
-          color: AppColors.red,
-          onPressed: isSubmitting ? null : onStopCapture,
+          color: hasLoop ? AppColors.primary : AppColors.grey,
+          onPressed: isSubmitting || !hasLoop ? null : onStopCapture,
         ),
+        if (!hasLoop)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'Close a loop to enable capture',
+              style: TextStyle(fontSize: 11, color: AppColors.grey.withValues(alpha: 0.7)),
+            ),
+          ),
       ],
     );
   }

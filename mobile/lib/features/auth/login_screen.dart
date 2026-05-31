@@ -223,12 +223,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         if (mounted) context.go('/home');
         return;
       }
-    } catch (_) {
-      // API unreachable or user not found — proceed to avatar picker
-    }
-    if (mounted) {
-      setState(() => _autoSigningIn = false);
-      context.go('/avatar');
+      // User not found (null return) — proceed to avatar picker
+      if (mounted) {
+        setState(() => _autoSigningIn = false);
+        context.go('/avatar');
+      }
+    } catch (e) {
+      // API unreachable — show error, don't blindly route to avatar picker
+      if (mounted) {
+        setState(() => _autoSigningIn = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Cannot reach server. Check your connection and try again.'),
+            backgroundColor: Colors.red.shade700,
+            action: SnackBarAction(
+              label: 'RETRY',
+              textColor: Colors.white,
+              onPressed: () => _routeAfterAuth(firebaseUid),
+            ),
+          ),
+        );
+      }
     }
   }
 

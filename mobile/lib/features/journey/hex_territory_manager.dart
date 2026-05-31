@@ -4,7 +4,6 @@
 /// Extracted from _JourneyMapState to keep map widget focused on rendering.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
@@ -86,7 +85,16 @@ class HexTerritoryManager {
     }
 
     otherHexesByColor = otherByColor;
-    allCells = updatedCells;
+
+    // Evict oldest non-owned cells if cache exceeds limit
+    if (updatedCells.length > AppConstants.maxCachedCells) {
+      final ownCells = updatedCells.where((c) => c.ownerId == _userId).toList();
+      final otherCells = updatedCells.where((c) => c.ownerId != _userId).toList();
+      final keepCount = AppConstants.maxCachedCells - ownCells.length;
+      allCells = [...ownCells, ...otherCells.take(keepCount.clamp(0, otherCells.length))];
+    } else {
+      allCells = updatedCells;
+    }
   }
 
   /// Adds captured hex boundaries to the user's owned list.
