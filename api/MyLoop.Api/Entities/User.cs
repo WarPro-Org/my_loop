@@ -25,6 +25,9 @@ public class User
     /// <summary>Total number of hexes currently owned by this player.</summary>
     public int HexCount { get; set; }
 
+    /// <summary>Lifetime total hexes ever captured (never decreases, even when stolen).</summary>
+    public int TotalHexesCaptured { get; set; }
+
     /// <summary>Current daily walk streak (consecutive days with at least one walk).</summary>
     public int Streak { get; set; }
 

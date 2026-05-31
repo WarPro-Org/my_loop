@@ -347,6 +347,7 @@ public class TerritoryService : ITerritoryService
         var newCells = transfers.Count(t => t.FromUserId == null);
         var stolenCells = transfers.Count(t => t.FromUserId != null);
         user.HexCount += newCells + stolenCells;
+        user.TotalHexesCaptured += newCells + stolenCells;
         user.DistanceKm += totalDistance / 1000.0;
 
         UpdateStreak(user);
