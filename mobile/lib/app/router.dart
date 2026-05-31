@@ -14,6 +14,7 @@ import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/features/profile/profile_screen.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/features/history/walk_history_screen.dart';
+import 'package:myloop/features/notifications/notifications_screen.dart';
 
 /// No-animation page transition for tab switches.
 CustomTransitionPage _noTransitionPage(Widget child, GoRouterState state, String tabKey) {
@@ -53,6 +54,7 @@ final router = GoRouter(
     GoRoute(path: '/journey', builder: (context, state) => const JourneyScreen()),
     GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
     GoRoute(path: '/walk-history', builder: (context, state) => const WalkHistoryScreen()),
+    GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen()),
     GoRoute(
       path: '/user-profile',
       builder: (context, state) {

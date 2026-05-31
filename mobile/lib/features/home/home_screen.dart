@@ -171,7 +171,10 @@ class _ProfileDrawer extends ConsumerWidget {
           _DrawerTile(
             icon: Icons.notifications_outlined,
             label: 'Notifications',
-            onTap: () => Navigator.pop(context),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/notifications');
+            },
           ),
           _DrawerTile(
             icon: Icons.history_outlined,

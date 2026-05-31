@@ -17,6 +17,8 @@ import 'package:myloop/shared/widgets/animated_hexagon.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
+import 'package:go_router/go_router.dart';
+import 'package:myloop/shared/services/notification_service.dart';
 
 /// Rotating gameplay tips shown once per session to educate new players.
 const _proTips = [
@@ -160,6 +162,45 @@ class _HomeTabState extends ConsumerState<HomeTab> {
                     ],
                   ),
                 ),
+                // Notification bell with unread badge
+                Consumer(
+                  builder: (context, ref, _) {
+                    final unread = ref.watch(unreadCountProvider);
+                    return Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            unread > 0 ? Icons.notifications : Icons.notifications_outlined,
+                            color: AppColors.dark,
+                            size: 26,
+                          ),
+                          onPressed: () => context.push('/notifications'),
+                        ),
+                        if (unread > 0)
+                          Positioned(
+                            top: 6,
+                            right: 6,
+                            child: Container(
+                              width: 16,
+                              height: 16,
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  unread > 9 ? '9+' : '$unread',
+                                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(width: 4),
                 // Settings button = user's hex avatar badge — made to look tappable
                 GestureDetector(
                   behavior: HitTestBehavior.opaque,

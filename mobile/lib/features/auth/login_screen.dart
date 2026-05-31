@@ -7,6 +7,7 @@ library;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
@@ -165,7 +166,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  bool _isSigningIn = false;
+
+  /// Returns true if the exception represents a deliberate user cancellation
+  /// (not a real error). These should be silently swallowed.
+  bool _isCancellation(Object e) {
+    if (e is PlatformException) {
+      final code = e.code.toLowerCase();
+      return code == 'sign_in_canceled' ||
+             code == 'sign_in_cancelled' ||
+             code == 'canceled' ||
+             code == 'user_cancelled' ||
+             code == 'com.apple.authenticationservices.authorizationerror' ||
+             e.message?.toLowerCase().contains('cancel') == true;
+    }
+    final msg = e.toString().toLowerCase();
+    return msg.contains('cancel') || msg.contains('aborted') || msg.contains('dismissed');
+  }
+
   Future<void> _signInWithGoogle() async {
+    if (_isSigningIn) return;
+    setState(() => _isSigningIn = true);
     try {
       final authService = ref.read(authServiceProvider);
       final user = await authService.signInWithGoogle();
@@ -173,15 +194,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await _routeAfterAuth(user.uid);
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && !_isCancellation(e)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Sign in failed: $e'), backgroundColor: AppColors.red),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSigningIn = false);
     }
   }
 
   Future<void> _signInWithApple() async {
+    if (_isSigningIn) return;
+    setState(() => _isSigningIn = true);
     try {
       final authService = ref.read(authServiceProvider);
       final user = await authService.signInWithApple();
@@ -189,11 +214,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await _routeAfterAuth(user.uid);
       }
     } catch (e) {
-      if (mounted) {
+      if (mounted && !_isCancellation(e)) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Sign in failed: $e'), backgroundColor: AppColors.red),
         );
       }
+    } finally {
+      if (mounted) setState(() => _isSigningIn = false);
     }
   }
 

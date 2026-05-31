@@ -21,6 +21,7 @@ import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
+import 'package:myloop/shared/services/notification_service.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -117,6 +118,8 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final user = await api.getUser(profile.userId!);
     int updatedRank = profile.rank;
     try {
+      // Refresh leaderboard first so rank reflects the new hex count
+      await api.refreshLeaderboard();
       final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId!, scope: 'city');
       updatedRank = lb.myRank ?? profile.rank;
     } catch (_) {}
@@ -147,9 +150,11 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
   void _showSnackbar(String message, Color color) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
-    );
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: color),
+      );
   }
 
   void _onJustStop() {
@@ -272,6 +277,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     _locationTimer?.cancel();
     _hexRefreshTimer?.cancel();
     _realtimeSub?.cancel();
+    ref.read(territoryRealtimeProvider).disconnect();
     _mapController.dispose();
     super.dispose();
   }
@@ -282,6 +288,24 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     _realtimeSub = realtimeService.onHexChanges.listen((events) {
       final changed = _hexManager.applyRealtimeChanges(events);
       if (changed && mounted) setState(() {});
+
+      // Detect thefts from the current user → add in-app notifications
+      final userId = ref.read(userProfileProvider).userId;
+      if (userId != null) {
+        final stolenByThief = <String, List<HexChangeEvent>>{};
+        for (final e in events) {
+          if (e.previousOwnerId == userId && e.newOwnerId != userId) {
+            stolenByThief.putIfAbsent(e.newOwnerDisplayName, () => []).add(e);
+          }
+        }
+        for (final entry in stolenByThief.entries) {
+          ref.read(notificationProvider.notifier).addTheftAlert(
+            thiefName: entry.key,
+            thiefColor: entry.value.first.newOwnerColor,
+            hexCount: entry.value.length,
+          );
+        }
+      }
     });
   }
 
@@ -498,6 +522,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       options: MapOptions(
         initialCenter: center,
         initialZoom: 17,
+        minZoom: 3.0,
+        maxZoom: 20.0,
+        cameraConstraint: CameraConstraint.contain(
+          bounds: LatLngBounds(LatLng(-85, -180), LatLng(85, 180)),
+        ),
         onMapReady: () {
           _mapReady = true;
           final target = _initialPosition != null
@@ -585,6 +614,9 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
           : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
       subdomains: _useSatellite ? const [] : const ['a', 'b', 'c', 'd'],
       userAgentPackageName: 'com.myloop.app',
+      keepBuffer: 4,
+      panBuffer: 2,
+      maxNativeZoom: 19,
     );
   }
 
@@ -912,7 +944,7 @@ class _StatsBar extends StatelessWidget {
   }
 }
 
-class _BottomControls extends StatelessWidget {
+class _BottomControls extends StatefulWidget {
   final JourneyState journey;
   final bool isSubmitting;
   final VoidCallback onStartJourney;
@@ -928,6 +960,23 @@ class _BottomControls extends StatelessWidget {
   });
 
   @override
+  State<_BottomControls> createState() => _BottomControlsState();
+}
+
+class _BottomControlsState extends State<_BottomControls> {
+  bool _starting = false;
+
+  void _handleStart() {
+    if (_starting) return;
+    setState(() => _starting = true);
+    widget.onStartJourney();
+    // Reset after a short debounce — startJourney is synchronous
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted) setState(() => _starting = false);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Container(
@@ -937,7 +986,7 @@ class _BottomControls extends StatelessWidget {
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -2))],
         ),
-        child: journey.status == JourneyStatus.tracking
+        child: widget.journey.status == JourneyStatus.tracking
             ? _buildTrackingControls()
             : _buildIdleControls(),
       ),
@@ -952,18 +1001,18 @@ class _BottomControls extends StatelessWidget {
         const SizedBox(height: 4),
         Text('Walk a loop to claim hexagons!', style: TextStyle(fontSize: 13, color: AppColors.grey)),
         const SizedBox(height: 16),
-        BigButton(label: 'START JOURNEY', icon: Icons.play_arrow, onPressed: onStartJourney),
+        BigButton(label: 'START JOURNEY', icon: Icons.play_arrow, onPressed: _starting ? null : _handleStart),
       ],
     );
   }
 
   Widget _buildTrackingControls() {
-    final hasLoop = journey.loopCount > 0;
+    final hasLoop = widget.journey.loopCount > 0;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          hasLoop ? '✅ ${journey.loopCount} loop${journey.loopCount > 1 ? 's' : ''} detected!' : '🔴 Recording your path...',
+          hasLoop ? '✅ ${widget.journey.loopCount} loop${widget.journey.loopCount > 1 ? 's' : ''} detected!' : '🔴 Recording your path...',
           style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 4),
@@ -973,14 +1022,14 @@ class _BottomControls extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         BigButton(
-          label: isSubmitting ? 'SUBMITTING...' : 'STOP & CAPTURE',
-          icon: isSubmitting ? Icons.hourglass_empty : Icons.stop,
+          label: widget.isSubmitting ? 'SUBMITTING...' : 'STOP & CAPTURE',
+          icon: widget.isSubmitting ? Icons.hourglass_empty : Icons.stop,
           color: hasLoop ? AppColors.primary : Colors.orange,
-          onPressed: isSubmitting ? null : onStopCapture,
+          onPressed: widget.isSubmitting ? null : widget.onStopCapture,
         ),
         const SizedBox(height: 10),
         GestureDetector(
-          onTap: isSubmitting ? null : onJustStop,
+          onTap: widget.isSubmitting ? null : widget.onJustStop,
           child: Text(
             'End walk without capturing',
             style: TextStyle(
