@@ -98,6 +98,11 @@ class UserProfileNotifier extends Notifier<UserProfile> {
       rank: rank,
     );
   }
+
+  /// Resets profile to default (used on sign-out).
+  void clear() {
+    state = const UserProfile();
+  }
 }
 
 /// Global user profile provider — watched by profile, home, and avatar widgets.

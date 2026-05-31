@@ -32,6 +32,7 @@ public static class GameConstants
 
     // --- Viewport / Query Limits ---
     public const int MaxViewportCells = 500;
+    public const int MaxUserTerritoryCells = 2000;
     public const int MaxPreviewPathLength = 10_000;
 
     // --- GPS / Geolocation ---

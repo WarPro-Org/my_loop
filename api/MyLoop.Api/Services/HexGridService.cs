@@ -52,6 +52,23 @@ public class HexGridService : IHexGridService
         return cellCount * GameConstants.CellAreaSquareMeters;
     }
 
+    public bool HasClosedLoop(double[][] path)
+    {
+        if (path.Length < GameConstants.MinLoopPoints) return false;
+
+        for (int i = GameConstants.LoopSkipNeighbors; i < path.Length; i++)
+        {
+            for (int j = 0; j <= i - GameConstants.MinLoopPoints; j++)
+            {
+                var dist = _geoService.HaversineMeters(
+                    path[i][0], path[i][1], path[j][0], path[j][1]);
+                if (dist <= GameConstants.LoopClosureDistanceMeters) return true;
+            }
+        }
+
+        return IsLoopClosed(path);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Trail cells — hexes the GPS path physically crosses
     // ──────────────────────────────────────────────────────────────────────────

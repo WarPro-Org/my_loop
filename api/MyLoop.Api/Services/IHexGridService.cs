@@ -27,4 +27,10 @@ public interface IHexGridService
     /// Calculates the total area for a given number of hex cells.
     /// </summary>
     double CalculateArea(int cellCount);
+
+    /// <summary>
+    /// Returns true if the path contains at least one closed loop
+    /// (self-intersection within closure distance).
+    /// </summary>
+    bool HasClosedLoop(double[][] path);
 }

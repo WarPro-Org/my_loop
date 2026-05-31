@@ -32,6 +32,10 @@ class AppConstants {
 
   // --- Hex refresh ---
   static const int hexRefreshIntervalSeconds = 30;
+  static const int maxCachedCells = 1000;
+
+  // --- Preview ---
+  static const int maxPreviewPathPoints = 500;
 
   // --- Celebration ---
   static const int celebrationDelayMs = 800;
