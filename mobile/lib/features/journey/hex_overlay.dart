@@ -198,10 +198,10 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
   }
 
   /// CLOSE ZOOM (14+): Full hex polygons with dark fill, neon glow, wave motion.
+  /// Only used when solidMode is ON — renders the classic neon glow polygon style.
   Widget _buildAnimatedPolygons(double pulse, double wave, double entrance) {
     final baseColor = widget.userColor;
     final isNew = widget.isNewCapture;
-    final solid = widget.solidMode;
     final hexCount = widget.hexBoundaries.length;
 
     final glowPolygons = <Polygon>[];
@@ -216,51 +216,39 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
       final phase = (wave + (i / math.max(hexCount, 1))) % 1.0;
       final hexWave = (math.sin(phase * 2 * math.pi) + 1) / 2;
 
-      if (solid) {
-        // Solid mode: fully opaque, darkest shade, no glow
-        final darkColor = Color.lerp(baseColor, Colors.black, 0.35)!;
-        mainPolygons.add(Polygon(
-          points: points,
-          color: darkColor,
-          borderColor: baseColor.withValues(alpha: 0.9),
-          borderStrokeWidth: 1.5,
-        ));
-      } else {
-        // Normal mode: semi-transparent with glow
-        final fillAlpha = isNew
-            ? 0.55 + (hexWave * 0.15)
-            : 0.40 + (hexWave * 0.15);
+      final fillAlpha = isNew
+          ? 0.55 + (hexWave * 0.15)
+          : 0.40 + (hexWave * 0.15);
 
-        final borderAlpha = isNew
-            ? 0.85 + (pulse * 0.15)
-            : 0.70 + (pulse * 0.20);
+      final borderAlpha = isNew
+          ? 0.85 + (pulse * 0.15)
+          : 0.70 + (pulse * 0.20);
 
-        final borderWidth = isNew
-            ? 3.0 + (pulse * 1.5)
-            : 2.5 + (pulse * 1.0);
+      final borderWidth = isNew
+          ? 3.0 + (pulse * 1.5)
+          : 2.5 + (pulse * 1.0);
 
-        glowPolygons.add(Polygon(
-          points: points,
-          color: Colors.transparent,
-          borderColor: baseColor.withValues(alpha: borderAlpha * 0.35 * entrance),
-          borderStrokeWidth: borderWidth + 6.0,
-        ));
+      glowPolygons.add(Polygon(
+        points: points,
+        color: Colors.transparent,
+        borderColor: baseColor.withValues(alpha: borderAlpha * 0.35 * entrance),
+        borderStrokeWidth: borderWidth + 6.0,
+      ));
 
-        mainPolygons.add(Polygon(
-          points: points,
-          color: baseColor.withValues(alpha: fillAlpha * entrance),
-          borderColor: baseColor.withValues(alpha: borderAlpha * entrance),
-          borderStrokeWidth: borderWidth,
-        ));
+      mainPolygons.add(Polygon(
+        points: points,
+        color: baseColor.withValues(alpha: fillAlpha * entrance),
+        borderColor: baseColor.withValues(alpha: borderAlpha * entrance),
+        borderStrokeWidth: borderWidth,
+      ));
 
-        final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
-        innerPolygons.add(Polygon(
-          points: points,
-          color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
-          borderColor: Colors.transparent,
-          borderStrokeWidth: 0,
-        ));
-      }
+      final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
+      innerPolygons.add(Polygon(
+        points: points,
+        color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
+        borderColor: Colors.transparent,
+        borderStrokeWidth: 0,
+      ));
     }
 
     return Stack(
