@@ -186,69 +186,97 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
     return MarkerLayer(markers: markers);
   }
 
-  /// CLOSE ZOOM (14+): Full hex polygons with dark fill, neon glow, wave motion.
+  /// CLOSE ZOOM (14+): Full hex polygons with glossy droplet/fluid texture.
+  /// Multi-layer rendering: deep fill → specular highlight → glass border → shimmer sweep.
   Widget _buildAnimatedPolygons(double pulse, double wave, double entrance) {
     final baseColor = widget.userColor;
     final isNew = widget.isNewCapture;
     final hexCount = widget.hexBoundaries.length;
 
-    final glowPolygons = <Polygon>[];
-    final mainPolygons = <Polygon>[];
-    final innerPolygons = <Polygon>[];
+    final deepFillPolygons = <Polygon>[];
+    final specularPolygons = <Polygon>[];
+    final glassBorderPolygons = <Polygon>[];
+    final outerGlowPolygons = <Polygon>[];
+    final shimmerPolygons = <Polygon>[];
 
     for (int i = 0; i < hexCount; i++) {
       final boundary = widget.hexBoundaries[i];
       final points = boundary.map((p) => LatLng(p[0], p[1])).toList();
 
-      // Per-hex wave phase — creates a sweeping light effect
+      // Per-hex wave phase — creates liquid ripple sweep
       final phase = (wave + (i / math.max(hexCount, 1))) % 1.0;
       final hexWave = (math.sin(phase * 2 * math.pi) + 1) / 2;
+      // Secondary wave for depth — slower, offset
+      final depthWave = (math.sin((phase * 1.5 + 0.3) * 2 * math.pi) + 1) / 2;
 
-      // Strong dark fill — highly visible on dark map
+      // Layer 1: Deep saturated fill — the liquid body
       final fillAlpha = isNew
-          ? 0.55 + (hexWave * 0.15) // 0.55–0.70 for new captures
-          : 0.40 + (hexWave * 0.15); // 0.40–0.55 for owned
-
-      // Neon glow border intensity
-      final borderAlpha = isNew
-          ? 0.85 + (pulse * 0.15) // 0.85–1.0
-          : 0.70 + (pulse * 0.20); // 0.70–0.90
-
-      final borderWidth = isNew
-          ? 3.0 + (pulse * 1.5) // 3.0–4.5
-          : 2.5 + (pulse * 1.0); // 2.5–3.5
-
-      // Outer neon glow (wider, softer — creates the "glow" effect)
-      glowPolygons.add(Polygon(
-        points: points,
-        color: Colors.transparent,
-        borderColor: baseColor.withValues(alpha: borderAlpha * 0.35 * entrance),
-        borderStrokeWidth: borderWidth + 6.0,
-      ));
-
-      // Main polygon — dark, strong, visible
-      mainPolygons.add(Polygon(
+          ? 0.60 + (depthWave * 0.12) // rich, saturated
+          : 0.45 + (depthWave * 0.12);
+      deepFillPolygons.add(Polygon(
         points: points,
         color: baseColor.withValues(alpha: fillAlpha * entrance),
-        borderColor: baseColor.withValues(alpha: borderAlpha * entrance),
+        borderColor: Colors.transparent,
+        borderStrokeWidth: 0,
+      ));
+
+      // Layer 2: Specular highlight — white-ish blob that moves across hex (droplet shine)
+      final specAlpha = hexWave > 0.5
+          ? (hexWave - 0.5) * 0.5 * (isNew ? 0.35 : 0.25) // brighter for new
+          : 0.0;
+      specularPolygons.add(Polygon(
+        points: points,
+        color: Colors.white.withValues(alpha: specAlpha * entrance),
+        borderColor: Colors.transparent,
+        borderStrokeWidth: 0,
+      ));
+
+      // Layer 3: Glass border — thin, bright, high contrast
+      final borderAlpha = isNew
+          ? 0.90 + (pulse * 0.10)
+          : 0.75 + (pulse * 0.15);
+      final borderWidth = isNew ? 2.0 + (pulse * 0.5) : 1.5 + (pulse * 0.5);
+      glassBorderPolygons.add(Polygon(
+        points: points,
+        color: Colors.transparent,
+        borderColor: Color.lerp(
+          baseColor,
+          Colors.white,
+          0.3 + pulse * 0.15, // border shifts whiter on pulse = glass shine
+        )!.withValues(alpha: borderAlpha * entrance),
         borderStrokeWidth: borderWidth,
       ));
 
-      // Inner shimmer — white flash sweeping through hexes
-      final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
-      innerPolygons.add(Polygon(
+      // Layer 4: Outer glow halo — soft, wide, diffused
+      final glowAlpha = (0.20 + pulse * 0.12) * entrance;
+      outerGlowPolygons.add(Polygon(
+        points: points,
+        color: Colors.transparent,
+        borderColor: baseColor.withValues(alpha: glowAlpha),
+        borderStrokeWidth: borderWidth + 7.0,
+      ));
+
+      // Layer 5: Shimmer sweep — bright flash traveling across the cluster
+      final shimmerAlpha = hexWave > 0.75
+          ? (hexWave - 0.75) / 0.25 * (isNew ? 0.22 : 0.14)
+          : 0.0;
+      shimmerPolygons.add(Polygon(
         points: points,
         color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
-        borderColor: Colors.transparent,
-        borderStrokeWidth: 0,
+        borderColor: Colors.white.withValues(
+          alpha: shimmerAlpha * 0.6 * entrance,
+        ),
+        borderStrokeWidth: shimmerAlpha > 0 ? 1.0 : 0,
       ));
     }
 
     return Stack(
       children: [
-        PolygonLayer(polygons: glowPolygons),
-        PolygonLayer(polygons: mainPolygons),
-        PolygonLayer(polygons: innerPolygons),
+        PolygonLayer(polygons: outerGlowPolygons),
+        PolygonLayer(polygons: deepFillPolygons),
+        PolygonLayer(polygons: specularPolygons),
+        PolygonLayer(polygons: glassBorderPolygons),
+        PolygonLayer(polygons: shimmerPolygons),
       ],
     );
   }

@@ -3,79 +3,51 @@ using H3.Algorithms;
 using H3.Extensions;
 using H3.Model;
 using NetTopologySuite.Geometries;
+using System.Text.Json;
 
-Console.WriteLine("=== H3 Resolution 11 Fill Test ===\n");
-
-// Simulate the user's actual walk loop (~200m x 180m)
-var path = new double[][] {
-    [59.3065, 18.0670], [59.3067, 18.0675], [59.3069, 18.0680],
-    [59.3071, 18.0685], [59.3073, 18.0688], [59.3075, 18.0690],
-    [59.3077, 18.0688], [59.3079, 18.0685], [59.3080, 18.0680],
-    [59.3079, 18.0675], [59.3077, 18.0670], [59.3075, 18.0665],
-    [59.3073, 18.0662], [59.3071, 18.0660], [59.3069, 18.0662],
-    [59.3067, 18.0665], [59.3065, 18.0668], [59.3065, 18.0670],
-};
+Console.WriteLine("-- H3 Res 11 cluster INSERT for Parth (Stockholm 59.3072, 18.068)");
 
 const int resolution = 11;
-const double hexApothemMeters = 25.0;
-const double metersPerDegreeLat = 111320.0;
-
-// 1. Trail cells
-var trailCells = new HashSet<long>();
-foreach (var point in path)
-{
-    var latRad = point[0] * Math.PI / 180.0;
-    var lngRad = point[1] * Math.PI / 180.0;
-    var index = H3Index.FromLatLng(new LatLng(latRad, lngRad), resolution);
-    trailCells.Add((long)(ulong)index);
-}
-Console.WriteLine($"Trail cells: {trailCells.Count}");
-
-// 2. Fill polygon
-var coordinates = path.Select(p => new Coordinate(p[1], p[0])).ToList();
-coordinates.Add(coordinates[0]); // close ring
 var factory = new GeometryFactory();
-var ring = factory.CreateLinearRing(coordinates.ToArray());
-var polygon = factory.CreatePolygon(ring);
+var userId = "63f7974c-ccbd-4601-9707-c2efeabed96c";
+var claimId = Guid.NewGuid().ToString();
+var now = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss+00");
+var cooldown = DateTime.UtcNow.AddHours(5).ToString("yyyy-MM-dd HH:mm:ss+00");
 
-// Calculate area
-var centLat = path.Average(p => p[0]);
-var centLng = path.Average(p => p[1]);
-var metersPerDegreeLng = metersPerDegreeLat * Math.Cos(centLat * Math.PI / 180.0);
-double area = 0;
-for (int i = 0; i < path.Length; i++)
+// Get center cell + ring-1 neighbors = 7 cells (nice cluster)
+var centerLatRad = 59.3072 * Math.PI / 180.0;
+var centerLngRad = 18.0680 * Math.PI / 180.0;
+var centerIndex = H3Index.FromLatLng(new LatLng(centerLatRad, centerLngRad), resolution);
+
+var cluster = new List<H3Index> { centerIndex };
+foreach (var ringCell in centerIndex.GridDiskDistances(1))
 {
-    var j = (i + 1) % path.Length;
-    var xi = (path[i][1] - centLng) * metersPerDegreeLng;
-    var yi = (path[i][0] - centLat) * metersPerDegreeLat;
-    var xj = (path[j][1] - centLng) * metersPerDegreeLng;
-    var yj = (path[j][0] - centLat) * metersPerDegreeLat;
-    area += xi * yj - xj * yi;
+    if ((ulong)ringCell.Index != (ulong)centerIndex)
+        cluster.Add(ringCell.Index);
 }
-area = Math.Abs(area) / 2.0;
-Console.WriteLine($"Polygon area: {area:F0} m²");
 
-// Buffer + fill
-var bufferDegrees = hexApothemMeters / metersPerDegreeLat;
-var buffered = polygon.Buffer(bufferDegrees);
-var fillCells = buffered.Fill(resolution).ToList();
-Console.WriteLine($"Fill cells (buffered): {fillCells.Count}");
+Console.WriteLine($"-- Cluster size: {cluster.Count} cells");
+Console.WriteLine($"INSERT INTO \"Claims\" (\"Id\", \"UserId\", \"CellCount\", \"AreaM2\", \"CreatedAt\", \"PolygonJson\") VALUES ('{claimId}', '{userId}', {cluster.Count}, {cluster.Count * 2150}, '{now}', '[]');");
 
-// Without buffer
-var fillNoBuf = polygon.Fill(resolution).ToList();
-Console.WriteLine($"Fill cells (no buffer): {fillNoBuf.Count}");
+foreach (var cell in cluster)
+{
+    var cellId = (long)(ulong)cell;
+    var center = cell.ToLatLng();
+    var lat = center.LatitudeDegrees;
+    var lng = center.LongitudeDegrees;
+    var parent = cell.GetParentForResolution(3);
+    var parentId = (long)(ulong)parent;
 
-// Total unique
-var allCells = new HashSet<long>(trailCells);
-foreach (var cell in fillCells) allCells.Add((long)(ulong)cell);
-Console.WriteLine($"\nTOTAL unique cells: {allCells.Count}");
-Console.WriteLine($"  Trail only: {trailCells.Count}");
-Console.WriteLine($"  Fill interior: {fillNoBuf.Count}");
-Console.WriteLine($"  Fill + boundary: {fillCells.Count}");
+    // Get real boundary
+    var polygon = cell.GetCellBoundary(factory);
+    var coords = polygon.ExteriorRing.Coordinates;
+    var boundary = new double[coords.Length][];
+    for (int i = 0; i < coords.Length; i++)
+        boundary[i] = new[] { coords[i].Y, coords[i].X };
+    var boundaryJson = JsonSerializer.Serialize(boundary);
 
-// Verify boundary extraction
-var sampleCell = fillCells[0];
-var boundary = sampleCell.GetCellBoundary(factory);
-Console.WriteLine($"\nBoundary test (first fill cell):");
-Console.WriteLine($"  Vertices: {boundary.ExteriorRing.Coordinates.Length} (should be 7 = 6+close)");
-Console.WriteLine($"  First vertex: ({boundary.ExteriorRing.Coordinates[0].Y:F6}, {boundary.ExteriorRing.Coordinates[0].X:F6})");
+    Console.WriteLine($"INSERT INTO \"TerritoryCells\" (\"CellId\", \"OwnerId\", \"ClaimId\", \"ClaimedAt\", \"CooldownExpiresAt\", \"CenterLat\", \"CenterLng\", \"ParentCellId\", \"BoundaryJson\") VALUES ({cellId}, '{userId}', '{claimId}', '{now}', '{cooldown}', {lat}, {lng}, {parentId}, '{boundaryJson.Replace("'", "''")}');");
+}
+
+// Update user hex count
+Console.WriteLine($"UPDATE \"Users\" SET \"HexCount\" = \"HexCount\" + {cluster.Count} WHERE \"Id\" = '{userId}';");
