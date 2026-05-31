@@ -284,6 +284,9 @@ using (var scope = app.Services.CreateScope())
             });
         }
         db.SaveChanges();
+
+        // Seed territory hexes for bot users so the map isn't empty on day 1
+        TerritorySeedService.SeedBotTerritory(db, users.ToList());
     }
 }
 
