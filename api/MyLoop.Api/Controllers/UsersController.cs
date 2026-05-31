@@ -15,11 +15,14 @@ public class UsersController : ControllerBase
 {
     private readonly IUserService _userService;
     private readonly IValidationService _validation;
+    private readonly IPushNotificationService _pushService;
 
-    public UsersController(IUserService userService, IValidationService validation)
+    public UsersController(IUserService userService, IValidationService validation,
+        IPushNotificationService pushService)
     {
         _userService = userService;
         _validation = validation;
+        _pushService = pushService;
     }
 
     /// <summary>
@@ -115,5 +118,17 @@ public class UsersController : ControllerBase
         var deleted = await _userService.DeleteAccount(id);
         if (!deleted) return NotFound();
         return NoContent();
+    }
+
+    /// <summary>
+    /// Register a device token for push notifications.
+    /// </summary>
+    [HttpPost("{id:guid}/device-token")]
+    public async Task<IActionResult> RegisterDeviceToken(
+        [FromRoute] Guid id, [FromBody] DeviceTokenRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token)) return BadRequest("Token is required");
+        await _pushService.RegisterDeviceToken(id, request.Token, request.Platform ?? "ios");
+        return Ok();
     }
 }

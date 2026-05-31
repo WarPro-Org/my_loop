@@ -12,6 +12,7 @@ import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
+import 'package:myloop/shared/services/push_notification_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -220,6 +221,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           distanceKm: existing.distanceKm,
           rank: rank,
         );
+        // Initialize push notifications after login
+        ref.read(pushNotificationProvider).initialize(existing.id);
         if (mounted) context.go('/home');
         return;
       }

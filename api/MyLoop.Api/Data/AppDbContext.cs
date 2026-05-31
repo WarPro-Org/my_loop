@@ -31,6 +31,9 @@ public class AppDbContext : DbContext
     /// <summary>Gets the set of daily leaderboard snapshots.</summary>
     public DbSet<LeaderboardEntry> LeaderboardEntries => Set<LeaderboardEntry>();
 
+    /// <summary>Gets the set of FCM device tokens for push notifications.</summary>
+    public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
+
     /// <summary>
     /// Configures the entity model: primary keys, unique constraints, and indexes
     /// for efficient query patterns used by the game.
