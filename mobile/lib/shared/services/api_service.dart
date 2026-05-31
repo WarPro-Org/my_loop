@@ -165,6 +165,21 @@ class ApiService {
   Future<void> deleteAccount(String userId) async {
     await _dio.delete('/api/users/$userId');
   }
+
+  /// Preview which hexes a path would capture — no DB writes.
+  /// Called during a walk when a loop is detected to show live hex fills.
+  Future<List<List<List<double>>>> previewClaim({
+    required List<List<double>> path,
+  }) async {
+    final response = await _dio.post('/api/claims/preview', data: {
+      'path': path,
+    });
+    final data = response.data as Map<String, dynamic>;
+    final boundaries = data['boundaries'] as List;
+    return boundaries
+        .map((b) => (b as List).map((p) => (p as List).cast<double>()).toList())
+        .toList();
+  }
 }
 
 /// Riverpod provider exposing a singleton [ApiService] instance.

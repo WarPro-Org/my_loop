@@ -30,3 +30,11 @@ public class ClaimRequest
     public Guid UserId { get; set; }
     public double[][] Path { get; set; } = [];
 }
+
+/// <summary>
+/// Request body for previewing hex capture (no DB writes).
+/// </summary>
+public class PreviewRequest
+{
+    public double[][] Path { get; set; } = [];
+}

@@ -714,6 +714,16 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 solidMode: _solidHexes,
               ),
 
+            // Live preview hexes — detected loops, not yet claimed
+            if (journey.previewBoundaries.isNotEmpty)
+              AnimatedHexOverlay(
+                hexBoundaries: journey.previewBoundaries,
+                userColor: userColor.withAlpha(140),
+                currentZoom: _currentZoom,
+                isNewCapture: true,
+                solidMode: false,
+              ),
+
             // Captured hex polygons (from current session — extra glow)
             if (_capturedHexBoundaries.isNotEmpty)
               AnimatedHexOverlay(

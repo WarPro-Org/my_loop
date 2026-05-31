@@ -14,10 +14,12 @@ namespace MyLoop.Api.Controllers;
 public class ClaimsController : ControllerBase
 {
     private readonly ITerritoryService _territoryService;
+    private readonly IHexGridService _hexGridService;
 
-    public ClaimsController(ITerritoryService territoryService)
+    public ClaimsController(ITerritoryService territoryService, IHexGridService hexGridService)
     {
         _territoryService = territoryService;
+        _hexGridService = hexGridService;
     }
 
     /// <summary>
@@ -35,5 +37,22 @@ public class ClaimsController : ControllerBase
         }
 
         return Created($"/api/claims/{result.Data!.Id}", result.Data);
+    }
+
+    /// <summary>
+    /// Preview which hexes a path would capture — no DB writes.
+    /// Called by the client during a walk when a loop is detected,
+    /// so the user can see hex fills appearing in real-time.
+    /// </summary>
+    [HttpPost("preview")]
+    public IActionResult PreviewClaim([FromBody] PreviewRequest request)
+    {
+        if (request.Path.Length < 4)
+            return Ok(new { boundaries = Array.Empty<double[][]>() });
+
+        var cells = _hexGridService.ComputeCapturedCells(request.Path);
+        var boundaries = cells.Select(c => c.Boundary).ToArray();
+
+        return Ok(new { boundaries });
     }
 }
