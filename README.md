@@ -1,90 +1,389 @@
-# MyLoop 🌍
+# MyLoop 🌍⬡
 
-A real-time territory capture mobile game — walk around in the real world to claim hexagonal zones on the map. Think Snake.io meets real-world exploration.
+**Real-world territory capture.** Walk a loop in the physical world → claim every hex inside it. Defend your territory. Steal from others. Dominate your city's leaderboard.
 
-## What It Does
+> Pokémon GO meets Risk meets Strava — but you're conquering real geographic territory.
 
-- Walk outdoors and your GPS traces a path on a live map
-- Complete loops (closed shapes) to capture the territory inside
-- Compete on leaderboards — weekly and all-time rankings
-- Earn achievements and level up your profile
+---
+
+## How It Works
+
+```
+1. Open app → see the hex map with everyone's territory
+2. Tap START JOURNEY → walk outside
+3. Walk a closed loop → GPS traces your path
+4. Tap STOP & CAPTURE → server validates your walk
+5. Every hex inside your loop becomes YOURS (colored on the map)
+6. Other players get push notifications: "Your territory was stolen!"
+7. They walk back to reclaim → the cycle continues
+```
+
+**Why it's addictive:** You _see_ your territory on the map. Others can _steal_ it. You get _notified_ instantly. You _walk back_ to defend. Repeat forever.
+
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| 🗺️ Territory Capture | Walk loops to claim H3 hexagonal cells. Trail + interior fill. |
+| ⚡ Real-Time Updates | SignalR WebSocket pushes map changes to all nearby players instantly |
+| 🛡️ Anti-Cheat | 3-layer validation: speed, duration, path smoothness |
+| 🔔 Push Notifications | FCM alerts when your territory is stolen |
+| 🏆 Leaderboard | City / Country / World scoped rankings, refreshed daily |
+| 🎖️ Tier System | Bronze → Silver → Gold → Platinum → Crystal → Diamond (24 ranks) |
+| 🔥 Streaks | Daily consecutive claim tracking with lifetime max |
+| ⚔️ Revenge | See who stole from you + navigate back to reclaim |
+| 📜 Walk History | Paginated record of all past claims |
+| 👤 Profiles | Public player profiles with titles, badges, stats |
+| 🤖 Bot Territory | Pre-seeded competition in 6 major cities |
+| 🗓️ Cooldown | 5-hour protection on captured cells |
+
+---
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Mobile | Flutter 3.x (Dart) — cross-platform iOS/Android/Web |
-| State Management | Riverpod (modern Notifier pattern) |
-| Navigation | go_router with ShellRoute |
-| Maps | flutter_map + OpenStreetMap tiles |
-| Backend API | .NET 10 Minimal API (C#) |
-| Database | PostgreSQL 18 |
-| Auth | Firebase Auth (Google Sign-In, Apple Sign-In) |
-| Geo Indexing | H3 hexagonal grid system |
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| **Mobile** | Flutter 3.44 / Dart 3.12 | Single codebase iOS + Android |
+| **Backend** | .NET 10 / ASP.NET Core | SignalR native, high perf, EF Core |
+| **Database** | PostgreSQL 18 | GiST spatial index, free, reliable |
+| **Spatial Grid** | H3 (Uber) — pocketken.H3 | Global uniform hexagons, polygon fill, hierarchy |
+| **Real-Time** | SignalR (WebSocket) | Group-based geo broadcast, auto-reconnect |
+| **Auth** | Firebase Authentication | Google + Apple OAuth, JWT tokens |
+| **Push** | Firebase Cloud Messaging | Cross-platform, free at scale |
+| **Map Tiles** | ESRI + CartoDB | Free, no API key, satellite + dark themes |
+| **State** | Riverpod 3.x | Compile-safe reactive state |
+| **Navigation** | go_router + ShellRoute | URL-based routing, tab persistence |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  MOBILE (Flutter)                                       │
+│  ┌──────────┐  ┌───────────┐  ┌──────────────────────┐ │
+│  │ GPS      │  │ Map       │  │ SignalR Client        │ │
+│  │ Tracking │  │ Rendering │  │ (region subscription) │ │
+│  └────┬─────┘  └─────┬─────┘  └──────────┬───────────┘ │
+│       │               │                    │             │
+│       ▼               ▼                    ▼             │
+│  ┌─────────────────────────────────────────────────┐    │
+│  │          API Service (Dio + JWT interceptor)     │    │
+│  └───────────────────────┬─────────────────────────┘    │
+└──────────────────────────┼──────────────────────────────┘
+                           │ HTTPS + WebSocket
+┌──────────────────────────┼──────────────────────────────┐
+│  BACKEND (.NET 10)       │                              │
+│  ┌───────────────────────┴─────────────────────────┐    │
+│  │           Controllers (thin, ≤20 lines)         │    │
+│  └───────────────────────┬─────────────────────────┘    │
+│                          │                              │
+│  ┌───────────┬───────────┼───────────┬──────────────┐   │
+│  │Territory  │PathValid  │HexGrid   │Leaderboard   │   │
+│  │Service    │Service    │Service   │Service       │   │
+│  │(claims)   │(anti-cheat)│(H3 math) │(rankings)   │   │
+│  └─────┬─────┴─────┬─────┴────┬─────┴──────┬───────┘   │
+│        │           │          │            │            │
+│  ┌─────▼───────────▼──────────▼────────────▼────────┐   │
+│  │       EF Core → PostgreSQL (GiST spatial)        │   │
+│  └──────────────────────────────────────────────────┘   │
+│                                                         │
+│  ┌─────────────────┐  ┌────────────────────────────┐    │
+│  │ SignalR Hub      │  │ Push Notification Service  │    │
+│  │ (region groups)  │  │ (FCM HTTP v1)              │    │
+│  └─────────────────┘  └────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Communication Patterns
+
+| Pattern | Tech | Direction | Purpose |
+|---------|------|-----------|---------|
+| REST | HTTP/JSON | Client → Server → Client | Claims, queries, profiles |
+| WebSocket | SignalR | Server → Clients | Real-time territory changes |
+| Push | FCM | Server → Device OS → Client | "Your hex was stolen" (app closed) |
+| Auth | Firebase JWT | Client → Server (Bearer) | Every API call, auto-refresh |
+| Geo Groups | SignalR | Client ↔ Server | Subscribe to ~12km region broadcasts |
+
+---
+
+## Core Algorithms
+
+### Claim Pipeline
+
+```
+GPS Path (200m+ walk, ≥10 points)
+    │
+    ▼
+┌─ Anti-Cheat Validation ──────────────────────┐
+│  • Speed: ≤30 km/h between consecutive points │
+│  • Duration: ≥50% expected GPS samples        │
+│  • Smoothness: bearing σ > 2° (rejects bots)  │
+└───────────────────────────────────────────────┘
+    │
+    ▼
+┌─ H3 Hex Computation ─────────────────────────┐
+│  1. Trail cells: hexes the path crosses       │
+│  2. Loop detection: endpoints ≤50m apart      │
+│  3. Polygon fill: H3.Fill() for interior      │
+│  4. Deduplication: skip >80% overlap          │
+└───────────────────────────────────────────────┘
+    │
+    ▼
+┌─ Ownership Assignment (single DB transaction) ┐
+│  • Skip cells on cooldown (5h protection)     │
+│  • Skip self-owned cells                      │
+│  • Steal from others → log transfer           │
+│  • Update stats (hex count, streak, distance) │
+└───────────────────────────────────────────────┘
+    │
+    ▼
+┌─ Post-Commit Broadcast ──────────────────────┐
+│  • SignalR → all nearby clients (map update)  │
+│  • FCM → victims ("Territory Under Attack!")  │
+└───────────────────────────────────────────────┘
+```
+
+### Anti-Cheat (3-Layer)
+
+| Check | Method | Threshold | Tolerance |
+|-------|--------|-----------|-----------|
+| Speed | Haversine between consecutive points | 60m per 5s interval (30 km/h) | 5% violation rate allowed |
+| Duration | Point count vs expected for distance | 50% of expected GPS samples | — |
+| Smoothness | Std deviation of bearing changes | >2° required | Rejects linear spoofed paths |
+
+---
 
 ## Project Structure
 
 ```
 MyLoop/
-├── mobile/                     # Flutter app
+├── mobile/                          # Flutter app (iOS + Android)
 │   └── lib/
-│       ├── app/                # App config, theme, router
-│       ├── features/           # Feature-based modules
-│       │   ├── auth/           # Login, avatar picker
-│       │   ├── home/           # Home tab, shell screen
-│       │   ├── journey/        # Active walk recording
-│       │   ├── leaderboard/    # Rankings
-│       │   └── profile/        # User profile & stats
-│       └── shared/             # Cross-feature code
-│           ├── models/         # Data classes
-│           ├── services/       # API, auth, location
-│           └── widgets/        # Reusable UI components
+│       ├── app/                     # Theme, router, providers
+│       ├── features/
+│       │   ├── auth/                # Login, signup, avatar picker
+│       │   ├── home/                # Main tab (map overview, stats, challenges)
+│       │   ├── journey/             # Active walk (GPS tracking, hex rendering)
+│       │   ├── history/             # Walk history (paginated claims)
+│       │   ├── leaderboard/         # Rankings (city/country/world)
+│       │   └── profile/             # User profile & settings
+│       └── shared/
+│           ├── constants/           # App-wide constants
+│           ├── models/              # DTOs (TerritoryCell, AppUser, etc.)
+│           ├── services/            # API, auth, location, push, SignalR
+│           └── widgets/             # Reusable UI components
 │
-├── api/                        # .NET backend
+├── api/                             # .NET 10 backend
 │   └── MyLoop.Api/
-│       ├── Endpoints/          # REST endpoint groups
-│       ├── Entities/           # Database models
-│       ├── Data/               # EF Core DbContext
-│       ├── Services/           # Business logic (H3)
-│       └── Program.cs          # Bootstrap & DI
+│       ├── Constants/               # GameConstants, AntiCheatConstants
+│       ├── Controllers/             # Thin REST controllers
+│       ├── Data/                    # EF Core DbContext + migrations
+│       ├── Entities/                # DB models (User, TerritoryCell, Claim, etc.)
+│       ├── Hubs/                    # SignalR TerritoryHub
+│       ├── Models/                  # Request/response DTOs
+│       ├── Services/                # Business logic (9 services)
+│       └── Program.cs              # DI, auth, CORS, middleware, seeding
+│
+└── README.md
 ```
+
+---
+
+## API Endpoints
+
+### Territory (`/api/territories`)
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/territories?minLat&minLng&maxLat&maxLng` | Viewport hex query (max 500) |
+| `GET` | `/api/territories/user/{userId}` | All user's hexes (no limit) |
+| `GET` | `/api/territories/stats/{userId}` | Cell count + area |
+| `GET` | `/api/territories/stolen/{userId}?days=7` | Hexes stolen from user |
+| `GET` | `/api/territories/history/{cellId}` | Ownership history of a cell |
+| `GET` | `/api/territories/claims/{userId}` | Walk history |
+
+### Claims (`/api/claims`)
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/claims` | Submit territory claim |
+| `POST` | `/api/claims/preview` | Preview capture (no DB write) |
+
+### Users (`/api/users`)
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `POST` | `/api/users/register` | Create account |
+| `GET` | `/api/users/{id}` | Get user |
+| `GET` | `/api/users/by-uid/{firebaseUid}` | Lookup by Firebase UID |
+| `PATCH` | `/api/users/{id}` | Update profile |
+| `GET` | `/api/users/{id}/profile` | Public profile + rank |
+| `DELETE` | `/api/users/{id}` | Delete account (GDPR) |
+| `POST` | `/api/users/{id}/device-token` | Register FCM token |
+| `GET` | `/api/users/{id}/claims?page&pageSize` | Paginated claim history |
+
+### Leaderboard (`/api/leaderboard`)
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `GET` | `/api/leaderboard?scope=city&lat&lng` | Rankings (city/country/world) |
+| `POST` | `/api/leaderboard/refresh` | Recompute daily rankings |
+
+---
+
+## Database Schema
+
+| Table | Primary Key | Purpose |
+|-------|-------------|---------|
+| `Users` | UUID | Player accounts, stats, streaks |
+| `TerritoryCells` | H3 CellId (bigint) | Hex ownership, boundaries, cooldowns |
+| `Claims` | UUID | Walk records (GPS path, cell count, area) |
+| `CellTransfers` | UUID | Ownership change history (revenge feature) |
+| `LeaderboardEntries` | UUID | Daily rank snapshots |
+| `DeviceTokens` | UUID | FCM push notification tokens |
+
+**Indexes**: GiST on `(CenterLat, CenterLng)` for spatial viewport queries. B-tree on `OwnerId`, `ParentCellId`, `FirebaseUid`.
+
+---
+
+## Game Constants
+
+| Rule | Value |
+|------|-------|
+| Hex size (H3 res 11) | ~25m edge, ~2,150 m² area |
+| Min walk distance | 200m |
+| Max claim area | 5 km² |
+| Claims per day | 20 max |
+| Cell cooldown | 5 hours |
+| Loop closure | ≤50m between path endpoints |
+| Anti-cheat speed cap | 30 km/h |
+| Viewport cell limit | 500 per request |
+| Leaderboard scope | City / Country / World |
+| Revenge window | 7 days |
+
+---
 
 ## Running Locally
 
 ### Prerequisites
-- Flutter SDK 3.x
-- .NET 10 SDK
-- PostgreSQL 18
-- Firebase project configured
 
-### Backend API
-```bash
+- [Flutter SDK](https://flutter.dev) ≥ 3.44.0
+- [.NET 10 SDK](https://dotnet.microsoft.com)
+- [PostgreSQL 18](https://postgresql.org)
+- Firebase project (for auth + push)
+
+### Backend
+
+```powershell
 cd api/MyLoop.Api
-dotnet run
-# Runs on http://localhost:5048
+dotnet run --urls "http://0.0.0.0:5048"
+# API at http://localhost:5048
+# SignalR Hub at http://localhost:5048/hubs/territory
 ```
 
-### Mobile App (Web)
-```bash
-cd mobile
-flutter run -d web-server --web-port 9090 --web-hostname 0.0.0.0
-# Access at http://<your-ip>:9090
-```
+The API auto-creates the database and seeds bot territory on first run.
 
-### Mobile App (Device)
-```bash
+### Mobile (iOS/Android device)
+
+```powershell
 cd mobile
 flutter run
 ```
+
+### Mobile (Web — dev only)
+
+```powershell
+cd mobile
+flutter build web --release
+# Serve with any static server on port 9090
+```
+
+### Remote Testing (ngrok)
+
+```powershell
+ngrok http 5048
+# Copy the https://xxx.ngrok-free.app URL
+# Update api_service.dart apiBaseUrl or use --dart-define=API_URL=...
+```
+
+---
+
+## Security
+
+| Layer | Implementation |
+|-------|---------------|
+| Auth | Firebase JWT (RSA signature, issuer/audience validation) |
+| Anti-Cheat | Speed + duration + smoothness checks server-side |
+| Injection | Parameterized queries only (EF Core) |
+| Rate Limiting | 20 claims/day (server-enforced) |
+| Cooldown | 5-hour server-enforced, client cannot bypass |
+| Data Deletion | Full GDPR cascade delete |
+| Transport | HTTPS enforced |
+
+---
+
+## Progression System
+
+### Tier Badges (24 ranks)
+
+| Tier | Hexes | Color |
+|------|-------|-------|
+| 🥉 Bronze I–IV | 0 – 49 | `#CD7F32` |
+| 🥈 Silver I–IV | 50 – 199 | `#A8B4C0` |
+| 🥇 Gold I–IV | 200 – 499 | `#FFD700` |
+| 💎 Platinum I–IV | 500 – 1,499 | `#8B5CF6` |
+| 💠 Crystal I–IV | 1,500 – 2,999 | `#00BCD4` |
+| 🔷 Diamond I–IV | 3,000+ | `#60A5FA` |
+
+### Player Titles
+
+| Title | Hex Threshold |
+|-------|--------------|
+| Drifter | 0+ |
+| Wanderer | 10+ |
+| Trailblazer | 50+ |
+| Territory Lord | 100+ |
+| Hex Overlord | 500+ |
+| Grid Dominator | 1,000+ |
+
+---
 
 ## Color Palette
 
 | Color | Hex | Usage |
 |-------|-----|-------|
-| Electric Turquoise | `#00D4AA` | Primary brand color |
-| Deep Turquoise | `#00B894` | Primary dark variant |
+| Electric Turquoise | `#00D4AA` | Primary brand |
+| Deep Turquoise | `#00B894` | Primary dark |
 | Mint Frost | `#E0FFF7` | Light backgrounds |
 | Royal Purple | `#6C5CE7` | Accent / highlights |
+
+---
+
+## Cost to Run
+
+| Phase | Monthly Cost |
+|-------|-------------|
+| Development (current) | **$0** — all services free tier |
+| Production (0–10K users) | **~$25–75** — managed Postgres + Railway/Fly.io |
+| Scale (10K–100K users) | **~$150–500** — larger DB, Redis cache, CDN |
+
+---
+
+## Status
+
+- ✅ Territory capture (full pipeline)
+- ✅ Real-time SignalR updates
+- ✅ Anti-cheat validation
+- ✅ Push notifications
+- ✅ Leaderboard (city/country/world)
+- ✅ Achievements & tier system
+- ✅ Walk history
+- ✅ Bot territory seeding
+- ✅ Account deletion (GDPR)
+- 🔶 Firebase OAuth credentials (needs console setup)
+- 🔶 Production hosting
+- 🔶 App Store submission
+
+---
 
 ## License
 
