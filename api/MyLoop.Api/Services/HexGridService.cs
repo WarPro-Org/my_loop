@@ -35,13 +35,15 @@ public class HexGridService : IHexGridService
             allCells[cell.CellId] = cell.Boundary;
         }
 
-        // Step 2: If the path is a closed loop, fill the enclosed area
-        if (IsLoopClosed(path))
+        // Step 2: Extract ALL closed loops from the path and fill each one.
+        // A single walk can produce multiple loops (figure-8, laps, etc.)
+        var loops = ExtractLoops(path);
+        foreach (var loop in loops)
         {
-            var polygonArea = _geoService.CalculatePolygonArea(path);
+            var polygonArea = _geoService.CalculatePolygonArea(loop);
             if (polygonArea >= GameConstants.MinFillAreaSquareMeters)
             {
-                var fillCells = FillPolygon(path);
+                var fillCells = FillPolygon(loop);
                 foreach (var cell in fillCells)
                 {
                     allCells[cell.CellId] = cell.Boundary;
@@ -82,6 +84,73 @@ public class HexGridService : IHexGridService
     }
 
     // --- Private helpers ---
+
+    /// <summary>
+    /// Extracts all closed loops from a GPS trail using spatial proximity.
+    /// Walks the path and detects when the trail crosses back near a previous point
+    /// (within LoopClosureDistanceMeters). Each detected loop is extracted as a
+    /// sub-polygon. Handles figure-8s, multiple laps, overlapping loops, etc.
+    /// Returns loops ordered largest-area-first.
+    /// </summary>
+    private List<double[][]> ExtractLoops(double[][] path)
+    {
+        if (path.Length < 4) return [];
+
+        var loops = new List<double[][]>();
+        var closureThreshold = GameConstants.LoopClosureDistanceMeters;
+
+        // Use a spatial index approach: for each point, check if it's close to
+        // any EARLIER point (skipping immediate neighbors to avoid false positives).
+        // When a closure is found, extract that sub-path as a loop.
+        // Mark used points to avoid double-counting the same loop.
+        const int minLoopPoints = 20; // Need at least 20 GPS points for a meaningful loop
+        const int skipNeighbors = 10; // Don't compare to immediate neighbors (would find tiny "loops" from GPS jitter)
+
+        var used = new bool[path.Length];
+
+        for (int i = skipNeighbors; i < path.Length; i++)
+        {
+            if (used[i]) continue;
+
+            for (int j = 0; j <= i - minLoopPoints; j++)
+            {
+                if (used[j]) continue;
+
+                var dist = _geoService.HaversineMeters(
+                    path[i][0], path[i][1],
+                    path[j][0], path[j][1]);
+
+                if (dist <= closureThreshold)
+                {
+                    // Found a loop from j to i
+                    var loopLength = i - j + 1;
+                    var loop = new double[loopLength][];
+                    Array.Copy(path, j, loop, 0, loopLength);
+
+                    loops.Add(loop);
+
+                    // Mark points in this loop as used so we don't re-detect it
+                    for (int k = j; k <= i; k++)
+                        used[k] = true;
+
+                    break; // Move on from point i — we found its closure
+                }
+            }
+        }
+
+        // Also check the simple start≈end case (entire path is one loop)
+        // Only add if we didn't already extract it
+        if (loops.Count == 0 && IsLoopClosed(path))
+        {
+            loops.Add(path);
+        }
+
+        // Sort largest area first (most valuable loops processed first)
+        loops.Sort((a, b) =>
+            _geoService.CalculatePolygonArea(b).CompareTo(_geoService.CalculatePolygonArea(a)));
+
+        return loops;
+    }
 
     /// <summary>
     /// Checks if the path forms a closed loop (start within 50m of end).
