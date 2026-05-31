@@ -68,6 +68,8 @@ class JourneyController extends Notifier<JourneyState> {
   DateTime? _startTime;
   int _lastLoopCount = 0; // Track how many loops we've detected so far
   bool _previewInFlight = false; // Prevent overlapping preview requests
+  int _pointsSinceLastCheck = 0; // Throttle: only check every N points
+  List<List<double>>? _pendingPreviewPath; // Queued path if preview was in-flight
 
   @override
   JourneyState build() => const JourneyState();
@@ -155,8 +157,12 @@ class JourneyController extends Notifier<JourneyState> {
       distanceMeters: state.distanceMeters + distanceFromLast,
     );
 
-    // Check for new loop closures → fetch hex preview
-    _checkForLoops(updatedPath);
+    // Throttle loop detection — O(n²) so only run every 5 points
+    _pointsSinceLastCheck++;
+    if (_pointsSinceLastCheck >= 5) {
+      _pointsSinceLastCheck = 0;
+      _checkForLoops(updatedPath);
+    }
   }
 
   /// Calculates the GPS noise floor based on speed and accuracy.
@@ -184,6 +190,8 @@ class JourneyController extends Notifier<JourneyState> {
     _timer?.cancel();
     _lastLoopCount = 0;
     _previewInFlight = false;
+    _pointsSinceLastCheck = 0;
+    _pendingPreviewPath = null;
     final path = state.path;
     state = state.copyWith(
       status: JourneyStatus.idle,
@@ -237,14 +245,19 @@ class JourneyController extends Notifier<JourneyState> {
     // New loop detected — fetch preview
     if (loopCount > _lastLoopCount) {
       _lastLoopCount = loopCount;
-      _fetchPreview(path);
+      _fetchPreview(List.from(path));
     }
   }
 
   /// Calls the preview API to get hex boundaries for the current path.
   Future<void> _fetchPreview(List<List<double>> path) async {
-    if (_previewInFlight) return;
+    if (_previewInFlight) {
+      // Another fetch is running — mark that we need a re-fetch when it completes
+      _pendingPreviewPath = path;
+      return;
+    }
     _previewInFlight = true;
+    _pendingPreviewPath = null;
 
     try {
       final api = ref.read(apiServiceProvider);
@@ -256,6 +269,12 @@ class JourneyController extends Notifier<JourneyState> {
       // Preview is best-effort — don't crash the journey on failure
     } finally {
       _previewInFlight = false;
+      // If a newer path was queued while we were in-flight, fetch it now
+      final pending = _pendingPreviewPath;
+      if (pending != null) {
+        _pendingPreviewPath = null;
+        _fetchPreview(pending);
+      }
     }
   }
 }

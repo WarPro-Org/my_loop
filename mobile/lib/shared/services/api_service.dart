@@ -177,7 +177,9 @@ class ApiService {
     final data = response.data as Map<String, dynamic>;
     final boundaries = data['boundaries'] as List;
     return boundaries
-        .map((b) => (b as List).map((p) => (p as List).cast<double>()).toList())
+        .map((b) => (b as List)
+            .map((p) => (p as List).map((n) => (n as num).toDouble()).toList())
+            .toList())
         .toList();
   }
 }

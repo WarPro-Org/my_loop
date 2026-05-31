@@ -40,10 +40,14 @@ public class HexGridService : IHexGridService
         var loops = ExtractLoops(path);
         if (loops.Count == 0) goto done;
 
-        // Convert each loop to a repaired NTS polygon (skip ones that fail)
+        // Convert each loop to a repaired NTS polygon (skip ones that fail or are too small)
         var ntsPolygons = new List<Geometry>();
         foreach (var loop in loops)
         {
+            // Skip loops too small to contain hex cells (< 5000 m²)
+            var loopArea = _geoService.CalculatePolygonArea(loop);
+            if (loopArea < GameConstants.MinFillAreaSquareMeters) continue;
+
             var poly = BuildRepairedPolygon(loop);
             if (poly != null && !poly.IsEmpty && poly.Area > 0)
                 ntsPolygons.Add(poly);

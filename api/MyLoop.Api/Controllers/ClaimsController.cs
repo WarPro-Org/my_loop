@@ -50,9 +50,20 @@ public class ClaimsController : ControllerBase
         if (request.Path.Length < 4)
             return Ok(new { boundaries = Array.Empty<double[][]>() });
 
-        var cells = _hexGridService.ComputeCapturedCells(request.Path);
-        var boundaries = cells.Select(c => c.Boundary).ToArray();
+        // Cap path length to prevent CPU abuse (same as claim validation spirit)
+        if (request.Path.Length > 10_000)
+            return BadRequest("Path too long for preview");
 
-        return Ok(new { boundaries });
+        try
+        {
+            var cells = _hexGridService.ComputeCapturedCells(request.Path);
+            var boundaries = cells.Select(c => c.Boundary).ToArray();
+            return Ok(new { boundaries });
+        }
+        catch (Exception)
+        {
+            // Preview is best-effort — return empty on any computation failure
+            return Ok(new { boundaries = Array.Empty<double[][]>() });
+        }
     }
 }
