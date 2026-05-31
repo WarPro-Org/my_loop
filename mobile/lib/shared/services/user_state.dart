@@ -5,6 +5,7 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/services/api_service.dart';
 
 /// Immutable snapshot of the current user's profile.
 class UserProfile {
@@ -59,11 +60,21 @@ class UserProfileNotifier extends Notifier<UserProfile> {
   /// Updates avatar and color together.
   void updateAvatarAndColor(int avatarId, String color) {
     state = state.copyWith(avatarId: avatarId, color: color);
+    _persistUpdate(avatarId: avatarId, color: color);
   }
 
   /// Updates display name.
   void updateDisplayName(String name) {
     state = state.copyWith(displayName: name);
+    _persistUpdate(displayName: name);
+  }
+
+  /// Fire-and-forget API call to persist profile changes.
+  void _persistUpdate({String? displayName, int? avatarId, String? color}) {
+    final userId = state.userId;
+    if (userId == null) return;
+    final api = ref.read(apiServiceProvider);
+    api.updateUser(userId: userId, displayName: displayName, avatarId: avatarId, color: color);
   }
 
   /// Updates game stats (from API response).

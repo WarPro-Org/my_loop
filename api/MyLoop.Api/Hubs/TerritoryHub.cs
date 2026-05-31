@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace MyLoop.Api.Hubs;
@@ -7,6 +8,7 @@ namespace MyLoop.Api.Hubs;
 /// Clients join geographic region groups (H3 resolution-3 parent cells)
 /// and receive broadcasts when hex ownership changes in their area.
 /// </summary>
+[Authorize]
 public class TerritoryHub : Hub
 {
     /// <summary>

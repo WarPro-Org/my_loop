@@ -166,6 +166,21 @@ class ApiService {
     await _dio.delete('/api/users/$userId');
   }
 
+  /// Updates user profile fields (display name, avatar, color).
+  Future<void> updateUser({
+    required String userId,
+    String? displayName,
+    int? avatarId,
+    String? color,
+  }) async {
+    final data = <String, dynamic>{};
+    if (displayName != null) data['displayName'] = displayName;
+    if (avatarId != null) data['avatarId'] = avatarId;
+    if (color != null) data['color'] = color;
+    if (data.isEmpty) return;
+    await _dio.patch('/api/users/$userId', data: data);
+  }
+
   /// Registers an FCM device token for push notifications.
   Future<void> registerDeviceToken({required String userId, required String token}) async {
     await _dio.post('/api/users/$userId/device-token', data: {
