@@ -124,10 +124,10 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
 
         if (zoom < 10) {
           return _buildClusterBeacon(pulse);
-        } else if (zoom < 14) {
-          return _buildBeaconMarkers(pulse, wave, entrance);
-        } else {
+        } else if (widget.solidMode) {
           return _buildAnimatedPolygons(pulse, wave, entrance);
+        } else {
+          return _buildBeaconMarkers(pulse, wave, entrance);
         }
       },
     );
@@ -162,22 +162,30 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
     );
   }
 
-  /// MEDIUM ZOOM (10-14): Bouncing hex dot markers with wave ripple.
+  /// BEACON MARKERS (zoom 10+): Bouncing hex dot markers with wave ripple.
+  /// Used at all non-solid zoom levels — consistent look everywhere.
   Widget _buildBeaconMarkers(double pulse, double wave, double entrance) {
     final markers = <Marker>[];
     final hexCount = widget.hexBoundaries.length;
+    final zoom = widget.currentZoom;
+
+    // Scale rings up at close zoom so they feel proportional to actual hex size.
+    // At zoom 14 → ×1.0, zoom 15 → ×1.4, zoom 16 → ×2.0, zoom 17+ → capped ×2.8
+    final zoomScale = zoom < 14
+        ? 1.0
+        : math.min(2.8, math.pow(2.0, (zoom - 14) / 2).toDouble());
 
     for (int i = 0; i < hexCount; i++) {
       final center = _computeCenter(widget.hexBoundaries[i]);
       // Wave ripple: each hex has a phase offset
       final phase = (wave + (i / hexCount)) % 1.0;
       final wavePulse = (math.sin(phase * 2 * math.pi) + 1) / 2;
-      final dotSize = (18.0 + wavePulse * 10.0) * entrance;
+      final dotSize = (18.0 + wavePulse * 10.0) * entrance * zoomScale;
 
       markers.add(Marker(
         point: center,
-        width: dotSize + 16,
-        height: dotSize + 16,
+        width: dotSize + 16 * zoomScale,
+        height: dotSize + 16 * zoomScale,
         child: _HexDot(
           color: widget.userColor,
           size: dotSize,
