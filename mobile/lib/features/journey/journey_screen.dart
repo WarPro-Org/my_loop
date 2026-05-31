@@ -309,8 +309,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   List<List<List<double>>> _userOwnHexBoundaries = []; // ALL user hexes from /user/{id} endpoint
   Map<String, List<List<List<double>>>> _otherHexesByColor = {}; // Other players grouped by ownerColor
   List<TerritoryCell> _allCells = []; // Keep full cell data for tap detection
-  List<TerritoryCell> _cooldownCells = []; // Cells with active cooldown for shield overlay
   Set<int> _userOwnCellIds = {}; // Track cell IDs loaded via getUserTerritories
+  bool _solidHexes = false; // Opacity toggle: false=normal, true=fully opaque
 
   @override
   void initState() {
@@ -428,12 +428,10 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     final profile = ref.read(userProfileProvider);
     final otherByColor = <String, List<List<List<double>>>>{};
     final allCells = <TerritoryCell>[..._allCells.where((c) => c.ownerId == profile.userId)];
-    final cooldownCells = <TerritoryCell>[];
 
     for (final c in cells) {
       final cell = c as TerritoryCell;
       if (cell.ownerId == profile.userId) {
-        // Only add to allCells if not already tracked
         if (!_userOwnCellIds.contains(cell.cellId)) {
           allCells.add(cell);
         }
@@ -441,16 +439,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         otherByColor.putIfAbsent(cell.ownerColor, () => []).add(cell.boundary);
         allCells.add(cell);
       }
-      // Collect cells with active cooldown (any owner)
-      if (cell.isOnCooldown) {
-        cooldownCells.add(cell);
-      }
     }
 
     if (mounted) {
       setState(() {
         _otherHexesByColor = otherByColor;
-        _cooldownCells = cooldownCells;
         _allCells = allCells;
       });
     }
@@ -709,6 +702,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               userColor: Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000),
               currentZoom: _currentZoom,
               isNewCapture: false,
+              solidMode: _solidHexes,
             )),
 
             // User's owned hex polygons (animated overlay with glow)
@@ -717,6 +711,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 hexBoundaries: _userOwnHexBoundaries,
                 userColor: userColor,
                 currentZoom: _currentZoom,
+                solidMode: _solidHexes,
               ),
 
             // Captured hex polygons (from current session — extra glow)
@@ -726,13 +721,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
                 userColor: userColor,
                 currentZoom: _currentZoom,
                 isNewCapture: true,
-              ),
-
-            // Cooldown shield overlay — shows countdown on protected hexes
-            if (_cooldownCells.isNotEmpty)
-              CooldownHexOverlay(
-                cooldownCells: _cooldownCells,
-                currentZoom: _currentZoom,
+                solidMode: _solidHexes,
               ),
 
             // Draw the walked path
@@ -842,24 +831,46 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         Positioned(
           top: MediaQuery.of(context).padding.top + 60,
           right: 16,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.hexagon, color: userColor, size: 18),
-                const SizedBox(width: 4),
-                Text(
-                  '${profile.hexCount}',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark),
+          child: Column(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
                 ),
-              ],
-            ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.hexagon, color: userColor, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      '${profile.hexCount}',
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              // Opacity toggle
+              GestureDetector(
+                onTap: () => setState(() => _solidHexes = !_solidHexes),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _solidHexes ? userColor : AppColors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
+                  ),
+                  child: Icon(
+                    _solidHexes ? Icons.visibility_off : Icons.visibility,
+                    color: _solidHexes ? AppColors.white : AppColors.dark,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
