@@ -174,6 +174,14 @@ class _ProfileDrawer extends ConsumerWidget {
             onTap: () => Navigator.pop(context),
           ),
           _DrawerTile(
+            icon: Icons.history_outlined,
+            label: 'Walk History',
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/walk-history');
+            },
+          ),
+          _DrawerTile(
             icon: Icons.help_outline,
             label: 'How to Play',
             onTap: () => Navigator.pop(context),
