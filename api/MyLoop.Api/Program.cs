@@ -19,6 +19,10 @@ builder.Services.AddScoped<IHexGridService, HexGridService>();
 builder.Services.AddScoped<ITerritoryService, TerritoryService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
+builder.Services.AddScoped<ITerritoryNotifier, TerritoryNotifier>();
+
+// --- SignalR ---
+builder.Services.AddSignalR();
 
 // --- Controllers ---
 builder.Services.AddControllers();
@@ -43,11 +47,10 @@ builder.Services.AddAuthorization();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.WithOrigins(
-            "http://localhost:9090",
-            "http://192.168.1.8:9090",
-            "http://localhost:5048"
-        ).AllowAnyMethod().AllowAnyHeader());
+        policy.SetIsOriginAllowed(_ => true)
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials());
 });
 
 var app = builder.Build();
@@ -56,6 +59,7 @@ app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
+app.MapHub<MyLoop.Api.Hubs.TerritoryHub>("/hubs/territory");
 
 // Privacy Policy & Terms — required by Apple App Store (Guideline 5.1.1)
 app.MapGet("/privacy", () => Results.Content("""

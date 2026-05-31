@@ -14,6 +14,7 @@ import 'package:myloop/features/journey/hex_territory_manager.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
+import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
@@ -243,6 +244,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   bool _solidHexes = false;
   List<List<List<double>>> _capturedHexBoundaries = [];
   late HexTerritoryManager _hexManager;
+  StreamSubscription<List<HexChangeEvent>>? _realtimeSub;
 
   @override
   void initState() {
@@ -255,14 +257,25 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       const Duration(seconds: AppConstants.hexRefreshIntervalSeconds),
       (_) => _refreshViewportHexes(),
     );
+    _connectRealtime();
   }
 
   @override
   void dispose() {
     _locationTimer?.cancel();
     _hexRefreshTimer?.cancel();
+    _realtimeSub?.cancel();
     _mapController.dispose();
     super.dispose();
+  }
+
+  void _connectRealtime() {
+    final realtimeService = ref.read(territoryRealtimeProvider);
+    realtimeService.connect();
+    _realtimeSub = realtimeService.onHexChanges.listen((events) {
+      final changed = _hexManager.applyRealtimeChanges(events);
+      if (changed && mounted) setState(() {});
+    });
   }
 
   Future<void> _acquireLocation() async {

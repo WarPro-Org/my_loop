@@ -12,12 +12,14 @@ public class TerritoryService : ITerritoryService
     private readonly AppDbContext _db;
     private readonly IHexGridService _hexGrid;
     private readonly IGeoService _geo;
+    private readonly ITerritoryNotifier _notifier;
 
-    public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo)
+    public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo, ITerritoryNotifier notifier)
     {
         _db = db;
         _hexGrid = hexGrid;
         _geo = geo;
+        _notifier = notifier;
     }
 
     public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
@@ -50,6 +52,8 @@ public class TerritoryService : ITerritoryService
             await UpdateUserStats(userId, transfers, totalDistance);
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
+
+            await BroadcastOwnershipChanges(userId, cells, transfers);
 
             return ClaimResult.Succeeded(new ClaimResponse
             {
@@ -377,5 +381,33 @@ public class TerritoryService : ITerritoryService
                 victim.HexCount = Math.Max(0, victim.HexCount - group.Count());
             }
         }
+    }
+
+    private async Task BroadcastOwnershipChanges(
+        Guid userId, List<HexCell> cells, List<CellTransfer> transfers)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return;
+
+        var transferLookup = transfers
+            .Where(t => t.FromUserId != null)
+            .ToDictionary(t => t.CellId, t => t.FromUserId);
+
+        var changes = cells.Select(c =>
+        {
+            var center = _hexGrid.GetCellCenter(c.CellId);
+            return new HexChangeEvent(
+                H3Index: c.CellId.ToString(),
+                CenterLat: center.Lat,
+                CenterLng: center.Lng,
+                NewOwnerId: userId,
+                NewOwnerColor: user.Color,
+                NewOwnerDisplayName: user.DisplayName,
+                PreviousOwnerId: transferLookup.GetValueOrDefault(c.CellId),
+                ParentCellId: _hexGrid.GetParentCellId(c.CellId)
+            );
+        }).ToList();
+
+        await _notifier.NotifyHexOwnershipChanged(changes);
     }
 }
