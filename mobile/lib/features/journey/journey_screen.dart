@@ -522,23 +522,9 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
 
         return Marker(
           point: LatLng(center[0], center[1]),
-          width: 48,
-          height: 20,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.6),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.shield, color: Color(0xFF64B5F6), size: 10),
-                const SizedBox(width: 2),
-                Text(label, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
+          width: 52,
+          height: 22,
+          child: _CooldownTimerChip(label: label),
         );
       }).toList(),
     );
@@ -961,6 +947,71 @@ class _BottomControls extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+/// Cooldown timer chip with a pulsing glow — no box, just floating text with a soft animated aura.
+class _CooldownTimerChip extends StatefulWidget {
+  final String label;
+  const _CooldownTimerChip({required this.label});
+
+  @override
+  State<_CooldownTimerChip> createState() => _CooldownTimerChipState();
+}
+
+class _CooldownTimerChipState extends State<_CooldownTimerChip>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _glow;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat(reverse: true);
+    _glow = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _glow,
+      builder: (context, child) {
+        return Text(
+          widget.label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Color.lerp(
+              const Color(0xFF64B5F6),
+              const Color(0xFFE0F7FA),
+              _glow.value,
+            ),
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            shadows: [
+              Shadow(
+                color: const Color(0xFF64B5F6).withValues(alpha: _glow.value * 0.8),
+                blurRadius: 8 + (_glow.value * 6),
+              ),
+              Shadow(
+                color: const Color(0xFF00BCD4).withValues(alpha: _glow.value * 0.4),
+                blurRadius: 14 + (_glow.value * 4),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

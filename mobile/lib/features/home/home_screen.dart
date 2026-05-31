@@ -12,6 +12,7 @@ import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
@@ -194,9 +195,11 @@ class _ProfileDrawer extends ConsumerWidget {
             icon: Icons.logout_outlined,
             label: 'Sign Out',
             iconColor: AppColors.red,
-            onTap: () {
+            onTap: () async {
               Navigator.pop(context);
-              context.go('/login');
+              ref.read(userProfileProvider.notifier).clear();
+              await ref.read(authServiceProvider).signOut();
+              if (context.mounted) context.go('/login');
             },
           ),
           const SizedBox(height: 4),
