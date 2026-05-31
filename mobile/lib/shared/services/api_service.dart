@@ -174,6 +174,19 @@ class ApiService {
     });
   }
 
+  /// Fetches paginated walk history (claims) for a user.
+  Future<List<Map<String, dynamic>>> getWalkHistory({
+    required String userId,
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final response = await _dio.get(
+      '/api/users/$userId/claims',
+      queryParameters: {'page': page, 'pageSize': pageSize},
+    );
+    return (response.data as List<dynamic>).cast<Map<String, dynamic>>();
+  }
+
   /// Preview which hexes a path would capture — no DB writes.
   /// Called during a walk when a loop is detected to show live hex fills.
   Future<List<List<List<double>>>> previewClaim({

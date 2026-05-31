@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Data;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
 
@@ -16,13 +18,15 @@ public class UsersController : ControllerBase
     private readonly IUserService _userService;
     private readonly IValidationService _validation;
     private readonly IPushNotificationService _pushService;
+    private readonly AppDbContext _db;
 
     public UsersController(IUserService userService, IValidationService validation,
-        IPushNotificationService pushService)
+        IPushNotificationService pushService, AppDbContext db)
     {
         _userService = userService;
         _validation = validation;
         _pushService = pushService;
+        _db = db;
     }
 
     /// <summary>
@@ -130,5 +134,32 @@ public class UsersController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Token)) return BadRequest("Token is required");
         await _pushService.RegisterDeviceToken(id, request.Token, request.Platform ?? "ios");
         return Ok();
+    }
+
+    /// <summary>
+    /// Get a user's walk (claim) history, most recent first.
+    /// </summary>
+    [HttpGet("{id:guid}/claims")]
+    public async Task<IActionResult> GetClaims(
+        [FromRoute] Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
+    {
+        if (pageSize > 50) pageSize = 50;
+        if (page < 1) page = 1;
+
+        var claims = await _db.Claims
+            .Where(c => c.UserId == id)
+            .OrderByDescending(c => c.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(c => new
+            {
+                c.Id,
+                c.CellCount,
+                c.AreaM2,
+                c.CreatedAt,
+            })
+            .ToListAsync();
+
+        return Ok(claims);
     }
 }
