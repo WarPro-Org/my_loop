@@ -14,7 +14,7 @@ import 'package:myloop/shared/models/user.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
 /// Defaults to ngrok tunnel for mobile testing over cellular.
-const _defaultApiUrl = String.fromEnvironment(
+const apiBaseUrl = String.fromEnvironment(
   'API_URL',
   defaultValue: 'https://destitute-living-bullpen.ngrok-free.dev',
 );
@@ -29,7 +29,7 @@ class ApiService {
 
   ApiService({String? baseUrl})
       : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl ?? _defaultApiUrl,
+          baseUrl: baseUrl ?? apiBaseUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
         )) {

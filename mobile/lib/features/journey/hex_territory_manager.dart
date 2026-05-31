@@ -6,6 +6,7 @@ library;
 
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 
 class HexTerritoryManager {
@@ -100,5 +101,44 @@ class HexTerritoryManager {
   /// Adds captured hex boundaries to the user's owned list.
   void addCapturedHexes(List<List<List<double>>> boundaries) {
     userOwnHexBoundaries = [...userOwnHexBoundaries, ...boundaries];
+  }
+
+  /// Applies real-time hex ownership changes from SignalR.
+  /// Returns true if any visible change occurred (caller should rebuild map).
+  bool applyRealtimeChanges(List<HexChangeEvent> events) {
+    if (events.isEmpty) return false;
+
+    bool changed = false;
+    for (final event in events) {
+      // If this hex was stolen FROM us, remove from our owned list
+      if (event.previousOwnerId == _userId) {
+        userOwnCellIds.removeWhere((id) => id.toString() == event.h3Index);
+        userOwnHexBoundaries.removeWhere((b) => _boundaryMatchesCenter(b, event.centerLat, event.centerLng));
+        changed = true;
+      }
+
+      // If this hex was captured BY us (from another device or real-time confirmation)
+      if (event.newOwnerId == _userId) {
+        changed = true;
+      }
+
+      // Update the other-players color map
+      otherHexesByColor.putIfAbsent(event.newOwnerColor, () => []);
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  bool _boundaryMatchesCenter(List<List<double>> boundary, double lat, double lng) {
+    if (boundary.isEmpty) return false;
+    double avgLat = 0, avgLng = 0;
+    for (final p in boundary) {
+      avgLat += p[0];
+      avgLng += p[1];
+    }
+    avgLat /= boundary.length;
+    avgLng /= boundary.length;
+    return (avgLat - lat).abs() < 0.0001 && (avgLng - lng).abs() < 0.0001;
   }
 }
