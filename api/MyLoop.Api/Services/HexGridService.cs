@@ -31,6 +31,26 @@ public class HexGridService : IHexGridService
             .ToList();
     }
 
+    public List<HexCell> GetTrailCells(double[][] points)
+    {
+        var cells = new Dictionary<long, double[][]>();
+        AddTrailCells(points, cells);
+        return cells
+            .Select(p => new HexCell { CellId = p.Key, Boundary = p.Value })
+            .ToList();
+    }
+
+    public HexCell GetCellAtPoint(double lat, double lng)
+    {
+        var index = PointToH3Index(lat, lng);
+        var cellId = (long)(ulong)index;
+        return new HexCell
+        {
+            CellId = cellId,
+            Boundary = GetCellBoundaryVertices(index),
+        };
+    }
+
     public GeoCoordinate GetCellCenter(long cellId)
     {
         var latLng = ToH3Index(cellId).ToLatLng();

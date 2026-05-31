@@ -478,6 +478,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         _buildMap(center, journey, profile, userColor),
         if (!_followUser) _buildRecenterButton(),
         _buildTopRightControls(context, profile, userColor),
+        // LIVE indicator — shows during active journey
+        if (journey.status == JourneyStatus.tracking)
+          Positioned(
+            top: 12,
+            left: 16,
+            child: _LiveIndicator(claimedCount: journey.claimedCount),
+          ),
       ],
     );
   }
@@ -549,6 +556,15 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
             hexBoundaries: _hexManager.userOwnHexBoundaries,
             userColor: userColor,
             currentZoom: _currentZoom,
+            solidMode: _solidHexes,
+          ),
+        // Walk-through claimed hexes — appear instantly as user walks
+        if (journey.claimedHexBoundaries.isNotEmpty)
+          AnimatedHexOverlay(
+            hexBoundaries: journey.claimedHexBoundaries,
+            userColor: userColor,
+            currentZoom: _currentZoom,
+            isNewCapture: true,
             solidMode: _solidHexes,
           ),
         if (journey.previewBoundaries.isNotEmpty)
@@ -941,6 +957,100 @@ class _StatsBar extends StatelessWidget {
       const SizedBox(height: 1),
       Container(height: 1, color: Colors.white.withValues(alpha: 0.08)),
     ]);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// LIVE indicator — pulsing dot + text + claimed count
+// ──────────────────────────────────────────────────────────────────────────────
+
+class _LiveIndicator extends StatefulWidget {
+  final int claimedCount;
+  const _LiveIndicator({required this.claimedCount});
+
+  @override
+  State<_LiveIndicator> createState() => _LiveIndicatorState();
+}
+
+class _LiveIndicatorState extends State<_LiveIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedBuilder(
+            animation: _pulse,
+            builder: (context, _) => Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.redAccent.withValues(alpha: 0.5 + _pulse.value * 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.redAccent.withValues(alpha: _pulse.value * 0.6),
+                    blurRadius: 4 + _pulse.value * 4,
+                    spreadRadius: _pulse.value * 2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+            ),
+          ),
+          if (widget.claimedCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '+${widget.claimedCount}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 

@@ -33,4 +33,16 @@ public interface IHexGridService
     /// (self-intersection within closure distance).
     /// </summary>
     bool HasClosedLoop(double[][] path);
+
+    /// <summary>
+    /// Computes only the trail cells — hexes the GPS points physically fall on.
+    /// No loop detection or interior fill. Used for walk-through claiming.
+    /// </summary>
+    List<HexCell> GetTrailCells(double[][] points);
+
+    /// <summary>
+    /// Gets the single H3 hex cell for a GPS coordinate.
+    /// Returns the cell ID and boundary polygon.
+    /// </summary>
+    HexCell GetCellAtPoint(double lat, double lng);
 }

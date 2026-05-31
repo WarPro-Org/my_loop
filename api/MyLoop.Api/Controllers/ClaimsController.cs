@@ -56,6 +56,56 @@ public class ClaimsController : ControllerBase
     }
 
     /// <summary>
+    /// Real-time walk-through claim. Batches of GPS points are sent during a walk
+    /// and hexes the user physically touches are claimed immediately.
+    /// Returns claimed hex boundaries for instant rendering on the map.
+    /// </summary>
+    [HttpPost("trail")]
+    public async Task<IActionResult> ClaimTrail([FromBody] TrailClaimRequest request)
+    {
+        if (!ValidatePathCoordinates(request.Points))
+            return BadRequest("Invalid GPS coordinates");
+
+        try
+        {
+            var result = await _territoryService.ProcessTrailClaim(request.UserId, request.Points);
+
+            if (!result.Success)
+                return BadRequest(new { error = result.Error });
+
+            return Ok(result.Data);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Trail claim failed for user {UserId}", request.UserId);
+            return StatusCode(500, new { error = "Trail claim processing failed." });
+        }
+    }
+
+    /// <summary>
+    /// Single-point real-time claim. Each GPS tick sends one point —
+    /// if the user entered a new hex, it's claimed and the boundary returned
+    /// for instant rendering. ~100ms round-trip at walking speed.
+    /// </summary>
+    [HttpPost("step")]
+    public async Task<IActionResult> ClaimStep([FromBody] StepClaimRequest request)
+    {
+        if (request.Lat < -90 || request.Lat > 90 || request.Lng < -180 || request.Lng > 180)
+            return BadRequest("Invalid coordinates");
+
+        try
+        {
+            var result = await _territoryService.ProcessStepClaim(request.UserId, request.Lat, request.Lng);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Step claim failed for user {UserId}", request.UserId);
+            return StatusCode(500, new { error = "Step claim failed." });
+        }
+    }
+
+    /// <summary>
     /// Preview which hexes a path would capture — no DB writes.
     /// Called by the client during a walk when a loop is detected,
     /// so the user can see hex fills appearing in real-time.

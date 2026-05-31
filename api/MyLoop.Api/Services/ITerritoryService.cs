@@ -15,6 +15,20 @@ public interface ITerritoryService
     Task<ClaimResult> ProcessClaim(Guid userId, double[][] path);
 
     /// <summary>
+    /// Processes a walk-through trail claim: claims hexes the user physically
+    /// walked through without requiring a closed loop.
+    /// Lightweight, designed for real-time claiming during a walk.
+    /// </summary>
+    Task<TrailClaimResult> ProcessTrailClaim(Guid userId, double[][] points);
+
+    /// <summary>
+    /// Single-point step claim: computes which H3 hex the GPS point falls in,
+    /// claims it if not already owned by the user, returns boundary for rendering.
+    /// Designed for real-time per-hex claiming as the user walks.
+    /// </summary>
+    Task<StepClaimResponse> ProcessStepClaim(Guid userId, double lat, double lng);
+
+    /// <summary>
     /// Gets all territory cells within a map viewport bounding box.
     /// </summary>
     Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(

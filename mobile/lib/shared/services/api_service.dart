@@ -10,6 +10,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
+import 'package:myloop/shared/models/trail_claim_response.dart';
 import 'package:myloop/shared/models/user.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
@@ -115,6 +116,45 @@ class ApiService {
       'path': path,
     });
     return response.data as Map<String, dynamic>;
+  }
+
+  /// Claims hexes the user physically walked through in real-time.
+  /// Sends a batch of GPS points; server computes H3 cells and claims them.
+  /// Returns the list of newly claimed hex boundaries for immediate rendering.
+  Future<TrailClaimResponse?> claimTrail({
+    required String userId,
+    required List<List<double>> points,
+  }) async {
+    try {
+      final response = await _dio.post('/api/claims/trail', data: {
+        'userId': userId,
+        'points': points,
+      });
+      final data = response.data as Map<String, dynamic>;
+      return TrailClaimResponse.fromJson(data);
+    } catch (_) {
+      return null; // Best-effort — don't block the walk
+    }
+  }
+
+  /// Single-point step claim — sends one GPS coordinate, server returns
+  /// the hex boundary if a new hex was entered. ~100ms round-trip.
+  Future<StepClaimResponse?> claimStep({
+    required String userId,
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      final response = await _dio.post('/api/claims/step', data: {
+        'userId': userId,
+        'lat': lat,
+        'lng': lng,
+      });
+      final data = response.data as Map<String, dynamic>;
+      return StepClaimResponse.fromJson(data);
+    } catch (_) {
+      return null; // Best-effort
+    }
   }
 
   /// Retrieves the leaderboard for players near the given coordinates.

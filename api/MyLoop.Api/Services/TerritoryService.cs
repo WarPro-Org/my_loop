@@ -82,6 +82,154 @@ public class TerritoryService : ITerritoryService
         }
     }
 
+    public async Task<TrailClaimResult> ProcessTrailClaim(Guid userId, double[][] points)
+    {
+        if (points.Length == 0)
+            return TrailClaimResult.Failure("No GPS points provided");
+
+        if (points.Length > 200)
+            return TrailClaimResult.Failure("Too many points in a single batch");
+
+        var cells = _hexGrid.GetTrailCells(points);
+        if (cells.Count == 0)
+            return TrailClaimResult.Failure("No hexes in batch");
+
+        var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
+        var cellIds = cells.Select(c => c.CellId).ToList();
+
+        var existingCells = await _db.TerritoryCells
+            .Include(t => t.Owner)
+            .Where(t => cellIds.Contains(t.CellId))
+            .ToDictionaryAsync(t => t.CellId);
+
+        var claimed = new List<TrailHexResponse>();
+        var transfers = new List<CellTransfer>();
+        var claimId = Guid.NewGuid();
+
+        foreach (var hexCell in cells)
+        {
+            if (existingCells.TryGetValue(hexCell.CellId, out var existing))
+            {
+                if (existing.OwnerId == userId) continue; // already ours
+                if (IsOnCooldown(existing)) continue;
+
+                var prevOwnerName = existing.Owner?.DisplayName;
+                transfers.Add(CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId));
+                UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
+                claimed.Add(new TrailHexResponse
+                {
+                    CellId = hexCell.CellId,
+                    Boundary = hexCell.Boundary,
+                    WasStolen = true,
+                    PreviousOwnerName = prevOwnerName,
+                });
+            }
+            else
+            {
+                var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry);
+                _db.TerritoryCells.Add(newCell);
+                transfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
+                claimed.Add(new TrailHexResponse
+                {
+                    CellId = hexCell.CellId,
+                    Boundary = hexCell.Boundary,
+                    WasStolen = false,
+                });
+            }
+        }
+
+        if (claimed.Count == 0)
+            return TrailClaimResult.Succeeded(new TrailClaimResponse());
+
+        _db.CellTransfers.AddRange(transfers);
+
+        // Update user stats (lightweight — no full claim record)
+        var user = await _db.Users.FindAsync(userId);
+        if (user != null)
+        {
+            var newCells = transfers.Count(t => t.FromUserId == null);
+            var stolenCells = transfers.Count(t => t.FromUserId != null);
+            user.HexCount += newCells + stolenCells;
+            user.TotalHexesCaptured += newCells + stolenCells;
+            await DecrementVictimHexCounts(userId, transfers);
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Broadcast changes for real-time multiplayer
+        await BroadcastOwnershipChanges(userId, cells.Where(c =>
+            claimed.Any(cl => cl.CellId == c.CellId)).ToList(), transfers);
+
+        var stolenCount = claimed.Count(c => c.WasStolen);
+        return TrailClaimResult.Succeeded(new TrailClaimResponse
+        {
+            ClaimedCells = claimed,
+            NewCellCount = claimed.Count,
+            StolenCount = stolenCount,
+        });
+    }
+
+    public async Task<StepClaimResponse> ProcessStepClaim(Guid userId, double lat, double lng)
+    {
+        var hexCell = _hexGrid.GetCellAtPoint(lat, lng);
+
+        var existing = await _db.TerritoryCells.Include(t => t.Owner)
+            .FirstOrDefaultAsync(t => t.CellId == hexCell.CellId);
+
+        // Already ours — no-op
+        if (existing != null && existing.OwnerId == userId)
+            return new StepClaimResponse { Claimed = false };
+
+        // On cooldown — can't steal
+        if (existing != null && IsOnCooldown(existing))
+            return new StepClaimResponse { Claimed = false };
+
+        var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
+        var claimId = Guid.NewGuid();
+        string? previousOwnerName = null;
+
+        if (existing != null)
+        {
+            // Steal from another player
+            previousOwnerName = existing.Owner?.DisplayName;
+            var transfer = CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId);
+            _db.CellTransfers.Add(transfer);
+            UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
+            await DecrementVictimHexCounts(userId, [transfer]);
+        }
+        else
+        {
+            // New cell — claim it
+            var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry);
+            _db.TerritoryCells.Add(newCell);
+            _db.CellTransfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
+        }
+
+        // Update claimer stats
+        var user = await _db.Users.FindAsync(userId);
+        if (user != null)
+        {
+            user.HexCount += 1;
+            user.TotalHexesCaptured += 1;
+            UpdateStreak(user);
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Broadcast for real-time multiplayer (fire-and-forget)
+        _ = BroadcastOwnershipChanges(userId, [hexCell],
+            [CreateTransfer(hexCell.CellId, existing?.OwnerId, userId, claimId)]);
+
+        return new StepClaimResponse
+        {
+            Claimed = true,
+            CellId = hexCell.CellId,
+            Boundary = hexCell.Boundary,
+            WasStolen = existing != null,
+            PreviousOwnerName = previousOwnerName,
+        };
+    }
+
     public async Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
         double minLat, double minLng, double maxLat, double maxLng)
     {
