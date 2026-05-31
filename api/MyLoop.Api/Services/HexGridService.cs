@@ -3,6 +3,8 @@ using H3.Algorithms;
 using H3.Extensions;
 using H3.Model;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.Geometries.Utilities;
+using NetTopologySuite.Operation.Union;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Models;
 
@@ -28,31 +30,119 @@ public class HexGridService : IHexGridService
     {
         var allCells = new Dictionary<long, double[][]>();
 
-        // Step 1: Get hexes the path physically crosses (trail cells)
+        // Step 1: Trail cells — hexes the GPS path physically crosses
         var trailCells = GetTrailCells(path);
         foreach (var cell in trailCells)
         {
             allCells[cell.CellId] = cell.Boundary;
         }
 
-        // Step 2: Extract ALL closed loops from the path and fill each one.
-        // A single walk can produce multiple loops (figure-8, laps, etc.)
+        // Step 2: Extract ALL closed loops, deduplicate, and fill
         var loops = ExtractLoops(path);
+        if (loops.Count == 0) goto done;
+
+        // Convert each loop to a repaired NTS polygon (skip ones that fail)
+        var ntsPolygons = new List<Geometry>();
         foreach (var loop in loops)
         {
-            var polygonArea = _geoService.CalculatePolygonArea(loop);
-            if (polygonArea >= GameConstants.MinFillAreaSquareMeters)
+            var poly = BuildRepairedPolygon(loop);
+            if (poly != null && !poly.IsEmpty && poly.Area > 0)
+                ntsPolygons.Add(poly);
+        }
+        if (ntsPolygons.Count == 0) goto done;
+
+        // Deduplicate: merge polygons that overlap >80% (same loop walked multiple times)
+        var uniquePolygons = DeduplicatePolygons(ntsPolygons);
+
+        // PHASE 1: Fill interiors of ALL loops — cells whose center is inside ANY loop
+        var interiorSet = new HashSet<ulong>();
+        foreach (var poly in uniquePolygons)
+        {
+            try
             {
-                var fillCells = FillPolygon(loop);
-                foreach (var cell in fillCells)
+                var filled = poly.Fill(GameConstants.H3Resolution);
+                foreach (var cell in filled)
+                    interiorSet.Add((ulong)cell);
+            }
+            catch { /* Skip polygons that fail Fill */ }
+        }
+
+        // Add all interior cells to result
+        foreach (var cellId in interiorSet)
+        {
+            var id = (long)cellId;
+            if (!allCells.ContainsKey(id))
+            {
+                var boundary = GetRealCellBoundary((H3Index)cellId);
+                allCells[id] = boundary;
+            }
+        }
+
+        // PHASE 2: Boundary check with 51% rule against the UNION of all loops
+        // Union means a cell 30% in loop A + 25% in loop B = 55% total → captured
+        Geometry unionPolygon;
+        try
+        {
+            unionPolygon = uniquePolygons.Count == 1
+                ? uniquePolygons[0]
+                : UnaryUnionOp.Union(uniquePolygons);
+        }
+        catch
+        {
+            // If union fails, fall back to largest polygon
+            unionPolygon = uniquePolygons[0];
+        }
+
+        if (unionPolygon != null && !unionPolygon.IsEmpty)
+        {
+            // Find boundary candidates: ring-1 neighbors of ALL interior cells
+            // that are NOT already captured
+            var boundaryCandidates = new HashSet<ulong>();
+            foreach (var cellId in interiorSet)
+            {
+                var cell = (H3Index)cellId;
+                foreach (var ringCell in cell.GridDiskDistances(1))
                 {
-                    allCells[cell.CellId] = cell.Boundary;
+                    var neighborId = (ulong)ringCell.Index;
+                    if (!interiorSet.Contains(neighborId) && !allCells.ContainsKey((long)neighborId))
+                    {
+                        boundaryCandidates.Add(neighborId);
+                    }
+                }
+            }
+
+            // Parallel 51% intersection check against the union polygon
+            var qualifiedBoundary = new System.Collections.Concurrent.ConcurrentBag<ulong>();
+            Parallel.ForEach(boundaryCandidates, candidateId =>
+            {
+                try
+                {
+                    var candidate = (H3Index)candidateId;
+                    var cellPolygon = candidate.GetCellBoundary(_geometryFactory);
+                    var intersection = unionPolygon.Intersection(cellPolygon);
+                    var ratio = intersection.Area / cellPolygon.Area;
+                    if (ratio >= GameConstants.MinIntersectionRatio)
+                    {
+                        qualifiedBoundary.Add(candidateId);
+                    }
+                }
+                catch (TopologyException) { /* Skip ambiguous boundary cells */ }
+            });
+
+            foreach (var cellId in qualifiedBoundary)
+            {
+                var id = (long)cellId;
+                if (!allCells.ContainsKey(id))
+                {
+                    var boundary = GetRealCellBoundary((H3Index)cellId);
+                    allCells[id] = boundary;
                 }
             }
         }
 
-        // Convert dictionary to list of HexCell objects
-        var result = new List<HexCell>();
+        done:
+        // Convert dictionary to list
+        var result = new List<HexCell>(allCells.Count);
         foreach (var pair in allCells)
         {
             result.Add(new HexCell { CellId = pair.Key, Boundary = pair.Value });
@@ -195,93 +285,74 @@ public class HexGridService : IHexGridService
     }
 
     /// <summary>
-    /// Fills a closed polygon with H3 cells using exact geometric intersection.
-    /// Step 1: All cells whose centers are fully inside the polygon (interior cluster).
-    /// Step 2: Boundary candidates (ring-1 neighbors) included if ≥51% of cell area overlaps.
-    /// Uses parallel computation for the intersection checks.
+    /// Converts a GPS loop (lat/lng points) into a repaired NTS polygon.
+    /// Applies Buffer(0) to fix self-intersections from GPS noise.
+    /// Returns null if the polygon can't be built or has zero area.
     /// </summary>
-    private List<HexCell> FillPolygon(double[][] polygon)
+    private static Geometry? BuildRepairedPolygon(double[][] loop)
     {
-        // Convert [lat, lng] to NTS Coordinate format (lng, lat)
-        var coordinates = polygon
+        if (loop.Length < 4) return null;
+
+        var coordinates = loop
             .Select(p => new Coordinate(p[1], p[0]))
             .ToList();
 
         // Ensure the ring is closed as required by NTS
         if (coordinates[0] != coordinates[^1])
-        {
             coordinates.Add(coordinates[0]);
-        }
 
-        // Build NTS polygon
-        var ring = _geometryFactory.CreateLinearRing(coordinates.ToArray());
-        var rawPolygon = _geometryFactory.CreatePolygon(ring);
-
-        // ALWAYS repair — GPS trails routinely have self-intersections from noise.
-        // Buffer(0) is the standard NTS trick to fix topology; GeometryFixer is fallback.
-        NetTopologySuite.Geometries.Geometry ntsPolygon;
-        try { ntsPolygon = rawPolygon.Buffer(0); }
-        catch { ntsPolygon = NetTopologySuite.Geometries.Utilities.GeometryFixer.Fix(rawPolygon); }
-        if (ntsPolygon.IsEmpty || ntsPolygon.Area == 0)
-            return [];
-
-        // Step 1: Fill interior — all cells whose center is inside the polygon
-        var interiorCells = ntsPolygon.Fill(GameConstants.H3Resolution).ToList();
-        var interiorSet = new HashSet<ulong>(interiorCells.Select(c => (ulong)c));
-
-        // Step 2: Find boundary candidates — ring-1 neighbors of interior cells
-        // that are NOT already in the interior set
-        var boundaryCandidates = new HashSet<ulong>();
-        foreach (var cell in interiorCells)
+        try
         {
-            foreach (var ringCell in cell.GridDiskDistances(1))
+            var ring = _geometryFactory.CreateLinearRing(coordinates.ToArray());
+            var rawPolygon = _geometryFactory.CreatePolygon(ring);
+
+            // ALWAYS repair — GPS trails routinely have self-intersections
+            Geometry repaired;
+            try { repaired = rawPolygon.Buffer(0); }
+            catch { repaired = GeometryFixer.Fix(rawPolygon); }
+
+            if (repaired.IsEmpty || repaired.Area == 0) return null;
+            return repaired;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Deduplicates polygons that overlap significantly (>80% shared area).
+    /// Walking the same loop 100 times produces ~100 nearly-identical polygons;
+    /// we keep only the largest variant. Different loops (figure-8 halves) are kept separate.
+    /// </summary>
+    private static List<Geometry> DeduplicatePolygons(List<Geometry> polygons)
+    {
+        if (polygons.Count <= 1) return polygons;
+
+        // Sort by area descending — larger polygons take priority
+        var sorted = polygons.OrderByDescending(p => p.Area).ToList();
+        var kept = new List<Geometry>();
+
+        foreach (var candidate in sorted)
+        {
+            var isDuplicate = false;
+            foreach (var existing in kept)
             {
-                var id = (ulong)ringCell.Index;
-                if (!interiorSet.Contains(id))
+                try
                 {
-                    boundaryCandidates.Add(id);
+                    var intersection = existing.Intersection(candidate);
+                    var overlapRatio = intersection.Area / candidate.Area;
+                    if (overlapRatio > 0.80)
+                    {
+                        isDuplicate = true;
+                        break;
+                    }
                 }
+                catch (TopologyException) { /* Can't compare — keep it */ }
             }
+
+            if (!isDuplicate)
+                kept.Add(candidate);
         }
 
-        // Step 3: Parallel intersection check — include boundary cells with ≥51% overlap
-        // Wrap in try/catch: NTS overlay can still fail on edge-case geometries.
-        // Cells that fail are marginal boundary cells — safe to skip.
-        var qualifiedBoundary = new System.Collections.Concurrent.ConcurrentBag<H3Index>();
-        Parallel.ForEach(boundaryCandidates, candidateId =>
-        {
-            try
-            {
-                var candidate = (H3Index)candidateId;
-                var cellPolygon = candidate.GetCellBoundary(_geometryFactory);
-                var intersection = ntsPolygon.Intersection(cellPolygon);
-                var ratio = intersection.Area / cellPolygon.Area;
-                if (ratio >= GameConstants.MinIntersectionRatio)
-                {
-                    qualifiedBoundary.Add(candidate);
-                }
-            }
-            catch (NetTopologySuite.Geometries.TopologyException)
-            {
-                // Skip this boundary cell — overlap was ambiguous anyway
-            }
-        });
-
-        // Combine interior + qualified boundary cells
-        var result = new List<HexCell>(interiorCells.Count + qualifiedBoundary.Count);
-        foreach (var cell in interiorCells)
-        {
-            var cellId = (long)(ulong)cell;
-            var boundary = GetRealCellBoundary(cell);
-            result.Add(new HexCell { CellId = cellId, Boundary = boundary });
-        }
-        foreach (var cell in qualifiedBoundary)
-        {
-            var cellId = (long)(ulong)cell;
-            var boundary = GetRealCellBoundary(cell);
-            result.Add(new HexCell { CellId = cellId, Boundary = boundary });
-        }
-        return result;
+        return kept;
     }
 
     /// <summary>
