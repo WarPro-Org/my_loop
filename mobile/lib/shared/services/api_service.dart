@@ -6,16 +6,17 @@
 library;
 
 import 'package:dio/dio.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/models/user.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
-/// Defaults to local network IP for development.
+/// Defaults to ngrok tunnel for mobile testing over cellular.
 const _defaultApiUrl = String.fromEnvironment(
   'API_URL',
-  defaultValue: 'http://192.168.1.8:5048',
+  defaultValue: 'https://destitute-living-bullpen.ngrok-free.dev',
 );
 
 /// Service class that encapsulates all HTTP communication with the backend.
@@ -31,7 +32,18 @@ class ApiService {
           baseUrl: baseUrl ?? _defaultApiUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 10),
-        ));
+        )) {
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) async {
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final token = await user.getIdToken();
+          options.headers['Authorization'] = 'Bearer $token';
+        }
+        handler.next(options);
+      },
+    ));
+  }
 
   /// Registers a new user account on the backend.
   ///
@@ -72,6 +84,22 @@ class ApiService {
     });
     final list = response.data as List;
     return list.map((j) => TerritoryCell.fromJson(j)).toList();
+  }
+
+  /// Returns ALL territory cells owned by [userId], regardless of viewport.
+  /// Used to ensure the user's hexes always render on the map.
+  Future<List<TerritoryCell>> getUserTerritories(String userId) async {
+    final response = await _dio.get('/api/territories/user/$userId');
+    final list = response.data as List;
+    return list.map((j) => TerritoryCell.fromJson(j)).toList();
+  }
+
+  /// Returns a user's full claim history (one entry per walk submission).
+  /// Used for the Hex History section on the home page.
+  Future<List<Map<String, dynamic>>> getClaimHistory(String userId) async {
+    final response = await _dio.get('/api/territories/claims/$userId');
+    final list = response.data as List;
+    return list.map((j) => j as Map<String, dynamic>).toList();
   }
 
   /// Submits a completed walk path to the backend for territory claiming.
@@ -131,6 +159,28 @@ class ApiService {
   Future<Map<String, dynamic>> getUserProfile(String id) async {
     final response = await _dio.get('/api/users/$id/profile');
     return response.data as Map<String, dynamic>;
+  }
+
+  /// Permanently deletes the user account and all associated data.
+  Future<void> deleteAccount(String userId) async {
+    await _dio.delete('/api/users/$userId');
+  }
+
+  /// Preview which hexes a path would capture — no DB writes.
+  /// Called during a walk when a loop is detected to show live hex fills.
+  Future<List<List<List<double>>>> previewClaim({
+    required List<List<double>> path,
+  }) async {
+    final response = await _dio.post('/api/claims/preview', data: {
+      'path': path,
+    });
+    final data = response.data as Map<String, dynamic>;
+    final boundaries = data['boundaries'] as List;
+    return boundaries
+        .map((b) => (b as List)
+            .map((p) => (p as List).map((n) => (n as num).toDouble()).toList())
+            .toList())
+        .toList();
   }
 }
 

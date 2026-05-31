@@ -1,30 +1,31 @@
 /// Journey controller — manages GPS tracking state during a walk.
 ///
-/// Uses Riverpod's [Notifier] pattern to expose reactive [JourneyState]
-/// which includes the tracking status, GPS path, distance, elapsed time,
-/// and any error messages. Integrates with [LocationService] for position
-/// updates.
+/// Uses Riverpod's [Notifier] pattern to expose reactive [JourneyState].
+/// Detects loops in real-time and fetches hex previews from the API.
 library;
 
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
+import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
+import 'package:myloop/features/journey/loop_detector.dart';
 
-/// The possible states of a journey recording session.
+// ──────────────────────────────────────────────────────────────────────────────
+// State
+// ──────────────────────────────────────────────────────────────────────────────
+
 enum JourneyStatus { idle, tracking, submitting }
 
-/// Immutable snapshot of the current journey state.
-///
-/// Contains the tracking status, recorded GPS path, calculated distance,
-/// elapsed timer, current position, and any error to display to the user.
 class JourneyState {
   final JourneyStatus status;
-  final List<List<double>> path; // [[lat, lng], ...]
+  final List<List<double>> path;
   final double distanceMeters;
   final Duration elapsed;
   final Position? currentPosition;
-  final String? error; // shows error message to user
+  final String? error;
+  final List<List<List<double>>> previewBoundaries;
 
   const JourneyState({
     this.status = JourneyStatus.idle,
@@ -33,11 +34,9 @@ class JourneyState {
     this.elapsed = Duration.zero,
     this.currentPosition,
     this.error,
+    this.previewBoundaries = const [],
   });
 
-  /// Creates a copy of this state with optional field overrides.
-  ///
-  /// Setting [error] to `null` explicitly clears any previous error message.
   JourneyState copyWith({
     JourneyStatus? status,
     List<List<double>>? path,
@@ -45,6 +44,7 @@ class JourneyState {
     Duration? elapsed,
     Position? currentPosition,
     String? error,
+    List<List<List<double>>>? previewBoundaries,
   }) {
     return JourneyState(
       status: status ?? this.status,
@@ -53,28 +53,29 @@ class JourneyState {
       elapsed: elapsed ?? this.elapsed,
       currentPosition: currentPosition ?? this.currentPosition,
       error: error,
+      previewBoundaries: previewBoundaries ?? this.previewBoundaries,
     );
   }
 }
 
-/// Riverpod notifier that orchestrates GPS tracking during a journey.
-///
-/// Manages the lifecycle: request permissions → start listening to GPS
-/// → accumulate path points → calculate distance → stop and return path.
-/// Also runs a 1-second timer for elapsed time display.
+// ──────────────────────────────────────────────────────────────────────────────
+// Controller
+// ──────────────────────────────────────────────────────────────────────────────
+
 class JourneyController extends Notifier<JourneyState> {
   StreamSubscription<Position>? _positionSub;
   Timer? _timer;
   DateTime? _startTime;
+  int _lastLoopCount = 0;
+  bool _previewInFlight = false;
+  int _pointsSinceLastCheck = 0;
+  List<List<double>>? _pendingPreviewPath;
+
+  static const int _loopCheckInterval = 5;
 
   @override
   JourneyState build() => const JourneyState();
 
-  /// Begins recording a new journey.
-  ///
-  /// Requests location permission, gets the initial position, then starts
-  /// a GPS position stream and an elapsed-time timer. Updates [JourneyState]
-  /// reactively on each new position or timer tick.
   Future<void> startJourney() async {
     final locationService = ref.read(locationServiceProvider);
 
@@ -85,7 +86,6 @@ class JourneyController extends Notifier<JourneyState> {
         return;
       }
 
-      // Get initial position
       final pos = await locationService.getCurrentPosition();
       _startTime = DateTime.now();
 
@@ -98,63 +98,145 @@ class JourneyController extends Notifier<JourneyState> {
         error: null,
       );
 
-      // Start listening to position updates
       _positionSub = locationService.startTracking().listen(_onPosition);
-
-      // Start elapsed timer (updates every second)
-      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (_startTime != null) {
-          state = state.copyWith(
-            elapsed: DateTime.now().difference(_startTime!),
-          );
-        }
-      });
+      _startElapsedTimer();
     } catch (e) {
-      final msg = e.toString().replaceFirst('Exception: ', '');
-      state = state.copyWith(error: msg);
+      state = state.copyWith(error: e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
-  /// Handles each GPS position update from the location stream.
-  ///
-  /// Appends the new coordinate to the path and recalculates total
-  /// distance using [Geolocator.distanceBetween].
-  void _onPosition(Position pos) {
-    final newPoint = [pos.latitude, pos.longitude];
-    final updatedPath = [...state.path, newPoint];
-
-    // Calculate distance from last point
-    double addedDistance = 0;
-    if (state.path.isNotEmpty) {
-      final last = state.path.last;
-      addedDistance = Geolocator.distanceBetween(
-        last[0], last[1], pos.latitude, pos.longitude,
-      );
-    }
-
-    state = state.copyWith(
-      path: updatedPath,
-      currentPosition: pos,
-      distanceMeters: state.distanceMeters + addedDistance,
-    );
-  }
-
-  /// Stops the journey, cancels subscriptions, and returns the recorded path.
-  ///
-  /// The returned path (list of `[lat, lng]` pairs) is used by the UI to
-  /// submit the claim to the backend API.
   List<List<double>> stopJourney() {
     _positionSub?.cancel();
     _timer?.cancel();
+    _resetTrackingState();
     final path = state.path;
-    state = state.copyWith(status: JourneyStatus.idle);
+    state = state.copyWith(
+      status: JourneyStatus.idle,
+      path: const [],
+      previewBoundaries: const [],
+    );
     return path;
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // GPS position handling
+  // ────────────────────────────────────────────────────────────────────────────
+
+  void _onPosition(Position pos) {
+    if (pos.accuracy > AppConstants.maxAccuracyMeters) {
+      state = state.copyWith(currentPosition: pos);
+      return;
+    }
+
+    final distanceFromLast = _distanceFromLastPoint(pos);
+    final noiseFloor = _calculateNoiseFloor(pos);
+
+    if (distanceFromLast < noiseFloor && state.path.isNotEmpty) {
+      state = state.copyWith(currentPosition: pos);
+      return;
+    }
+
+    final updatedPath = [...state.path, [pos.latitude, pos.longitude]];
+    state = state.copyWith(
+      path: updatedPath,
+      currentPosition: pos,
+      distanceMeters: state.distanceMeters + distanceFromLast,
+    );
+
+    _throttledLoopCheck(updatedPath);
+  }
+
+  double _distanceFromLastPoint(Position pos) {
+    if (state.path.isEmpty) return 0;
+    final last = state.path.last;
+    return Geolocator.distanceBetween(last[0], last[1], pos.latitude, pos.longitude);
+  }
+
+  double _calculateNoiseFloor(Position pos) {
+    if (state.path.isEmpty) return 0.0;
+
+    final isStationary = pos.speed >= 0 && pos.speed < AppConstants.stationarySpeedThreshold;
+
+    if (isStationary) {
+      return pos.accuracy.clamp(
+        AppConstants.stationaryNoiseFloorMin,
+        AppConstants.stationaryNoiseFloorMax,
+      );
+    }
+    return pos.accuracy.clamp(
+      AppConstants.movingNoiseFloorMin,
+      AppConstants.movingNoiseFloorMax,
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Loop detection & preview
+  // ────────────────────────────────────────────────────────────────────────────
+
+  void _throttledLoopCheck(List<List<double>> path) {
+    _pointsSinceLastCheck++;
+    if (_pointsSinceLastCheck < _loopCheckInterval) return;
+    _pointsSinceLastCheck = 0;
+
+    final loopCount = LoopDetector.countLoops(path);
+    if (loopCount > _lastLoopCount) {
+      _lastLoopCount = loopCount;
+      _fetchPreview(List.from(path));
+    }
+  }
+
+  Future<void> _fetchPreview(List<List<double>> path) async {
+    if (_previewInFlight) {
+      _pendingPreviewPath = path;
+      return;
+    }
+    _previewInFlight = true;
+    _pendingPreviewPath = null;
+
+    try {
+      final api = ref.read(apiServiceProvider);
+      final boundaries = await api.previewClaim(path: path);
+      if (boundaries.isNotEmpty && state.status == JourneyStatus.tracking) {
+        state = state.copyWith(previewBoundaries: boundaries);
+      }
+    } catch (_) {
+      // Preview is best-effort
+    } finally {
+      _previewInFlight = false;
+      final pending = _pendingPreviewPath;
+      if (pending != null) {
+        _pendingPreviewPath = null;
+        _fetchPreview(pending);
+      }
+    }
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Utilities
+  // ────────────────────────────────────────────────────────────────────────────
+
+  void _startElapsedTimer() {
+    _timer = Timer.periodic(
+      const Duration(seconds: AppConstants.timerIntervalSeconds),
+      (_) {
+        if (_startTime != null) {
+          state = state.copyWith(elapsed: DateTime.now().difference(_startTime!));
+        }
+      },
+    );
+  }
+
+  void _resetTrackingState() {
+    _lastLoopCount = 0;
+    _previewInFlight = false;
+    _pointsSinceLastCheck = 0;
+    _pendingPreviewPath = null;
   }
 }
 
-/// Riverpod provider for the [JourneyController].
-///
-/// Widgets watch this to react to journey state changes (tracking status,
-/// path updates, errors).
+// ──────────────────────────────────────────────────────────────────────────────
+// Provider
+// ──────────────────────────────────────────────────────────────────────────────
+
 final journeyControllerProvider =
     NotifierProvider<JourneyController, JourneyState>(JourneyController.new);

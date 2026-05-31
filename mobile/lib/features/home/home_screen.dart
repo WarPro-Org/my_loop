@@ -1,14 +1,17 @@
 ﻿/// Home screen shell - main navigation container for authenticated users.
 library;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/home/home_tab.dart';
+import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
+import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
@@ -196,6 +199,13 @@ class _ProfileDrawer extends ConsumerWidget {
               context.go('/login');
             },
           ),
+          const SizedBox(height: 4),
+          _DrawerTile(
+            icon: Icons.delete_forever_outlined,
+            label: 'Delete Account',
+            iconColor: Colors.red.shade900,
+            onTap: () => _confirmDeleteAccount(context, ref),
+          ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
         ],
       ),
@@ -266,6 +276,43 @@ class _ProfileDrawer extends ConsumerWidget {
     final valid = RegExp(r"^[a-zA-Z0-9 \-_']+$");
     if (!valid.hasMatch(name)) return 'Only letters, numbers, spaces, hyphens allowed';
     return null;
+  }
+
+  void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: const Text(
+          'This will permanently delete your account, all territory, stats, and progress. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx); // close dialog
+              Navigator.pop(context); // close drawer
+              final profile = ref.read(userProfileProvider);
+              final api = ref.read(apiServiceProvider);
+              final uid = profile.userId;
+              if (uid == null) return;
+              try {
+                await api.deleteAccount(uid);
+                await FirebaseAuth.instance.currentUser?.delete();
+              } catch (_) {
+                // Firebase delete may fail if re-auth needed — account is already gone server-side
+                await FirebaseAuth.instance.signOut();
+              }
+              if (context.mounted) context.go('/login');
+            },
+            child: Text('Delete', style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -349,12 +396,12 @@ class _StartJourneyFabState extends State<_StartJourneyFab> with SingleTickerPro
 }
 
 /// The actual journey button visual.
-class _JourneyButton extends StatefulWidget {
+class _JourneyButton extends ConsumerStatefulWidget {
   @override
-  State<_JourneyButton> createState() => _JourneyButtonState();
+  ConsumerState<_JourneyButton> createState() => _JourneyButtonState();
 }
 
-class _JourneyButtonState extends State<_JourneyButton> with SingleTickerProviderStateMixin {
+class _JourneyButtonState extends ConsumerState<_JourneyButton> with SingleTickerProviderStateMixin {
   late final AnimationController _pulseController;
   bool _isHovered = false;
 
@@ -373,8 +420,20 @@ class _JourneyButtonState extends State<_JourneyButton> with SingleTickerProvide
     super.dispose();
   }
 
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    if (d.inHours > 0) {
+      return '${d.inHours}:$m:$s';
+    }
+    return '$m:$s';
+  }
+
   @override
   Widget build(BuildContext context) {
+    final journey = ref.watch(journeyControllerProvider);
+    final isActive = journey.status == JourneyStatus.tracking;
+
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -393,6 +452,19 @@ class _JourneyButtonState extends State<_JourneyButton> with SingleTickerProvide
             final blurRadius = _isHovered ? 32.0 : 20.0;
             final spreadRadius = _isHovered ? 6.0 : 2.0;
 
+            // Active journey: red/crimson gradient with stronger pulse
+            final gradientColors = isActive
+                ? (_isHovered
+                    ? [const Color(0xFFFF4444), const Color(0xFFCC0000)]
+                    : [const Color(0xFFE53935), const Color(0xFFB71C1C)])
+                : (_isHovered
+                    ? [const Color(0xFF00E4BB), AppColors.primary]
+                    : [AppColors.primary, AppColors.primaryDark]);
+
+            final shadowColor = isActive
+                ? const Color(0xFFE53935)
+                : AppColors.primary;
+
             return AnimatedScale(
               scale: pulse,
               duration: const Duration(milliseconds: 200),
@@ -403,22 +475,20 @@ class _JourneyButtonState extends State<_JourneyButton> with SingleTickerProvide
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(30),
                   gradient: LinearGradient(
-                    colors: _isHovered
-                        ? [const Color(0xFF00E4BB), AppColors.primary]
-                        : [AppColors.primary, AppColors.primaryDark],
+                    colors: gradientColors,
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: AppColors.primary.withValues(alpha: glowOpacity),
+                      color: shadowColor.withValues(alpha: glowOpacity),
                       offset: const Offset(0, 4),
                       blurRadius: blurRadius,
                       spreadRadius: spreadRadius,
                     ),
-                    if (_isHovered)
+                    if (_isHovered || isActive)
                       BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.2),
+                        color: shadowColor.withValues(alpha: 0.2),
                         offset: const Offset(0, 0),
                         blurRadius: 40,
                         spreadRadius: 10,
@@ -428,25 +498,47 @@ class _JourneyButtonState extends State<_JourneyButton> with SingleTickerProvide
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Hexagon icon with a subtle rotation
+                    // Icon: running indicator or hexagon
                     Transform.rotate(
-                      angle: _isHovered
-                          ? _pulseController.value * 0.5
-                          : _pulseController.value * 0.1,
-                      child: const Icon(Icons.hexagon, color: AppColors.white, size: 28),
-                    ),
-                    const SizedBox(width: 10),
-                    const Text(
-                      'Start Journey',
-                      style: TextStyle(
+                      angle: isActive
+                          ? _pulseController.value * 0.3
+                          : (_isHovered
+                              ? _pulseController.value * 0.5
+                              : _pulseController.value * 0.1),
+                      child: Icon(
+                        isActive ? Icons.directions_run : Icons.hexagon,
                         color: AppColors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
+                        size: 28,
                       ),
                     ),
+                    const SizedBox(width: 10),
+                    // Text: timer or "Start Journey"
+                    isActive
+                        ? Text(
+                            _formatDuration(journey.elapsed),
+                            style: const TextStyle(
+                              color: AppColors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                              letterSpacing: 1.0,
+                            ),
+                          )
+                        : const Text(
+                            'Start Journey',
+                            style: TextStyle(
+                              color: AppColors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
                     const SizedBox(width: 6),
-                    Icon(Icons.arrow_forward_rounded, color: Colors.white.withValues(alpha: 0.8), size: 20),
+                    Icon(
+                      isActive ? Icons.timer : Icons.arrow_forward_rounded,
+                      color: Colors.white.withValues(alpha: 0.8),
+                      size: 20,
+                    ),
                   ],
                 ),
               ),

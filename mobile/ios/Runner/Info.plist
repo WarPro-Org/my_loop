@@ -2,12 +2,16 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>GIDClientID</key>
+	<string>274879524094-j0tca4klgueb62lm0orbbiubvmihi5of.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>274879524094-3rda7p3t80mi67nahuvq0v58tf5oh114.apps.googleusercontent.com</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Myloop</string>
+	<string>Myloop ($(FLUTTER_BUILD_NUMBER))</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -51,6 +55,10 @@
 	<string>MyLoop needs your location to track your walking path and capture territory.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>MyLoop uses background location to continue tracking your walk even when the app is minimized.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
@@ -69,6 +77,17 @@
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.274879524094-j0tca4klgueb62lm0orbbiubvmihi5of</string>
+			</array>
+		</dict>
 	</array>
 </dict>
 </plist>

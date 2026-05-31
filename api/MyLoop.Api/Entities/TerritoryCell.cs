@@ -16,18 +16,14 @@ public class TerritoryCell
     /// <summary>The user who currently owns this cell. Updated on each claim that covers this hex.</summary>
     public Guid OwnerId { get; set; }
 
-    /// <summary>
-    /// The user who owned this cell before the current owner took it.
-    /// Null if the cell was unclaimed before. Powers "revenge recapture" — victim can
-    /// see which hexes they lost and navigate to reclaim them.
-    /// </summary>
-    public Guid? PreviousOwnerId { get; set; }
-
     /// <summary>The claim that most recently captured this cell.</summary>
     public Guid ClaimId { get; set; }
 
     /// <summary>Timestamp when this cell was last claimed/stolen.</summary>
     public DateTime ClaimedAt { get; set; }
+
+    /// <summary>UTC time when the cooldown expires and the cell becomes stealable again.</summary>
+    public DateTime? CooldownExpiresAt { get; set; }
 
     /// <summary>Latitude of the hexagon's center point. Used for spatial viewport queries with indexed range scans.</summary>
     public double CenterLat { get; set; }

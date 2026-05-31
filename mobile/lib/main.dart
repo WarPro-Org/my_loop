@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:myloop/app/app.dart';
+import 'package:myloop/firebase_options.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Application Bootstrap
@@ -23,7 +24,9 @@ void main() async {
   // (firebase_options.dart) may not exist yet — the app still loads so
   // you can test the UI without a live Firebase project.
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
   } catch (_) {
     // Firebase not configured for this platform — continue without it.
   }

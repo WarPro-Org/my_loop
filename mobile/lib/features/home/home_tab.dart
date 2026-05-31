@@ -237,11 +237,18 @@ class _HomeTabState extends ConsumerState<HomeTab> {
 
 /// A gradient card showing today's challenge with a progress bar.
 ///
-/// Currently displays static mock data (2/5 hexes). Will be powered by
-/// a daily challenge system from the backend.
-class _DailyChallengeCard extends StatelessWidget {
+/// Shows the user's actual hex count toward a daily target of 5.
+class _DailyChallengeCard extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider);
+    final todayHexes = profile.hexCount; // TODO: replace with today-only count from API
+    const dailyTarget = 5;
+    final progress = (todayHexes / dailyTarget).clamp(0.0, 1.0);
+    final label = todayHexes == 0
+        ? 'Start your first walk!'
+        : '$todayHexes / $dailyTarget hexes captured';
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -280,9 +287,9 @@ class _DailyChallengeCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Capture 5 new hexagons today!',
-            style: TextStyle(
+          Text(
+            todayHexes == 0 ? 'Capture 5 hexagons today!' : 'Capture 5 new hexagons today!',
+            style: const TextStyle(
               color: AppColors.white,
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -293,16 +300,16 @@ class _DailyChallengeCard extends StatelessWidget {
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
-              value: 0.4, // 2/5 done
+              value: progress,
               minHeight: 10,
               backgroundColor: AppColors.white.withValues(alpha: 0.3),
               valueColor: const AlwaysStoppedAnimation(AppColors.white),
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            '2 / 5 hexes captured',
-            style: TextStyle(
+          Text(
+            label,
+            style: const TextStyle(
               color: AppColors.white,
               fontSize: 12,
               fontWeight: FontWeight.w600,
@@ -361,7 +368,8 @@ class _QuickStats extends ConsumerWidget {
   /// Opens a bottom sheet showing the daily streak history.
   void _showStreakHistory(BuildContext context, UserProfile user) {
     final currentStreak = user.streak;
-    final streakBroken = currentStreak == 0;
+    final isNewUser = user.distanceKm == 0 && currentStreak == 0;
+    final streakBroken = !isNewUser && currentStreak == 0;
 
     homeFabVisible.value = false;
     showModalBottomSheet(
@@ -380,8 +388,33 @@ class _QuickStats extends ConsumerWidget {
             children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
-              // Streak hero - normal or broken state
-              if (streakBroken) ...[
+              // Streak hero - new user / broken / active
+              if (isNewUser) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(colors: [Color(0xFF00D4AA), Color(0xFF00897B)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      const _ReadyHexFace(size: 52),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Ready to Run!', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+                            const SizedBox(height: 4),
+                            Text('Start your first walk to begin a streak', style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else if (streakBroken) ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(20),
@@ -479,8 +512,9 @@ class _QuickStats extends ConsumerWidget {
             children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
-              // Trophy hero
+              // Trophy hero: current badge | info | target badge
               Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   HexTrophyBadge(hexes: userHexes, size: 64, showProgress: false, showLabel: false),
                   const SizedBox(width: 16),
@@ -494,10 +528,17 @@ class _QuickStats extends ConsumerWidget {
                       ],
                     ),
                   ),
+                  if (nextTier != null || division < 4) ...[
+                    const SizedBox(width: 12),
+                    Opacity(
+                      opacity: 0.8,
+                      child: HexTrophyBadge(hexes: nextDivThreshold, size: 44, showProgress: false, showLabel: true),
+                    ),
+                  ],
                 ],
               ),
-              const SizedBox(height: 16),
-              // Division progress
+              const SizedBox(height: 14),
+              // Division progress bar
               ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: LinearProgressIndicator(
@@ -754,14 +795,14 @@ class _TipCard extends StatelessWidget {
 /// INFO REELS — Instagram-style horizontal scrollable cards
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Horizontal carousel of engaging hook cards — designed to hook users like YouTube/TikTok.
-/// Big bold text, urgency hooks, vibrant gradients, auto-scrolling.
-class _InfoReels extends StatefulWidget {
+/// Horizontal carousel of engaging hook cards — personalized based on user state.
+/// Big bold text, urgency hooks, vibrant gradients.
+class _InfoReels extends ConsumerStatefulWidget {
   @override
-  State<_InfoReels> createState() => _InfoReelsState();
+  ConsumerState<_InfoReels> createState() => _InfoReelsState();
 }
 
-class _InfoReelsState extends State<_InfoReels> {
+class _InfoReelsState extends ConsumerState<_InfoReels> {
   final _controller = PageController(viewportFraction: 0.85);
   int _currentPage = 0;
 
@@ -771,46 +812,72 @@ class _InfoReelsState extends State<_InfoReels> {
     super.dispose();
   }
 
-  static const _reels = [
+  /// New user reels — onboarding/tutorial focused
+  static const _newUserReels = [
     _ReelData(
-      emoji: '🔥',
-      title: '5 hexes away from Bronze II!',
-      body: 'Just one short walk and you level up. Don\'t let someone steal your spot!',
-      gradient: [Color(0xFFFF6B6B), Color(0xFFEE5A24)],
-      hook: 'LEVEL UP TODAY',
+      emoji: '👋',
+      title: 'Welcome to MyLoop!',
+      body: 'Walk around your neighborhood to capture hex territory. The more you walk, the more you own!',
+      gradient: [Color(0xFF00D4AA), Color(0xFF00897B)],
+      hook: 'GET STARTED',
     ),
     _ReelData(
+      emoji: '🚶',
+      title: 'How to capture territory',
+      body: 'Start a journey, walk at least 200m, and every hex you walk through becomes yours!',
+      gradient: [Color(0xFF6C5CE7), Color(0xFF4834D4)],
+      hook: 'LEARN MORE',
+    ),
+    _ReelData(
+      emoji: '⭕',
+      title: 'Pro move: Close a loop!',
+      body: 'Walk in a closed loop and capture EVERY hex inside it — not just the ones you walk through.',
+      gradient: [Color(0xFF0984E3), Color(0xFF0652DD)],
+      hook: 'PRO TIP',
+    ),
+    _ReelData(
+      emoji: '⚔️',
+      title: 'Steal others\' territory!',
+      body: 'Walk through hexes owned by other players to steal them. They can do the same to you!',
+      gradient: [Color(0xFFE17055), Color(0xFFB33B27)],
+      hook: 'PVP MODE',
+    ),
+    _ReelData(
+      emoji: '🔥',
+      title: 'Build your streak!',
+      body: 'Walk every day to build a streak. Longer streaks unlock achievements and bragging rights.',
+      gradient: [Color(0xFFFFA502), Color(0xFFFF6348)],
+      hook: 'DAILY GOAL',
+    ),
+  ];
+
+  /// Existing user reels — competitive/engagement focused
+  static const _existingUserReels = [
+    _ReelData(
       emoji: '⚡',
-      title: 'Kai just captured 12 hexes!',
-      body: 'Top player is on the move. Walk now to protect your territory!',
+      title: 'Someone\'s near your turf!',
+      body: 'Other players are active nearby. Walk now to defend or expand your territory!',
       gradient: [Color(0xFF6C5CE7), Color(0xFF4834D4)],
       hook: 'DEFEND NOW',
     ),
     _ReelData(
       emoji: '🗺️',
-      title: '47 unclaimed hexes nearby',
-      body: 'Free territory waiting! Be the first to walk there and claim them all.',
+      title: 'Unclaimed land nearby',
+      body: 'Free territory waiting! Be the first to walk there and claim it all.',
       gradient: [Color(0xFF00D4AA), Color(0xFF00897B)],
       hook: 'GRAB FREE HEXES',
     ),
     _ReelData(
       emoji: '🏆',
-      title: 'You\'re rank #8 — catch Leo!',
-      body: 'Only 106 hexes behind! One good loop walk and you overtake them.',
+      title: 'Climb the leaderboard!',
+      body: 'One good walk could move you up several ranks. Check who\'s ahead!',
       gradient: [Color(0xFFF59E0B), Color(0xFFD97706)],
       hook: 'CLIMB RANKS',
     ),
     _ReelData(
-      emoji: '💎',
-      title: '4 divisions to Silver tier',
-      body: 'Keep your streak alive! Daily walks compound fast toward Silver.',
-      gradient: [Color(0xFF60A5FA), Color(0xFF2563EB)],
-      hook: 'TIER UP',
-    ),
-    _ReelData(
       emoji: '⚔️',
-      title: 'Ravi stole 3 of your hexes!',
-      body: 'Walk through their territory to steal them back. Revenge time!',
+      title: 'Revenge is sweet!',
+      body: 'Someone took your hexes? Walk through their territory to steal them back!',
       gradient: [Color(0xFFE17055), Color(0xFFB33B27)],
       hook: 'FIGHT BACK',
     ),
@@ -821,7 +888,21 @@ class _InfoReelsState extends State<_InfoReels> {
       gradient: [Color(0xFF0984E3), Color(0xFF0652DD)],
       hook: 'PRO TIP',
     ),
+    _ReelData(
+      emoji: '💎',
+      title: 'Tier up with consistency!',
+      body: 'Daily walks compound fast. Keep your streak alive for faster tier progress.',
+      gradient: [Color(0xFF60A5FA), Color(0xFF2563EB)],
+      hook: 'TIER UP',
+    ),
   ];
+
+  List<_ReelData> get _reels {
+    final profile = ref.watch(userProfileProvider);
+    return profile.hexCount == 0 && profile.streak == 0
+        ? _newUserReels
+        : _existingUserReels;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1055,46 +1136,176 @@ class _SadHexPainter extends CustomPainter {
   bool shouldRepaint(covariant _SadHexPainter old) => wobble != old.wobble;
 }
 
+/// Animated hex face for new users — energetic, ready-to-run pose with sparkle eyes.
+class _ReadyHexFace extends StatefulWidget {
+  final double size;
+  const _ReadyHexFace({this.size = 48});
+
+  @override
+  State<_ReadyHexFace> createState() => _ReadyHexFaceState();
+}
+
+class _ReadyHexFaceState extends State<_ReadyHexFace>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) => SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: CustomPaint(painter: _ReadyHexPainter(bounce: _ctrl.value)),
+      ),
+    );
+  }
+}
+
+class _ReadyHexPainter extends CustomPainter {
+  final double bounce;
+  _ReadyHexPainter({required this.bounce});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final cy = size.height / 2;
+    final r = size.width * 0.44;
+    final bounceOffset = bounce * 3;
+    canvas.save();
+    canvas.translate(cx, cy - bounceOffset);
+
+    // Hex body (vibrant green)
+    final path = Path();
+    for (int i = 0; i < 6; i++) {
+      final a = (math.pi / 3) * i - math.pi / 2;
+      if (i == 0) {
+        path.moveTo(r * math.cos(a), r * math.sin(a));
+      } else {
+        path.lineTo(r * math.cos(a), r * math.sin(a));
+      }
+    }
+    path.close();
+    canvas.drawPath(path, Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft, end: Alignment.bottomRight,
+        colors: [Color(0xFF00D4AA), Color(0xFF00897B)],
+      ).createShader(Rect.fromCircle(center: Offset.zero, radius: r)));
+
+    // Sparkle eyes (star-shaped pupils)
+    final eyeY = -r * 0.15;
+    canvas.drawCircle(Offset(-r * 0.25, eyeY), r * 0.12, Paint()..color = Colors.white);
+    canvas.drawCircle(Offset(r * 0.25, eyeY), r * 0.12, Paint()..color = Colors.white);
+    // Star pupils
+    final starPaint = Paint()..color = const Color(0xFF2D3436);
+    canvas.drawCircle(Offset(-r * 0.25, eyeY), r * 0.06, starPaint);
+    canvas.drawCircle(Offset(r * 0.25, eyeY), r * 0.06, starPaint);
+    // Sparkle dots
+    final sparkPaint = Paint()..color = Colors.white;
+    canvas.drawCircle(Offset(-r * 0.22, eyeY - r * 0.04), r * 0.025, sparkPaint);
+    canvas.drawCircle(Offset(r * 0.28, eyeY - r * 0.04), r * 0.025, sparkPaint);
+
+    // Big excited grin
+    canvas.drawArc(Rect.fromCenter(center: Offset(0, r * 0.25), width: r * 0.6, height: r * 0.4),
+      0, math.pi, false,
+      Paint()..color = Colors.white..style = PaintingStyle.fill);
+
+    // Running motion lines (left side)
+    final linePaint = Paint()..color = Colors.white.withValues(alpha: 0.7)..strokeWidth = 2..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(-r * 0.8, r * 0.1), Offset(-r * 0.55, r * 0.1), linePaint);
+    canvas.drawLine(Offset(-r * 0.75, r * 0.3), Offset(-r * 0.5, r * 0.3), linePaint);
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _ReadyHexPainter old) => bounce != old.bounce;
+}
+
 /// ─────────────────────────────────────────────────────────────────────────────
-/// HEX HISTORY LAZY (shows top 5 then loads more)
+/// HEX HISTORY LAZY (shows real claim history from API)
 /// ─────────────────────────────────────────────────────────────────────────────
 
-class _HexHistoryLazy extends StatefulWidget {
+class _HexHistoryLazy extends ConsumerStatefulWidget {
   final ScrollController scroll;
   const _HexHistoryLazy({required this.scroll});
 
   @override
-  State<_HexHistoryLazy> createState() => _HexHistoryLazyState();
+  ConsumerState<_HexHistoryLazy> createState() => _HexHistoryLazyState();
 }
 
-class _HexHistoryLazyState extends State<_HexHistoryLazy> {
-  static final _allDays = [
-    {'date': 'Today', 'earned': 5, 'lost': 1},
-    {'date': 'May 26', 'earned': 8, 'lost': 0},
-    {'date': 'May 25', 'earned': 3, 'lost': 2},
-    {'date': 'May 24', 'earned': 6, 'lost': 0},
-    {'date': 'May 23', 'earned': 2, 'lost': 3},
-    {'date': 'May 22', 'earned': 4, 'lost': 1},
-    {'date': 'May 21', 'earned': 7, 'lost': 0},
-    {'date': 'May 20', 'earned': 3, 'lost': 2},
-    {'date': 'May 19', 'earned': 5, 'lost': 1},
-    {'date': 'May 18', 'earned': 9, 'lost': 0},
-  ];
-
+class _HexHistoryLazyState extends ConsumerState<_HexHistoryLazy> {
+  List<Map<String, dynamic>> _claims = [];
   int _visibleCount = 5;
   bool _loadingMore = false;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchHistory();
+  }
+
+  Future<void> _fetchHistory() async {
+    final profile = ref.read(userProfileProvider);
+    if (profile.userId == null) {
+      if (mounted) setState(() { _loading = false; });
+      return;
+    }
+    try {
+      final api = ref.read(apiServiceProvider);
+      final history = await api.getClaimHistory(profile.userId!);
+      if (mounted) setState(() { _claims = history; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = e.toString(); });
+    }
+  }
 
   void _loadMore() {
-    if (_loadingMore || _visibleCount >= _allDays.length) return;
+    if (_loadingMore || _visibleCount >= _claims.length) return;
     setState(() => _loadingMore = true);
-    Future.delayed(const Duration(milliseconds: 400), () {
-      if (mounted) setState(() { _visibleCount = (_visibleCount + 5).clamp(0, _allDays.length); _loadingMore = false; });
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() {
+        _visibleCount = (_visibleCount + 5).clamp(0, _claims.length);
+        _loadingMore = false;
+      });
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final visible = _allDays.take(_visibleCount).toList();
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_error != null) {
+      return Center(child: Text('Could not load history', style: TextStyle(color: AppColors.grey, fontSize: 13)));
+    }
+    if (_claims.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('⬡', style: TextStyle(fontSize: 40)),
+            const SizedBox(height: 12),
+            Text('No hex history yet', style: TextStyle(color: AppColors.grey, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Start walking to capture territory!', style: TextStyle(color: AppColors.grey, fontSize: 12)),
+          ],
+        ),
+      );
+    }
+    final visible = _claims.take(_visibleCount).toList();
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollEndNotification &&
@@ -1108,16 +1319,22 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
         itemCount: visible.length + (_loadingMore ? 3 : 0),
         itemBuilder: (context, index) {
           if (index >= visible.length) {
-            // Shimmer placeholder
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: ShimmerBox(height: 72, borderRadius: 12),
             );
           }
-          final day = visible[index];
-          final earned = day['earned'] as int;
-          final lost = day['lost'] as int;
-          final net = earned - lost;
+          final claim = visible[index];
+          final earned = (claim['cellCount'] as num?)?.toInt() ?? 0;
+          final areaM2 = (claim['areaM2'] as num?)?.toDouble() ?? 0;
+          final rawDate = claim['date'] as String? ?? '';
+          final dateStr = rawDate.isNotEmpty
+              ? _formatDate(DateTime.tryParse(rawDate))
+              : 'Unknown date';
+          final areaStr = areaM2 >= 1000000
+              ? '${(areaM2 / 1000000).toStringAsFixed(2)} km²'
+              : '${(areaM2 / 1000).toStringAsFixed(1)} k m²';
+
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(14),
@@ -1130,7 +1347,10 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
               children: [
                 Container(
                   width: 44, height: 44,
-                  decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   child: const Center(child: Text('⬡', style: TextStyle(fontSize: 20))),
                 ),
                 const SizedBox(width: 12),
@@ -1138,25 +1358,19 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(day['date'] as String, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
+                      Text(dateStr, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 2),
-                      Row(children: [
-                        Text('+$earned captured', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w600, fontSize: 12)),
-                        if (lost > 0) ...[
-                          const SizedBox(width: 8),
-                          Text('-$lost stolen', style: const TextStyle(color: AppColors.red, fontWeight: FontWeight.w600, fontSize: 12)),
-                        ],
-                      ]),
+                      Text(areaStr, style: const TextStyle(color: AppColors.grey, fontSize: 11)),
                     ],
                   ),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: net >= 0 ? AppColors.primary.withValues(alpha: 0.1) : AppColors.red.withValues(alpha: 0.1),
+                    color: AppColors.primary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text('${net >= 0 ? '+' : ''}$net', style: TextStyle(fontWeight: FontWeight.w800, color: net >= 0 ? AppColors.primary : AppColors.red)),
+                  child: Text('+$earned ⬡', style: const TextStyle(fontWeight: FontWeight.w800, color: AppColors.primary)),
                 ),
               ],
             ),
@@ -1165,7 +1379,18 @@ class _HexHistoryLazyState extends State<_HexHistoryLazy> {
       ),
     );
   }
+
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return 'Unknown date';
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inDays == 0) return 'Today';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays} days ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
 }
+
 
 /// ─────────────────────────────────────────────────────────────────────────────
 /// STREAK HISTORY LAZY (shows 10 then loads more)
@@ -1181,23 +1406,22 @@ class _StreakHistoryLazy extends StatefulWidget {
 }
 
 class _StreakHistoryLazyState extends State<_StreakHistoryLazy> {
-  late List<Map<String, dynamic>> _days;
+  List<Map<String, dynamic>> _days = [];
   int _visibleCount = 7;
   bool _loadingMore = false;
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    // Generate streak entries matching the actual streak count
-    final now = DateTime.now();
-    _days = List.generate(widget.streakDays.clamp(1, 60), (i) {
-      final date = now.subtract(Duration(days: i));
-      final label = i == 0 ? 'Today' : i == 1 ? 'Yesterday' : '${_monthName(date.month)} ${date.day}';
-      return {'date': label, 'hexes': (3 + (date.day * 7 + i) % 8), 'distance': '${(0.4 + (i * 0.3) % 2.0).toStringAsFixed(1)} km', 'time': '${8 + (date.day + i) % 25} min'};
-    });
+    _fetchHistory();
   }
 
-  String _monthName(int m) => const ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1];
+  Future<void> _fetchHistory() async {
+    // TODO: Replace with real API call when daily walk history endpoint exists
+    // For now, show empty state for users with no walk data
+    if (mounted) setState(() { _loading = false; });
+  }
 
   void _loadMore() {
     if (_loadingMore || _visibleCount >= _days.length) return;
@@ -1214,6 +1438,23 @@ class _StreakHistoryLazyState extends State<_StreakHistoryLazy> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+    }
+    if (_days.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('🚶', style: TextStyle(fontSize: 40)),
+            const SizedBox(height: 12),
+            Text('No walk history yet', style: TextStyle(color: AppColors.grey, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('Complete a walk to start your streak!', style: TextStyle(color: AppColors.grey, fontSize: 12)),
+          ],
+        ),
+      );
+    }
     final visible = _days.take(_visibleCount).toList();
     return NotificationListener<ScrollNotification>(
       onNotification: (notification) {

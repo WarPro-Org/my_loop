@@ -14,7 +14,7 @@ import 'package:myloop/app/theme.dart';
 /// below the button. Optionally displays an [icon] before the [label] text.
 class BigButton extends StatelessWidget {
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   final Color? color;
   final IconData? icon;
 

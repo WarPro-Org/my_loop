@@ -127,19 +127,23 @@ class HexTrophyBadge extends StatefulWidget {
 }
 
 class _HexTrophyBadgeState extends State<HexTrophyBadge>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
+    with TickerProviderStateMixin {
+  late final AnimationController _pulseCtrl;
+  late final AnimationController _shimmerCtrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000))
       ..repeat(reverse: true);
+    _shimmerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 3000))
+      ..repeat();
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _pulseCtrl.dispose();
+    _shimmerCtrl.dispose();
     super.dispose();
   }
 
@@ -150,22 +154,37 @@ class _HexTrophyBadgeState extends State<HexTrophyBadge>
     const romans = ['I', 'II', 'III', 'IV'];
 
     return AnimatedBuilder(
-      animation: _ctrl,
+      animation: Listenable.merge([_pulseCtrl, _shimmerCtrl]),
       builder: (context, child) {
-        final pulse = 1.0 + _ctrl.value * 0.04;
+        final pulse = 1.0 + _pulseCtrl.value * 0.06;
+        final glowSize = 12.0 + _pulseCtrl.value * 8.0;
         return Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Transform.scale(
-              scale: pulse,
-              child: SizedBox(
-                width: widget.size,
-                height: widget.size,
-                child: CustomPaint(
-                  painter: _HexTrophyPainter(
-                    tier: tier,
-                    division: division,
-                    glowPulse: _ctrl.value,
+            // Breathing glow behind the badge
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: tier.glow.withValues(alpha: 0.2 + _pulseCtrl.value * 0.15),
+                    blurRadius: glowSize,
+                    spreadRadius: 2 + _pulseCtrl.value * 3,
+                  ),
+                ],
+              ),
+              child: Transform.scale(
+                scale: pulse,
+                child: SizedBox(
+                  width: widget.size,
+                  height: widget.size,
+                  child: CustomPaint(
+                    painter: _HexTrophyPainter(
+                      tier: tier,
+                      division: division,
+                      glowPulse: _pulseCtrl.value,
+                      shimmerPhase: _shimmerCtrl.value,
+                    ),
                   ),
                 ),
               ),
@@ -249,8 +268,9 @@ class _HexTrophyPainter extends CustomPainter {
   final HexTier tier;
   final int division;
   final double glowPulse;
+  final double shimmerPhase;
 
-  _HexTrophyPainter({required this.tier, required this.division, this.glowPulse = 0});
+  _HexTrophyPainter({required this.tier, required this.division, this.glowPulse = 0, this.shimmerPhase = 0});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -308,6 +328,18 @@ class _HexTrophyPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2
         ..strokeCap = StrokeCap.round,
+    );
+
+    // Rotating shimmer light sweep
+    final shimmerAngle = shimmerPhase * 2 * math.pi;
+    final shimmerX = math.cos(shimmerAngle) * radius * 0.4;
+    final shimmerY = math.sin(shimmerAngle) * radius * 0.4;
+    canvas.drawCircle(
+      Offset(shimmerX, shimmerY),
+      radius * 0.25,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.08 + glowPulse * 0.06)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
     canvas.restore();
@@ -492,7 +524,7 @@ class HexTierShowcase extends StatelessWidget {
           final isActive = tier.level <= currentTier.level;
           final isCurrent = tier == currentTier;
           return Opacity(
-            opacity: isActive ? 1.0 : 0.3,
+            opacity: isActive ? 1.0 : 0.8,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

@@ -117,6 +117,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     final maxStreak = (p['maxStreak'] as num?)?.toInt() ?? 0;
     final distanceKm = (p['distanceKm'] as num?)?.toDouble() ?? 0.0;
     final topThree = (p['topThreeFinishes'] as num?)?.toInt() ?? 0;
+    final topTen = (p['topTenFinishes'] as num?)?.toInt() ?? 0;
+    final topHundred = (p['topHundredFinishes'] as num?)?.toInt() ?? 0;
+    final topThousand = (p['topThousandFinishes'] as num?)?.toInt() ?? 0;
     final isStreakActive = p['isStreakActive'] as bool? ?? false;
     final joinedAt = p['joinedAt'] as String?;
     final title = getTitleForHexes(hexCount);
@@ -137,62 +140,72 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
         children: [
           const SizedBox(height: 28),
 
-          // Profile header: avatar + name/tag side by side, centered
+          // Profile header: LEFT = avatar + name, BELOW avatar = tag, RIGHT = animated badge
           Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Avatar with glow
-              Container(
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Color(int.parse(widget.color.replaceFirst('#', ''), radix: 16) | 0xFF000000).withValues(alpha: 0.25),
-                      blurRadius: 16,
-                      spreadRadius: 2,
+              // LEFT SIDE: Avatar with name beside it, tag below avatar
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        // Avatar with glow
+                        Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(int.parse(widget.color.replaceFirst('#', ''), radix: 16) | 0xFF000000).withValues(alpha: 0.25),
+                                blurRadius: 16,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 56, hexes: hexCount),
+                        ),
+                        const SizedBox(width: 14),
+                        // Name — vertically centered with avatar middle
+                        Flexible(
+                          child: Text(
+                            widget.name,
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, fontSize: 20),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    // Tag below avatar, indented to center under avatar
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(title.emoji, style: const TextStyle(fontSize: 13, height: 1.0)),
+                            const SizedBox(width: 4),
+                            Text(title.label, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 12)),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                child: AvatarWidget(avatarId: widget.avatarId, color: widget.color, size: 52, hexes: hexCount),
               ),
-              const SizedBox(width: 14),
-              // Name + tag
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    widget.name,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, fontSize: 19),
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
-                  ),
-                  const SizedBox(height: 5),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(title.emoji, style: const TextStyle(fontSize: 12, height: 1.0)),
-                        const SizedBox(width: 4),
-                        Text(title.label, style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w700, fontSize: 11)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+              const SizedBox(width: 12),
+              // RIGHT SIDE: Big animated tier badge
+              HexTrophyBadge(hexes: hexCount, size: 90, showLabel: true, showProgress: true),
             ],
           ),
-          const SizedBox(height: 24),
-
-          // Badge centered
-          HexTrophyBadge(hexes: hexCount, size: 64, showLabel: true, showProgress: true),
           const SizedBox(height: 24),
 
           // Streak row
@@ -233,6 +246,9 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
           _StatRow(icon: Icons.directions_walk, label: 'Distance Walked', value: '${distanceKm.toStringAsFixed(1)} km', color: AppColors.accent),
           _StatRow(icon: Icons.whatshot, label: 'Best Streak', value: '$maxStreak days', color: AppColors.orange),
           _StatRow(icon: Icons.emoji_events, label: 'Top 3 Finishes', value: '$topThree', color: AppColors.yellow),
+          _StatRow(icon: Icons.military_tech, label: 'Top 10 Finishes', value: '$topTen', color: AppColors.orange),
+          _StatRow(icon: Icons.star, label: 'Top 100 Finishes', value: '$topHundred', color: AppColors.accent),
+          _StatRow(icon: Icons.workspace_premium, label: 'Top 1000 Finishes', value: '$topThousand', color: AppColors.primary),
 
           const SizedBox(height: 24),
           // Joined date at bottom center
