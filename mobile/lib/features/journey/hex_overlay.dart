@@ -429,9 +429,9 @@ class _CooldownHexOverlayState extends State<CooldownHexOverlay>
     _pulseAnim = Tween<double>(begin: 0.0, end: 1.0).animate(
       CurvedAnimation(parent: _shieldPulse, curve: Curves.easeInOut),
     );
-    // Refresh countdown text every second
+    // Refresh countdown text every minute (only showing h/m precision)
     _countdownTimer = Timer.periodic(
-      const Duration(seconds: 1),
+      const Duration(minutes: 1),
       (_) { if (mounted) setState(() {}); },
     );
   }
@@ -445,11 +445,9 @@ class _CooldownHexOverlayState extends State<CooldownHexOverlay>
 
   String _formatDuration(Duration d) {
     if (d.inHours > 0) {
-      return '${d.inHours}h ${d.inMinutes.remainder(60)}m';
-    } else if (d.inMinutes > 0) {
-      return '${d.inMinutes}m ${d.inSeconds.remainder(60)}s';
+      return '${d.inHours}h';
     }
-    return '${d.inSeconds}s';
+    return '${d.inMinutes}m';
   }
 
   LatLng _computeCenter(List<List<double>> boundary) {
