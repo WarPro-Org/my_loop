@@ -1,8 +1,4 @@
 /// Journey screen — live map view for recording territory-capturing walks.
-///
-/// Displays a full-screen OpenStreetMap with the player's live GPS trail,
-/// current position marker, real-time stats (time, distance, GPS points),
-/// and start/stop controls. Integrates with [JourneyController] via Riverpod.
 library;
 
 import 'dart:async';
@@ -13,25 +9,22 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
+import 'package:myloop/features/journey/hex_overlay.dart';
+import 'package:myloop/features/journey/hex_territory_manager.dart';
+import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
-import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
+import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
-import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// JOURNEY SCREEN — Full-screen map with overlay controls
-/// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Screen
+// ──────────────────────────────────────────────────────────────────────────────
 
-/// The main journey recording screen with a layered Stack layout.
-///
-/// Uses a [Stack] to overlay the map, stats bar (top), and controls (bottom).
-/// Watches [journeyControllerProvider] to reactively update the UI as the
-/// player walks. Listens for errors and shows them via snackbar.
 class JourneyScreen extends ConsumerStatefulWidget {
   const JourneyScreen({super.key});
 
@@ -43,166 +36,111 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   final _mapKey = GlobalKey<_JourneyMapState>();
   bool _isSubmitting = false;
 
-  /// Handles Stop & Capture — runs from the screen's stable ConsumerState context
-  /// so showDialog and ScaffoldMessenger always work correctly.
   Future<void> _onStopCapture() async {
     if (_isSubmitting) return;
 
-    // Read the CURRENT state fresh from the provider (not a stale closure capture)
     final journey = ref.read(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
-
-    // Capture walk stats before stopJourney() resets the state
     final walkDistance = journey.distanceMeters;
     final walkDuration = journey.elapsed;
     final path = controller.stopJourney();
 
     if (path.length < 2) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Walk a bit more to capture territory!'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
+      _showSnackbar('Walk a bit more to capture territory!', Colors.orange);
       return;
     }
 
     setState(() => _isSubmitting = true);
 
     try {
-      final api = ref.read(apiServiceProvider);
-      final profile = ref.read(userProfileProvider);
-      if (profile.userId == null) return;
-
-      final result = await api.submitClaim(userId: profile.userId!, path: path);
-      final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
-      final stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
-
-      // Parse boundaries and render captured hexes on map
-      final rawBoundaries = result['boundaries'] as List<dynamic>?;
-      if (rawBoundaries != null && rawBoundaries.isNotEmpty) {
-        final boundaries = rawBoundaries.map<List<List<double>>>((b) =>
-          (b as List<dynamic>).map<List<double>>((point) =>
-            (point as List<dynamic>).map<double>((v) => (v as num).toDouble()).toList()
-          ).toList()
-        ).toList();
-        _mapKey.currentState?.showCapturedHexes(boundaries);
-      }
-
-      // Optimistic hex-count update so the badge reacts instantly
-      if (mounted && capturedCount > 0) {
-        ref.read(userProfileProvider.notifier).updateStats(
-          hexCount: profile.hexCount + capturedCount,
-        );
-      }
-
-      // Force-reload all hexes from DB as a safety net (covers any edge cases)
-      _mapKey.currentState?.forceReloadHexes();
-
-      // Refresh ALL user data from DB: hexCount, streak, distanceKm
-      final user = await api.getUser(profile.userId!);
-
-      // Also refresh rank from leaderboard
-      int updatedRank = profile.rank;
-      try {
-        final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId!, scope: 'city');
-        updatedRank = lb.myRank ?? profile.rank;
-      } catch (_) {} // rank stays as-is if leaderboard is unreachable
-
-      if (mounted) {
-        ref.read(userProfileProvider.notifier).updateStats(
-          hexCount: user.hexCount,
-          streak: user.streak,
-          distanceKm: user.distanceKm,
-          rank: updatedRank,
-        );
-      }
-
-      // Delay celebration so user sees hexes flash on the map first
-      if (mounted) {
-        await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
-        if (mounted) {
-          _showCelebration(
-            hexCount: capturedCount,
-            stolenCount: stolenCount,
-            distance: walkDistance,
-            duration: walkDuration,
-            newStreak: user.streak,
-          );
-        }
-      }
+      await _submitAndCelebrate(path, walkDistance, walkDuration);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString().replaceFirst('Exception: ', '')}'),
-            backgroundColor: AppColors.red,
-            duration: const Duration(seconds: 6),
-          ),
-        );
-      }
+      _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
   }
 
-  void _showCelebration({
-    required int hexCount,
-    required int stolenCount,
-    required double distance,
-    required Duration duration,
-    required int newStreak,
-  }) {
-    final distanceStr = distance >= 1000
-        ? '${(distance / 1000).toStringAsFixed(2)} km'
-        : '${distance.toStringAsFixed(0)} m';
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds % 60;
-    final timeStr = minutes > 0 ? '${minutes}m ${seconds}s' : '${seconds}s';
+  Future<void> _submitAndCelebrate(
+      List<List<double>> path, double distance, Duration duration) async {
+    final api = ref.read(apiServiceProvider);
+    final profile = ref.read(userProfileProvider);
+    if (profile.userId == null) return;
 
+    final result = await api.submitClaim(userId: profile.userId!, path: path);
+    final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+    final stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
+
+    _renderCapturedHexes(result);
+    _optimisticHexUpdate(capturedCount);
+    _mapKey.currentState?.forceReloadHexes();
+
+    await _refreshUserData(profile, api);
+
+    if (mounted) {
+      await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
+      if (mounted) {
+        final user = await api.getUser(profile.userId!);
+        _showCelebration(capturedCount, stolenCount, distance, duration, user.streak);
+      }
+    }
+  }
+
+  void _renderCapturedHexes(Map<String, dynamic> result) {
+    final rawBoundaries = result['boundaries'] as List<dynamic>?;
+    if (rawBoundaries == null || rawBoundaries.isEmpty) return;
+
+    final boundaries = rawBoundaries
+        .map<List<List<double>>>((b) => (b as List<dynamic>)
+            .map<List<double>>(
+                (point) => (point as List<dynamic>).map<double>((v) => (v as num).toDouble()).toList())
+            .toList())
+        .toList();
+    _mapKey.currentState?.showCapturedHexes(boundaries);
+  }
+
+  void _optimisticHexUpdate(int capturedCount) {
+    if (!mounted || capturedCount <= 0) return;
+    final profile = ref.read(userProfileProvider);
+    ref.read(userProfileProvider.notifier).updateStats(hexCount: profile.hexCount + capturedCount);
+  }
+
+  Future<void> _refreshUserData(dynamic profile, ApiService api) async {
+    final user = await api.getUser(profile.userId!);
+    int updatedRank = profile.rank;
+    try {
+      final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId!, scope: 'city');
+      updatedRank = lb.myRank ?? profile.rank;
+    } catch (_) {}
+
+    if (mounted) {
+      ref.read(userProfileProvider.notifier).updateStats(
+        hexCount: user.hexCount,
+        streak: user.streak,
+        distanceKm: user.distanceKm,
+        rank: updatedRank,
+      );
+    }
+  }
+
+  void _showCelebration(int hexCount, int stolenCount, double distance, Duration duration, int streak) {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('🎉', style: TextStyle(fontSize: 56)),
-              const SizedBox(height: 12),
-              const Text(
-                'Territory Captured!',
-                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 20),
-              _CelebrationStat(icon: '⬡', label: 'Hexes earned', value: '$hexCount'),
-              if (stolenCount > 0)
-                _CelebrationStat(icon: '⚔️', label: 'Stolen from others', value: '$stolenCount'),
-              _CelebrationStat(icon: '📏', label: 'Distance walked', value: distanceStr),
-              _CelebrationStat(icon: '⏱️', label: 'Walk time', value: timeStr),
-              _CelebrationStat(icon: '🔥', label: 'Current streak', value: '$newStreak day${newStreak == 1 ? '' : 's'}'),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: const Text('AWESOME!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-                ),
-              ),
-            ],
-          ),
-        ),
+      builder: (_) => CelebrationDialog(
+        hexCount: hexCount,
+        stolenCount: stolenCount,
+        distanceMeters: distance,
+        duration: duration,
+        streak: streak,
       ),
+    );
+  }
+
+  void _showSnackbar(String message, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: color),
     );
   }
 
@@ -211,62 +149,25 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final journey = ref.watch(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
 
-    // Listen for error state changes and display as a snackbar
     ref.listen(journeyControllerProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(next.error!),
-            backgroundColor: AppColors.red,
-          ),
-        );
+        _showSnackbar(next.error!, AppColors.red);
       }
     });
 
     return Scaffold(
       body: Stack(
         children: [
-          // The map (full screen)
           _JourneyMap(key: _mapKey, journey: journey),
-
-          // Close/back button (top-left)
-          Positioned(
-            top: MediaQuery.of(context).padding.top + 12,
-            left: 16,
-            child: GestureDetector(
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.1),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.close, color: AppColors.dark, size: 22),
-              ),
-            ),
-          ),
-
-          // Top bar with stats — vertical left column (below close button)
+          _CloseButton(padding: MediaQuery.of(context).padding.top),
           if (journey.status == JourneyStatus.tracking)
             Positioned(
               top: MediaQuery.of(context).padding.top + 64,
               left: 0,
               child: _StatsBar(journey: journey),
             ),
-
-          // Bottom controls
           Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
+            bottom: 0, left: 0, right: 0,
             child: _BottomControls(
               journey: journey,
               isSubmitting: _isSubmitting,
@@ -280,12 +181,39 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   }
 }
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// MAP LAYER
-/// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Close Button
+// ──────────────────────────────────────────────────────────────────────────────
 
-/// Full-screen interactive map that immediately acquires GPS position,
-/// follows the user's live location, and auto-updates every 5 seconds.
+class _CloseButton extends StatelessWidget {
+  final double padding;
+  const _CloseButton({required this.padding});
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: padding + 12,
+      left: 16,
+      child: GestureDetector(
+        onTap: () => Navigator.of(context).pop(),
+        child: Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 6, offset: const Offset(0, 2))],
+          ),
+          child: const Icon(Icons.close, color: AppColors.dark, size: 22),
+        ),
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Map
+// ──────────────────────────────────────────────────────────────────────────────
+
 class _JourneyMap extends ConsumerStatefulWidget {
   final JourneyState journey;
   const _JourneyMap({super.key, required this.journey});
@@ -297,27 +225,29 @@ class _JourneyMap extends ConsumerStatefulWidget {
 class _JourneyMapState extends ConsumerState<_JourneyMap> {
   final MapController _mapController = MapController();
   Position? _initialPosition;
-  LatLng? _fallbackCenter; // Used when geolocation fails but hexes exist
+  LatLng? _fallbackCenter;
   Timer? _locationTimer;
   Timer? _hexRefreshTimer;
   bool _mapReady = false;
-  bool _followUser = true; // User can toggle free exploration
+  bool _followUser = true;
   bool _locationError = false;
   double _currentZoom = 17.0;
-  bool _useSatellite = true; // Map theme: true=satellite, false=dark
+  bool _useSatellite = true;
+  bool _solidHexes = false;
   List<List<List<double>>> _capturedHexBoundaries = [];
-  List<List<List<double>>> _userOwnHexBoundaries = []; // ALL user hexes from /user/{id} endpoint
-  Map<String, List<List<List<double>>>> _otherHexesByColor = {}; // Other players grouped by ownerColor
-  List<TerritoryCell> _allCells = []; // Keep full cell data for tap detection
-  Set<int> _userOwnCellIds = {}; // Track cell IDs loaded via getUserTerritories
-  bool _solidHexes = false; // Opacity toggle: false=normal, true=fully opaque
+  late HexTerritoryManager _hexManager;
 
   @override
   void initState() {
     super.initState();
-    _acquireLocation(); // After GPS resolves → calls _loadAllHexes with wide radius
-    // Don't start continuous GPS polling until journey starts — saves battery
-    _hexRefreshTimer = Timer.periodic(const Duration(seconds: AppConstants.hexRefreshIntervalSeconds), (_) => _refreshViewportHexes());
+    final api = ref.read(apiServiceProvider);
+    final profile = ref.read(userProfileProvider);
+    _hexManager = HexTerritoryManager(api: api, userId: profile.userId);
+    _acquireLocation();
+    _hexRefreshTimer = Timer.periodic(
+      const Duration(seconds: AppConstants.hexRefreshIntervalSeconds),
+      (_) => _refreshViewportHexes(),
+    );
   }
 
   @override
@@ -338,9 +268,9 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         if (_mapReady && _followUser) {
           _mapController.move(LatLng(pos.latitude, pos.longitude), 17);
         }
-        // Load the user's own hexes (all of them) + nearby hexes from other players
-        _loadUserOwnHexes();
-        _loadAllHexes();
+        await _hexManager.loadUserOwnHexes();
+        await _hexManager.loadWideArea(pos.latitude, pos.longitude);
+        if (mounted) setState(() {});
       } else if (mounted) {
         setState(() => _locationError = true);
       }
@@ -349,126 +279,87 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     }
   }
 
-  /// Loads ALL hexes owned by this user from the server — no viewport limit.
-  /// This guarantees the user always sees their territory even if they captured
-  /// it elsewhere and just opened the map from a different location.
-  Future<void> _loadUserOwnHexes() async {
-    final profile = ref.read(userProfileProvider);
-    if (profile.userId == null) return;
-    try {
-      final api = ref.read(apiServiceProvider);
-      final cells = await api.getUserTerritories(profile.userId!);
-      if (mounted) {
-        setState(() {
-          _userOwnHexBoundaries = cells.map((c) => c.boundary).toList();
-          _userOwnCellIds = cells.map((c) => c.cellId).toSet();
-          // Merge into _allCells: keep others, replace user's
-          _allCells = [
-            ..._allCells.where((c) => c.ownerId != profile.userId),
-            ...cells,
-          ];
-        });
-      }
-    } catch (_) {}
-  }
-
-  Future<void> _loadViewportHexes(double lat, double lng) async {
-    try {
-      final api = ref.read(apiServiceProvider);
-      const offset = AppConstants.nearbyViewportOffset;
-      final cells = await api.getTerritories(
-        minLat: lat - offset,
-        minLng: lng - offset,
-        maxLat: lat + offset,
-        maxLng: lng + offset,
-      );
-      _updateHexState(cells);
-    } catch (_) {}
-  }
-
-  /// Loads hexes in a wide area around the user's known position.
-  /// Called by _acquireLocation after GPS resolves successfully.
-  Future<void> _loadAllHexes() async {
-    if (_initialPosition == null) return;
-    try {
-      final api = ref.read(apiServiceProvider);
-      final lat = _initialPosition!.latitude;
-      final lng = _initialPosition!.longitude;
-      const offset = AppConstants.wideViewportOffset;
-      final cells = await api.getTerritories(
-        minLat: lat - offset,
-        minLng: lng - offset,
-        maxLat: lat + offset,
-        maxLng: lng + offset,
-      );
-      _updateHexState(cells);
-    } catch (_) {}
-  }
-
-  /// Refreshes hexes based on current viewport bounds.
   Future<void> _refreshViewportHexes() async {
     if (!_mapReady) return;
     final bounds = _mapController.camera.visibleBounds;
+    await _hexManager.loadViewport(
+      minLat: bounds.south, minLng: bounds.west,
+      maxLat: bounds.north, maxLng: bounds.east,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _refreshPosition() async {
+    final journey = ref.read(journeyControllerProvider);
+    if (journey.status == JourneyStatus.tracking) return;
     try {
-      final api = ref.read(apiServiceProvider);
-      final cells = await api.getTerritories(
-        minLat: bounds.south,
-        minLng: bounds.west,
-        maxLat: bounds.north,
-        maxLng: bounds.east,
-      );
-      _updateHexState(cells);
+      final locationService = ref.read(locationServiceProvider);
+      final pos = await locationService.getCurrentPosition();
+      if (mounted && pos.latitude.isFinite && pos.longitude.isFinite) {
+        setState(() => _initialPosition = pos);
+        if (_mapReady && _followUser) {
+          _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
+        }
+      }
     } catch (_) {}
   }
 
-  /// Splits cells into user's own hexes and others (grouped by owner color).
-  /// Does NOT overwrite _userOwnHexBoundaries (the authoritative full list).
-  /// Groups other-player hexes by their chosen color for per-player rendering.
-  void _updateHexState(List<dynamic> cells) {
-    final profile = ref.read(userProfileProvider);
-    final otherByColor = <String, List<List<List<double>>>>{};
-    final allCells = <TerritoryCell>[..._allCells.where((c) => c.ownerId == profile.userId)];
+  @override
+  void didUpdateWidget(covariant _JourneyMap old) {
+    super.didUpdateWidget(old);
+    _manageLocationPolling();
+    _followCurrentPosition();
+  }
 
-    for (final c in cells) {
-      final cell = c as TerritoryCell;
-      if (cell.ownerId == profile.userId) {
-        if (!_userOwnCellIds.contains(cell.cellId)) {
-          allCells.add(cell);
-        }
-      } else {
-        otherByColor.putIfAbsent(cell.ownerColor, () => []).add(cell.boundary);
-        allCells.add(cell);
-      }
+  void _manageLocationPolling() {
+    if (widget.journey.status == JourneyStatus.tracking && _locationTimer == null) {
+      _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
+    } else if (widget.journey.status != JourneyStatus.tracking && _locationTimer != null) {
+      _locationTimer?.cancel();
+      _locationTimer = null;
     }
+  }
 
-    if (mounted) {
-      setState(() {
-        _otherHexesByColor = otherByColor;
-        _allCells = allCells;
+  void _followCurrentPosition() {
+    final pos = widget.journey.currentPosition;
+    if (pos != null && _mapReady && _followUser && pos.latitude.isFinite && pos.longitude.isFinite) {
+      _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
+    }
+  }
+
+  void showCapturedHexes(List<List<List<double>>> boundaries) {
+    setState(() {
+      _capturedHexBoundaries = boundaries;
+      _hexManager.addCapturedHexes(boundaries);
+    });
+  }
+
+  void forceReloadHexes() {
+    _hexManager.loadUserOwnHexes().then((_) {
+      if (mounted) setState(() {});
+    });
+    if (_mapReady) {
+      _refreshViewportHexes();
+    } else if (_initialPosition != null) {
+      _hexManager.loadWideArea(_initialPosition!.latitude, _initialPosition!.longitude).then((_) {
+        if (mounted) setState(() {});
       });
     }
   }
 
-  /// Handles map tap — checks if user tapped inside a hex polygon.
   void _onMapTap(LatLng latLng) {
     final tappedCell = _findTappedCell(latLng.latitude, latLng.longitude);
-    if (tappedCell != null) {
-      _showHexOwnerSheet(tappedCell);
-    }
+    if (tappedCell != null) _showHexOwnerSheet(tappedCell);
   }
 
-  /// Point-in-polygon test to find which cell was tapped.
   TerritoryCell? _findTappedCell(double lat, double lng) {
-    for (final cell in _allCells) {
-      if (_pointInPolygon(lat, lng, cell.boundary)) {
-        return cell;
-      }
+    for (final cell in _hexManager.allCells) {
+      if (_pointInPolygon(lat, lng, cell.boundary)) return cell;
     }
     return null;
   }
 
-  /// Ray-casting point-in-polygon algorithm.
-  bool _pointInPolygon(double lat, double lng, List<List<double>> polygon) {
+  static bool _pointInPolygon(double lat, double lng, List<List<double>> polygon) {
     var inside = false;
     for (int i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
       final yi = polygon[i][0], xi = polygon[i][1];
@@ -480,7 +371,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     return inside;
   }
 
-  /// Shows a bottom sheet with hex owner info and link to their profile.
   void _showHexOwnerSheet(TerritoryCell cell) {
     final profile = ref.read(userProfileProvider);
     final isOwn = cell.ownerId == profile.userId;
@@ -489,128 +379,24 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Container(
-                  width: 48, height: 48,
-                  decoration: BoxDecoration(
-                    color: ownerColor.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: ownerColor, width: 2),
-                  ),
-                  child: const Icon(Icons.hexagon, size: 28, color: Colors.white70),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isOwn ? 'Your Hex' : '${cell.ownerName}\'s Hex',
-                        style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-                      ),
-                      Text(
-                        isOwn ? 'You own this territory' : 'Owned by ${cell.ownerName}',
-                        style: TextStyle(color: AppColors.grey, fontSize: 13),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+      builder: (ctx) => _HexOwnerSheet(
+        cell: cell,
+        isOwn: isOwn,
+        ownerColor: ownerColor,
+        onViewProfile: () {
+          Navigator.pop(ctx);
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => UserProfileScreen(
+              userId: cell.ownerId,
+              name: cell.ownerName,
+              avatarId: 0,
+              color: cell.ownerColor,
+              rank: 0,
             ),
-            if (!isOwn) ...[
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => UserProfileScreen(
-                        userId: cell.ownerId,
-                        name: cell.ownerName,
-                        avatarId: 0,
-                        color: cell.ownerColor,
-                        rank: 0,
-                      ),
-                    ));
-                  },
-                  icon: const Icon(Icons.person, size: 18),
-                  label: Text('View ${cell.ownerName}\'s Profile'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: AppColors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+          ));
+        },
       ),
     );
-  }
-
-  Future<void> _refreshPosition() async {
-    final journey = ref.read(journeyControllerProvider);
-    if (journey.status == JourneyStatus.tracking) return;
-    try {
-      final locationService = ref.read(locationServiceProvider);
-      final pos = await locationService.getCurrentPosition();
-      if (mounted && pos.latitude.isFinite && pos.longitude.isFinite) {
-        setState(() => _initialPosition = pos);
-        // Only move if following
-        if (_mapReady && _followUser) {
-          _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
-        }
-      }
-    } catch (_) {}
-  }
-
-  @override
-  void didUpdateWidget(covariant _JourneyMap old) {
-    super.didUpdateWidget(old);
-    // Start/stop location polling based on tracking state
-    if (widget.journey.status == JourneyStatus.tracking && _locationTimer == null) {
-      _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
-    } else if (widget.journey.status != JourneyStatus.tracking && _locationTimer != null) {
-      _locationTimer?.cancel();
-      _locationTimer = null;
-    }
-    // Only follow during tracking if followUser is enabled
-    final pos = widget.journey.currentPosition;
-    if (pos != null && _mapReady && _followUser && pos.latitude.isFinite && pos.longitude.isFinite) {
-      _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
-    }
-  }
-
-  /// Called after claim submission — renders captured hexes on map
-  void showCapturedHexes(List<List<List<double>>> boundaries) {
-    setState(() {
-      _capturedHexBoundaries = boundaries;
-      // Immediately add to user's hex polygon boundaries for rendering
-      _userOwnHexBoundaries = [..._userOwnHexBoundaries, ...boundaries];
-    });
-  }
-
-  /// Forces an immediate refresh of territory hexes from the server.
-  /// Called after claim submission so newly captured hexes appear without
-  /// waiting for the periodic 30-second timer.
-  void forceReloadHexes() {
-    _loadUserOwnHexes(); // Always reload user's full territory first
-    if (_mapReady) {
-      _refreshViewportHexes(); // Also refresh viewport for nearby players
-    } else if (_initialPosition != null) {
-      _loadViewportHexes(_initialPosition!.latitude, _initialPosition!.longitude);
-    }
   }
 
   @override
@@ -619,283 +405,344 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     final profile = ref.watch(userProfileProvider);
     final userColor = Color(int.parse(profile.color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
-    // Show loading spinner while acquiring location (unless we have a fallback)
     if (_initialPosition == null && _fallbackCenter == null && journey.currentPosition == null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_locationError) ...[
-              const Icon(Icons.location_off, size: 48, color: AppColors.grey),
-              const SizedBox(height: 12),
-              const Text('Could not get your location', style: TextStyle(color: AppColors.grey)),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () { setState(() => _locationError = false); _acquireLocation(); },
-                child: const Text('Retry'),
-              ),
-            ] else ...[
-              const CircularProgressIndicator(color: AppColors.primary),
-              const SizedBox(height: 16),
-              const Text('Getting your location...', style: TextStyle(color: AppColors.grey)),
-            ],
-          ],
-        ),
-      );
+      return _buildLoadingState();
     }
 
-    LatLng center;
-    if (journey.currentPosition != null) {
-      center = LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude);
-    } else if (_initialPosition != null) {
-      center = LatLng(_initialPosition!.latitude, _initialPosition!.longitude);
-    } else {
-      center = _fallbackCenter!;
-    }
+    final center = _resolveCenter(journey);
 
     return Stack(
       children: [
-        FlutterMap(
-          mapController: _mapController,
-          options: MapOptions(
-            initialCenter: center,
-            initialZoom: 17,
-            onMapReady: () {
-              _mapReady = true;
-              if (_initialPosition != null) {
-                _mapController.move(LatLng(_initialPosition!.latitude, _initialPosition!.longitude), 17);
-              } else if (_fallbackCenter != null) {
-                _mapController.move(_fallbackCenter!, 17);
-              }
-            },
-            onPositionChanged: (pos, hasGesture) {
-              // Track zoom for adaptive hex rendering
-              if (pos.zoom != _currentZoom) {
-                setState(() => _currentZoom = pos.zoom);
-              }
-              // User panned manually — disable auto-follow
-              if (hasGesture && _followUser) {
-                setState(() => _followUser = false);
-              }
-            },
-            onTap: (tapPos, latLng) => _onMapTap(latLng),
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: _useSatellite
-                  ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-                  : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-              subdomains: _useSatellite ? const [] : const ['a', 'b', 'c', 'd'],
-              userAgentPackageName: 'com.myloop.app',
+        _buildMap(center, journey, profile, userColor),
+        if (!_followUser) _buildRecenterButton(),
+        _buildTopRightControls(context, profile, userColor),
+      ],
+    );
+  }
+
+  Widget _buildLoadingState() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_locationError) ...[
+            const Icon(Icons.location_off, size: 48, color: AppColors.grey),
+            const SizedBox(height: 12),
+            const Text('Could not get your location', style: TextStyle(color: AppColors.grey)),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () { setState(() => _locationError = false); _acquireLocation(); },
+              child: const Text('Retry'),
             ),
-
-            // Labels overlay — place names, roads, boundaries on top of satellite
-            if (_useSatellite)
-              TileLayer(
-                urlTemplate: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-                userAgentPackageName: 'com.myloop.app',
-              ),
-
-            // Other players' hex polygons — each player's own chosen color
-            ..._otherHexesByColor.entries.map((entry) => AnimatedHexOverlay(
-              hexBoundaries: entry.value,
-              userColor: Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000),
-              currentZoom: _currentZoom,
-              isNewCapture: false,
-              solidMode: _solidHexes,
-            )),
-
-            // User's owned hex polygons (animated overlay with glow)
-            if (_userOwnHexBoundaries.isNotEmpty)
-              AnimatedHexOverlay(
-                hexBoundaries: _userOwnHexBoundaries,
-                userColor: userColor,
-                currentZoom: _currentZoom,
-                solidMode: _solidHexes,
-              ),
-
-            // Live preview hexes — detected loops, not yet claimed
-            if (journey.previewBoundaries.isNotEmpty)
-              AnimatedHexOverlay(
-                hexBoundaries: journey.previewBoundaries,
-                userColor: userColor.withAlpha(140),
-                currentZoom: _currentZoom,
-                isNewCapture: true,
-                solidMode: false,
-              ),
-
-            // Captured hex polygons (from current session — extra glow)
-            if (_capturedHexBoundaries.isNotEmpty)
-              AnimatedHexOverlay(
-                hexBoundaries: _capturedHexBoundaries,
-                userColor: userColor,
-                currentZoom: _currentZoom,
-                isNewCapture: true,
-                solidMode: _solidHexes,
-              ),
-
-            // Draw the walked path
-            if (journey.path.length > 1)
-              PolylineLayer(
-                polylines: [
-                  Polyline(
-                    points: journey.path.map((p) => LatLng(p[0], p[1])).toList(),
-                    color: AppColors.primary,
-                    strokeWidth: 4,
-                  ),
-                ],
-              ),
-
-            // User position marker with avatar
-            if (journey.currentPosition != null || _initialPosition != null || _fallbackCenter != null)
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: journey.currentPosition != null
-                        ? LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude)
-                        : _initialPosition != null
-                            ? LatLng(_initialPosition!.latitude, _initialPosition!.longitude)
-                            : _fallbackCenter!,
-                    width: 44,
-                    height: 44,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.white, width: 3),
-                        boxShadow: [
-                          BoxShadow(
-                            color: userColor.withValues(alpha: 0.4),
-                            blurRadius: 10,
-                            spreadRadius: 3,
-                          ),
-                        ],
-                      ),
-                      child: ClipOval(
-                        child: AvatarWidget(
-                          avatarId: profile.avatarId,
-                          color: profile.color,
-                          size: 38,
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+          ] else ...[
+            const CircularProgressIndicator(color: AppColors.primary),
+            const SizedBox(height: 16),
+            const Text('Getting your location...', style: TextStyle(color: AppColors.grey)),
           ],
-        ),
+        ],
+      ),
+    );
+  }
 
-        // Re-center button (shown when user has panned away)
-        if (!_followUser)
-          Positioned(
-            bottom: 140,
-            right: 16,
-            child: GestureDetector(
-              onTap: () {
-                setState(() => _followUser = true);
-                final trackPos = widget.journey.currentPosition;
-                final pos = trackPos ?? _initialPosition;
-                if (pos != null && _mapReady) {
-                  _mapController.move(
-                    LatLng(pos.latitude, pos.longitude),
-                    _mapController.camera.zoom,
-                  );
-                }
-              },
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 2))],
-                ),
-                child: const Icon(Icons.my_location, color: AppColors.primary, size: 24),
-              ),
-            ),
+  LatLng _resolveCenter(JourneyState journey) {
+    if (journey.currentPosition != null) {
+      return LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude);
+    }
+    if (_initialPosition != null) {
+      return LatLng(_initialPosition!.latitude, _initialPosition!.longitude);
+    }
+    return _fallbackCenter!;
+  }
+
+  Widget _buildMap(LatLng center, JourneyState journey, dynamic profile, Color userColor) {
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: center,
+        initialZoom: 17,
+        onMapReady: () {
+          _mapReady = true;
+          final target = _initialPosition != null
+              ? LatLng(_initialPosition!.latitude, _initialPosition!.longitude)
+              : _fallbackCenter;
+          if (target != null) _mapController.move(target, 17);
+        },
+        onPositionChanged: (pos, hasGesture) {
+          if (pos.zoom != _currentZoom) setState(() => _currentZoom = pos.zoom);
+          if (hasGesture && _followUser) setState(() => _followUser = false);
+        },
+        onTap: (tapPos, latLng) => _onMapTap(latLng),
+      ),
+      children: [
+        _buildTileLayer(),
+        if (_useSatellite) _buildLabelsLayer(),
+        ..._buildOtherPlayerHexes(),
+        if (_hexManager.userOwnHexBoundaries.isNotEmpty)
+          AnimatedHexOverlay(
+            hexBoundaries: _hexManager.userOwnHexBoundaries,
+            userColor: userColor,
+            currentZoom: _currentZoom,
+            solidMode: _solidHexes,
           ),
-
-        // Map theme toggle button (top-right)
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 12,
-          right: 16,
-          child: GestureDetector(
-            onTap: () => setState(() => _useSatellite = !_useSatellite),
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
-              ),
-              child: Icon(
-                _useSatellite ? Icons.dark_mode : Icons.satellite_alt,
-                color: AppColors.dark,
-                size: 20,
-              ),
-            ),
+        if (journey.previewBoundaries.isNotEmpty)
+          AnimatedHexOverlay(
+            hexBoundaries: journey.previewBoundaries,
+            userColor: userColor.withAlpha(140),
+            currentZoom: _currentZoom,
+            isNewCapture: true,
+            solidMode: false,
           ),
-        ),
+        if (_capturedHexBoundaries.isNotEmpty)
+          AnimatedHexOverlay(
+            hexBoundaries: _capturedHexBoundaries,
+            userColor: userColor,
+            currentZoom: _currentZoom,
+            isNewCapture: true,
+            solidMode: _solidHexes,
+          ),
+        if (journey.path.length > 1) _buildPathPolyline(journey),
+        _buildPositionMarker(journey, profile, userColor),
+      ],
+    );
+  }
 
-        // Hex count badge (top-right, below theme toggle)
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 60,
-          right: 16,
-          child: Column(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.hexagon, color: userColor, size: 18),
-                    const SizedBox(width: 4),
-                    Text(
-                      '${profile.hexCount}',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Opacity toggle
-              GestureDetector(
-                onTap: () => setState(() => _solidHexes = !_solidHexes),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _solidHexes ? userColor : AppColors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
-                  ),
-                  child: Icon(
-                    _solidHexes ? Icons.visibility_off : Icons.visibility,
-                    color: _solidHexes ? AppColors.white : AppColors.dark,
-                    size: 18,
-                  ),
-                ),
-              ),
-            ],
+  TileLayer _buildTileLayer() {
+    return TileLayer(
+      urlTemplate: _useSatellite
+          ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+          : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+      subdomains: _useSatellite ? const [] : const ['a', 'b', 'c', 'd'],
+      userAgentPackageName: 'com.myloop.app',
+    );
+  }
+
+  TileLayer _buildLabelsLayer() {
+    return TileLayer(
+      urlTemplate: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      userAgentPackageName: 'com.myloop.app',
+    );
+  }
+
+  List<Widget> _buildOtherPlayerHexes() {
+    return _hexManager.otherHexesByColor.entries.map((entry) => AnimatedHexOverlay(
+      hexBoundaries: entry.value,
+      userColor: Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000),
+      currentZoom: _currentZoom,
+      isNewCapture: false,
+      solidMode: _solidHexes,
+    )).toList();
+  }
+
+  PolylineLayer _buildPathPolyline(JourneyState journey) {
+    return PolylineLayer(
+      polylines: [
+        Polyline(
+          points: journey.path.map((p) => LatLng(p[0], p[1])).toList(),
+          color: AppColors.primary,
+          strokeWidth: 4,
+        ),
+      ],
+    );
+  }
+
+  MarkerLayer _buildPositionMarker(JourneyState journey, dynamic profile, Color userColor) {
+    final point = journey.currentPosition != null
+        ? LatLng(journey.currentPosition!.latitude, journey.currentPosition!.longitude)
+        : _initialPosition != null
+            ? LatLng(_initialPosition!.latitude, _initialPosition!.longitude)
+            : _fallbackCenter!;
+
+    return MarkerLayer(
+      markers: [
+        Marker(
+          point: point, width: 44, height: 44,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.white, width: 3),
+              boxShadow: [BoxShadow(color: userColor.withValues(alpha: 0.4), blurRadius: 10, spreadRadius: 3)],
+            ),
+            child: ClipOval(child: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 38)),
           ),
         ),
       ],
     );
   }
+
+  Widget _buildRecenterButton() {
+    return Positioned(
+      bottom: 140, right: 16,
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _followUser = true);
+          final pos = widget.journey.currentPosition ?? _initialPosition;
+          if (pos != null && _mapReady) {
+            _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
+          }
+        },
+        child: Container(
+          width: 44, height: 44,
+          decoration: BoxDecoration(
+            color: AppColors.white, shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 8, offset: const Offset(0, 2))],
+          ),
+          child: const Icon(Icons.my_location, color: AppColors.primary, size: 24),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopRightControls(BuildContext context, dynamic profile, Color userColor) {
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      right: 16,
+      child: Column(
+        children: [
+          _CircleButton(
+            icon: _useSatellite ? Icons.dark_mode : Icons.satellite_alt,
+            onTap: () => setState(() => _useSatellite = !_useSatellite),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.hexagon, color: userColor, size: 18),
+                const SizedBox(width: 4),
+                Text('${profile.hexCount}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          _CircleButton(
+            icon: _solidHexes ? Icons.visibility_off : Icons.visibility,
+            color: _solidHexes ? userColor : AppColors.white,
+            iconColor: _solidHexes ? AppColors.white : AppColors.dark,
+            onTap: () => setState(() => _solidHexes = !_solidHexes),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// STATS OVERLAY
-/// ─────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Small reusable widgets
+// ──────────────────────────────────────────────────────────────────────────────
 
-/// Floating stats bar shown at the top during active tracking.
-///
-/// Displays elapsed time (MM:SS), distance walked (m or km), and the
-/// number of GPS points recorded so far.
+class _CircleButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final Color color;
+  final Color iconColor;
+
+  const _CircleButton({
+    required this.icon,
+    required this.onTap,
+    this.color = AppColors.white,
+    this.iconColor = AppColors.dark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 40, height: 40,
+        decoration: BoxDecoration(
+          color: color, shape: BoxShape.circle,
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 6, offset: const Offset(0, 2))],
+        ),
+        child: Icon(icon, color: iconColor, size: 20),
+      ),
+    );
+  }
+}
+
+class _HexOwnerSheet extends StatelessWidget {
+  final TerritoryCell cell;
+  final bool isOwn;
+  final Color ownerColor;
+  final VoidCallback onViewProfile;
+
+  const _HexOwnerSheet({
+    required this.cell,
+    required this.isOwn,
+    required this.ownerColor,
+    required this.onViewProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.greyLight, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Container(
+                width: 48, height: 48,
+                decoration: BoxDecoration(
+                  color: ownerColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: ownerColor, width: 2),
+                ),
+                child: const Icon(Icons.hexagon, size: 28, color: Colors.white70),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isOwn ? 'Your Hex' : '${cell.ownerName}\'s Hex',
+                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                    ),
+                    Text(
+                      isOwn ? 'You own this territory' : 'Owned by ${cell.ownerName}',
+                      style: TextStyle(color: AppColors.grey, fontSize: 13),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (!isOwn) ...[
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: onViewProfile,
+                icon: const Icon(Icons.person, size: 18),
+                label: Text('View ${cell.ownerName}\'s Profile'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Stats & Controls
+// ──────────────────────────────────────────────────────────────────────────────
+
 class _StatsBar extends StatelessWidget {
   final JourneyState journey;
   const _StatsBar({required this.journey});
@@ -913,73 +760,48 @@ class _StatsBar extends StatelessWidget {
         color: Colors.black.withValues(alpha: 0.72),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4)),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: Table(
-        columnWidths: const {
-          0: FixedColumnWidth(24),
-          1: IntrinsicColumnWidth(),
-        },
+        columnWidths: const { 0: FixedColumnWidth(24), 1: IntrinsicColumnWidth() },
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         children: [
-          _buildStatRow(Icons.schedule_rounded, const Color(0xFF00D4AA),
+          _statRow(Icons.schedule_rounded, const Color(0xFF00D4AA),
             '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}'),
-          _buildSpacerRow(),
-          _buildStatRow(Icons.route_rounded, const Color(0xFF6C5CE7),
+          _spacerRow(),
+          _statRow(Icons.route_rounded, const Color(0xFF6C5CE7),
             distanceKm >= 1 ? '${distanceKm.toStringAsFixed(2)} km' : '${journey.distanceMeters.toInt()} m'),
-          _buildSpacerRow(),
-          _buildStatRow(Icons.hexagon_rounded, const Color(0xFFF59E0B), '—'),
+          _spacerRow(),
+          _statRow(Icons.hexagon_rounded, const Color(0xFFF59E0B), '—'),
         ],
       ),
     );
   }
 
-  TableRow _buildStatRow(IconData icon, Color color, String value) {
-    return TableRow(
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Center(child: Icon(icon, size: 18, color: color)),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 10, top: 6, bottom: 6),
-          child: Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-      ],
-    );
+  TableRow _statRow(IconData icon, Color color, String value) {
+    return TableRow(children: [
+      Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Center(child: Icon(icon, size: 18, color: color))),
+      Padding(
+        padding: const EdgeInsets.only(left: 10, top: 6, bottom: 6),
+        child: Text(value, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700)),
+      ),
+    ]);
   }
 
-  TableRow _buildSpacerRow() {
-    return TableRow(
-      children: [
-        const SizedBox(height: 1),
-        Container(height: 1, color: Colors.white.withValues(alpha: 0.08)),
-      ],
-    );
+  TableRow _spacerRow() {
+    return TableRow(children: [
+      const SizedBox(height: 1),
+      Container(height: 1, color: Colors.white.withValues(alpha: 0.08)),
+    ]);
   }
 }
 
-/// ─────────────────────────────────────────────────────────────────────────────
-/// BOTTOM CONTROLS
-/// ─────────────────────────────────────────────────────────────────────────────
-
-/// Bottom panel with Start/Stop buttons depending on journey state.
-///
-/// Stateless — all async claim logic lives in _JourneyScreenState._onStopCapture.
 class _BottomControls extends StatelessWidget {
   final JourneyState journey;
   final bool isSubmitting;
   final VoidCallback onStartJourney;
   final VoidCallback onStopCapture;
+
   const _BottomControls({
     required this.journey,
     required this.isSubmitting,
@@ -995,13 +817,7 @@ class _BottomControls extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.white,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.05),
-              blurRadius: 10,
-              offset: const Offset(0, -2),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, -2))],
         ),
         child: journey.status == JourneyStatus.tracking
             ? _buildTrackingControls()
@@ -1014,21 +830,11 @@ class _BottomControls extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
-          '🚶 Ready to capture territory?',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
+        const Text('🚶 Ready to capture territory?', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        Text(
-          'Walk a loop to claim hexagons!',
-          style: TextStyle(fontSize: 13, color: AppColors.grey),
-        ),
+        Text('Walk a loop to claim hexagons!', style: TextStyle(fontSize: 13, color: AppColors.grey)),
         const SizedBox(height: 16),
-        BigButton(
-          label: 'START JOURNEY',
-          icon: Icons.play_arrow,
-          onPressed: onStartJourney,
-        ),
+        BigButton(label: 'START JOURNEY', icon: Icons.play_arrow, onPressed: onStartJourney),
       ],
     );
   }
@@ -1037,15 +843,9 @@ class _BottomControls extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text(
-          '🔴 Recording your path...',
-          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-        ),
+        const Text('🔴 Recording your path...', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
-        Text(
-          'Walk back to your start to close the loop!',
-          style: TextStyle(fontSize: 13, color: AppColors.grey),
-        ),
+        Text('Walk back to your start to close the loop!', style: TextStyle(fontSize: 13, color: AppColors.grey)),
         const SizedBox(height: 16),
         BigButton(
           label: isSubmitting ? 'SUBMITTING...' : 'STOP & CAPTURE',
@@ -1054,34 +854,6 @@ class _BottomControls extends StatelessWidget {
           onPressed: isSubmitting ? null : onStopCapture,
         ),
       ],
-    );
-  }
-}
-
-
-class _CelebrationStat extends StatelessWidget {
-  final String icon;
-  final String label;
-  final String value;
-  const _CelebrationStat({required this.icon, required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Text(icon, style: const TextStyle(fontSize: 20)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(label, style: const TextStyle(fontSize: 15, color: Colors.grey)),
-          ),
-          Text(
-            value,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
     );
   }
 }

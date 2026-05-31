@@ -51,7 +51,10 @@ public interface ITerritoryService
 /// </summary>
 public class ClaimResult
 {
-    public bool Success { get; set; }
-    public string? Error { get; set; }
-    public ClaimResponse? Data { get; set; }
+    public bool Success { get; private init; }
+    public string? Error { get; private init; }
+    public ClaimResponse? Data { get; private init; }
+
+    public static ClaimResult Failure(string error) => new() { Success = false, Error = error };
+    public static ClaimResult Succeeded(ClaimResponse data) => new() { Success = true, Data = data };
 }

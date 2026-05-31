@@ -7,13 +7,16 @@ public static class GameConstants
 {
     // --- Territory Claim Rules ---
     public const int MinGpsPointsPerClaim = 10;
+    public const int MinPointsForPolygon = 4;
     public const double MinWalkDistanceMeters = 200.0;
     public const double MaxClaimAreaSquareMeters = 5_000_000.0; // 5 km²
     public const int MaxClaimsPerDay = 20;
     public const double LoopClosureDistanceMeters = 50.0;
+    public const int MinLoopPoints = 20;
+    public const int LoopSkipNeighbors = 10;
     public const double MinFillAreaSquareMeters = 5_000.0;
+    public const double DeduplicationOverlapThreshold = 0.80;
     public const double CellCooldownHours = 5.0;
-    public const double MinIntersectionRatio = 0.51;
 
     // --- H3 Hex Grid ---
     /// <summary>
@@ -24,14 +27,12 @@ public static class GameConstants
     public const int H3ParentResolution = 3;
     public const double CellAreaSquareMeters = 2_150.0;
 
-    /// <summary>
-    /// Apothem (center-to-edge midpoint) at res 11, ~25m.
-    /// Used for polygon buffer in fill algorithm: captures cells ≥50% inside the loop.
-    /// </summary>
+    /// <summary>Apothem (center-to-edge) at res 11, ~25m.</summary>
     public const double HexApothemMeters = 25.0;
 
     // --- Viewport / Query Limits ---
     public const int MaxViewportCells = 500;
+    public const int MaxPreviewPathLength = 10_000;
 
     // --- GPS / Geolocation ---
     public const double EarthRadiusMeters = 6_371_000.0;

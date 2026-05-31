@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
 
@@ -47,11 +48,11 @@ public class ClaimsController : ControllerBase
     [HttpPost("preview")]
     public IActionResult PreviewClaim([FromBody] PreviewRequest request)
     {
-        if (request.Path.Length < 4)
+        if (request.Path.Length < GameConstants.MinPointsForPolygon)
             return Ok(new { boundaries = Array.Empty<double[][]>() });
 
         // Cap path length to prevent CPU abuse (same as claim validation spirit)
-        if (request.Path.Length > 10_000)
+        if (request.Path.Length > GameConstants.MaxPreviewPathLength)
             return BadRequest("Path too long for preview");
 
         try

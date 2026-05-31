@@ -7,9 +7,6 @@ using MyLoop.Api.Models;
 
 namespace MyLoop.Api.Services;
 
-/// <summary>
-/// Territory operations — claim processing, territory queries, stolen cells.
-/// </summary>
 public class TerritoryService : ITerritoryService
 {
     private readonly AppDbContext _db;
@@ -25,188 +22,36 @@ public class TerritoryService : ITerritoryService
 
     public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
     {
-        // Validate: need at least 10 GPS readings
-        if (path.Length < GameConstants.MinGpsPointsPerClaim)
-        {
-            return Fail("Path too short — need at least 10 GPS points");
-        }
+        var validationError = await ValidateClaim(userId, path);
+        if (validationError != null)
+            return ClaimResult.Failure(validationError);
 
-        // Validate: path must be at least 200m (anti-abuse)
-        var totalDistance = _geo.CalculatePathDistance(path);
-        if (totalDistance < GameConstants.MinWalkDistanceMeters)
-        {
-            return Fail("Walk at least 200 meters before claiming");
-        }
-
-        // Validate: enforce daily claim cap (anti-abuse)
-        var todayStart = DateTime.UtcNow.Date;
-        var todayClaimCount = await _db.Claims
-            .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart);
-        if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
-        {
-            return Fail($"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day");
-        }
-
-        // Compute captured hexes (trail + fill)
         var cells = _hexGrid.ComputeCapturedCells(path);
         if (cells.Count == 0)
-        {
-            return Fail("No hexes captured — try walking further");
-        }
+            return ClaimResult.Failure("No hexes captured — try walking further");
 
-        // Anti-abuse: cap at 5 km² to prevent GPS spoofing
         var area = _hexGrid.CalculateArea(cells.Count);
         if (area > GameConstants.MaxClaimAreaSquareMeters)
-        {
-            return Fail("Claim too large — max 5km² per claim");
-        }
+            return ClaimResult.Failure("Claim too large — max 5km² per claim");
 
-        // Create the claim record
-        var claim = new Claim
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            CellCount = cells.Count,
-            AreaM2 = area,
-        };
-        claim.SetPolygon(path);
-
-        // Assign hexes to the user and record transfers
-        var transfers = new List<CellTransfer>();
-        var boundaries = new List<double[][]>();
-        var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
-        var skippedCooldown = 0;
-
-        foreach (var hexCell in cells)
-        {
-            var center = _hexGrid.GetCellCenter(hexCell.CellId);
-            var parentId = _hexGrid.GetParentCellId(hexCell.CellId);
-
-            var existing = await _db.TerritoryCells.FindAsync(hexCell.CellId);
-            if (existing != null)
-            {
-                // Skip cells still on cooldown (protected from everyone including owner)
-                if (existing.CooldownExpiresAt.HasValue && existing.CooldownExpiresAt.Value > DateTime.UtcNow)
-                {
-                    skippedCooldown++;
-                    continue;
-                }
-
-                // Steal: overwrite the previous owner
-                var transfer = new CellTransfer
-                {
-                    Id = Guid.NewGuid(),
-                    CellId = hexCell.CellId,
-                    FromUserId = existing.OwnerId == userId ? null : existing.OwnerId,
-                    ToUserId = userId,
-                    ClaimId = claim.Id,
-                    TransferredAt = DateTime.UtcNow,
-                };
-                transfers.Add(transfer);
-
-                existing.OwnerId = userId;
-                existing.ClaimId = claim.Id;
-                existing.ClaimedAt = DateTime.UtcNow;
-                existing.CooldownExpiresAt = cooldownExpiry;
-                existing.CenterLat = center.Lat;
-                existing.CenterLng = center.Lng;
-                existing.ParentCellId = parentId;
-                existing.SetBoundary(hexCell.Boundary);
-            }
-            else
-            {
-                // Fresh hex — nobody owned it yet
-                var cell = new TerritoryCell
-                {
-                    CellId = hexCell.CellId,
-                    OwnerId = userId,
-                    ClaimId = claim.Id,
-                    ClaimedAt = DateTime.UtcNow,
-                    CooldownExpiresAt = cooldownExpiry,
-                    CenterLat = center.Lat,
-                    CenterLng = center.Lng,
-                    ParentCellId = parentId,
-                };
-                cell.SetBoundary(hexCell.Boundary);
-                _db.TerritoryCells.Add(cell);
-
-                var transfer = new CellTransfer
-                {
-                    Id = Guid.NewGuid(),
-                    CellId = hexCell.CellId,
-                    FromUserId = null,
-                    ToUserId = userId,
-                    ClaimId = claim.Id,
-                    TransferredAt = DateTime.UtcNow,
-                };
-                transfers.Add(transfer);
-            }
-
-            boundaries.Add(hexCell.Boundary);
-        }
+        var claim = CreateClaimEntity(userId, cells.Count, area, path);
+        var (boundaries, transfers) = await AssignCells(userId, cells, claim.Id);
 
         _db.CellTransfers.AddRange(transfers);
         _db.Claims.Add(claim);
 
-        // Update the claiming user's hex count (net cells owned after this claim)
-        var user = await _db.Users.FindAsync(userId);
-        if (user != null)
-        {
-            var newCells = transfers.Count(t => t.FromUserId == null);
-            var stolenCells = transfers.Count(t => t.FromUserId != null);
-            user.HexCount += newCells + stolenCells;
-
-            // Update total distance walked
-            user.DistanceKm += totalDistance / 1000.0;
-
-            // Update streak: consecutive days with at least one claim
-            var today = DateOnly.FromDateTime(DateTime.UtcNow);
-            if (user.LastClaimDate == null || user.LastClaimDate < today.AddDays(-1))
-            {
-                // First claim ever, or streak broken (gap > 1 day)
-                user.Streak = 1;
-            }
-            else if (user.LastClaimDate == today.AddDays(-1))
-            {
-                // Consecutive day — extend streak
-                user.Streak += 1;
-            }
-            // else: same day, streak unchanged
-
-            user.LastClaimDate = today;
-            if (user.Streak > user.MaxStreak)
-            {
-                user.MaxStreak = user.Streak;
-            }
-
-            // Decrement hex counts for users who lost cells
-            var stolenByUser = transfers
-                .Where(t => t.FromUserId != null && t.FromUserId != userId)
-                .GroupBy(t => t.FromUserId!.Value);
-            foreach (var group in stolenByUser)
-            {
-                var victim = await _db.Users.FindAsync(group.Key);
-                if (victim != null)
-                {
-                    victim.HexCount = Math.Max(0, victim.HexCount - group.Count());
-                }
-            }
-        }
-
+        var totalDistance = _geo.CalculatePathDistance(path);
+        await UpdateUserStats(userId, transfers, totalDistance);
         await _db.SaveChangesAsync();
 
-        var stolenCount = transfers.Count(t => t.FromUserId != null);
-
-        var response = new ClaimResponse
+        return ClaimResult.Succeeded(new ClaimResponse
         {
             Id = claim.Id,
             CellCount = claim.CellCount,
             AreaM2 = claim.AreaM2,
-            StolenFromOthers = stolenCount,
+            StolenFromOthers = transfers.Count(t => t.FromUserId != null),
             Boundaries = boundaries,
-        };
-
-        return new ClaimResult { Success = true, Data = response };
+        });
     }
 
     public async Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
@@ -219,29 +64,22 @@ public class TerritoryService : ITerritoryService
             .Take(GameConstants.MaxViewportCells)
             .Select(t => new
             {
-                t.CellId,
-                t.BoundaryJson,
-                t.OwnerId,
+                t.CellId, t.BoundaryJson, t.OwnerId,
                 OwnerColor = t.Owner!.Color,
                 OwnerName = t.Owner!.DisplayName,
                 t.CooldownExpiresAt
             })
             .ToListAsync();
 
-        var result = new List<TerritoryCellResponse>();
-        foreach (var t in filtered)
+        return filtered.Select(t => new TerritoryCellResponse
         {
-            result.Add(new TerritoryCellResponse
-            {
-                CellId = t.CellId,
-                Boundary = JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
-                OwnerId = t.OwnerId,
-                OwnerColor = t.OwnerColor,
-                OwnerName = t.OwnerName,
-                CooldownExpiresAtUtc = t.CooldownExpiresAt,
-            });
-        }
-        return result;
+            CellId = t.CellId,
+            Boundary = JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
+            OwnerId = t.OwnerId,
+            OwnerColor = t.OwnerColor,
+            OwnerName = t.OwnerName,
+            CooldownExpiresAtUtc = t.CooldownExpiresAt,
+        }).ToList();
     }
 
     public async Task<TerritoryStatsResponse> GetUserStats(Guid userId)
@@ -315,11 +153,6 @@ public class TerritoryService : ITerritoryService
         };
     }
 
-    private static ClaimResult Fail(string error)
-    {
-        return new ClaimResult { Success = false, Error = error };
-    }
-
     public async Task<List<TerritoryCellResponse>> GetUserTerritories(Guid userId)
     {
         var cells = await _db.TerritoryCells
@@ -327,9 +160,7 @@ public class TerritoryService : ITerritoryService
             .Where(t => t.OwnerId == userId)
             .Select(t => new
             {
-                t.CellId,
-                t.BoundaryJson,
-                t.OwnerId,
+                t.CellId, t.BoundaryJson, t.OwnerId,
                 OwnerColor = t.Owner!.Color,
                 OwnerName = t.Owner!.DisplayName
             })
@@ -338,7 +169,7 @@ public class TerritoryService : ITerritoryService
         return cells.Select(t => new TerritoryCellResponse
         {
             CellId = t.CellId,
-            Boundary = System.Text.Json.JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
+            Boundary = JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
             OwnerId = t.OwnerId,
             OwnerColor = t.OwnerColor,
             OwnerName = t.OwnerName,
@@ -358,5 +189,165 @@ public class TerritoryService : ITerritoryService
                 Date = c.CreatedAt,
             })
             .ToListAsync();
+    }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Private helpers — ProcessClaim decomposition
+    // ──────────────────────────────────────────────────────────────────────────
+
+    private async Task<string?> ValidateClaim(Guid userId, double[][] path)
+    {
+        if (path.Length < GameConstants.MinGpsPointsPerClaim)
+            return "Path too short — need at least 10 GPS points";
+
+        var totalDistance = _geo.CalculatePathDistance(path);
+        if (totalDistance < GameConstants.MinWalkDistanceMeters)
+            return "Walk at least 200 meters before claiming";
+
+        var todayStart = DateTime.UtcNow.Date;
+        var todayClaimCount = await _db.Claims
+            .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart);
+
+        if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
+            return $"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day";
+
+        return null;
+    }
+
+    private static Claim CreateClaimEntity(Guid userId, int cellCount, double area, double[][] path)
+    {
+        var claim = new Claim
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            CellCount = cellCount,
+            AreaM2 = area,
+        };
+        claim.SetPolygon(path);
+        return claim;
+    }
+
+    private async Task<(List<double[][]> Boundaries, List<CellTransfer> Transfers)> AssignCells(
+        Guid userId, List<HexCell> cells, Guid claimId)
+    {
+        var transfers = new List<CellTransfer>();
+        var boundaries = new List<double[][]>();
+        var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
+
+        foreach (var hexCell in cells)
+        {
+            var existing = await _db.TerritoryCells.FindAsync(hexCell.CellId);
+
+            if (existing != null)
+            {
+                if (IsOnCooldown(existing)) continue;
+                transfers.Add(CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId));
+                UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
+            }
+            else
+            {
+                var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry);
+                _db.TerritoryCells.Add(newCell);
+                transfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
+            }
+
+            boundaries.Add(hexCell.Boundary);
+        }
+
+        return (boundaries, transfers);
+    }
+
+    private static bool IsOnCooldown(TerritoryCell cell)
+    {
+        return cell.CooldownExpiresAt.HasValue && cell.CooldownExpiresAt.Value > DateTime.UtcNow;
+    }
+
+    private static CellTransfer CreateTransfer(long cellId, Guid? fromUserId, Guid toUserId, Guid claimId)
+    {
+        return new CellTransfer
+        {
+            Id = Guid.NewGuid(),
+            CellId = cellId,
+            FromUserId = fromUserId == toUserId ? null : fromUserId,
+            ToUserId = toUserId,
+            ClaimId = claimId,
+            TransferredAt = DateTime.UtcNow,
+        };
+    }
+
+    private void UpdateExistingCell(TerritoryCell cell, Guid userId, Guid claimId,
+        HexCell hexCell, DateTime cooldownExpiry)
+    {
+        var center = _hexGrid.GetCellCenter(hexCell.CellId);
+        cell.OwnerId = userId;
+        cell.ClaimId = claimId;
+        cell.ClaimedAt = DateTime.UtcNow;
+        cell.CooldownExpiresAt = cooldownExpiry;
+        cell.CenterLat = center.Lat;
+        cell.CenterLng = center.Lng;
+        cell.ParentCellId = _hexGrid.GetParentCellId(hexCell.CellId);
+        cell.SetBoundary(hexCell.Boundary);
+    }
+
+    private TerritoryCell CreateNewCell(Guid userId, Guid claimId, HexCell hexCell, DateTime cooldownExpiry)
+    {
+        var center = _hexGrid.GetCellCenter(hexCell.CellId);
+        var cell = new TerritoryCell
+        {
+            CellId = hexCell.CellId,
+            OwnerId = userId,
+            ClaimId = claimId,
+            ClaimedAt = DateTime.UtcNow,
+            CooldownExpiresAt = cooldownExpiry,
+            CenterLat = center.Lat,
+            CenterLng = center.Lng,
+            ParentCellId = _hexGrid.GetParentCellId(hexCell.CellId),
+        };
+        cell.SetBoundary(hexCell.Boundary);
+        return cell;
+    }
+
+    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers, double totalDistance)
+    {
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null) return;
+
+        var newCells = transfers.Count(t => t.FromUserId == null);
+        var stolenCells = transfers.Count(t => t.FromUserId != null);
+        user.HexCount += newCells + stolenCells;
+        user.DistanceKm += totalDistance / 1000.0;
+
+        UpdateStreak(user);
+        await DecrementVictimHexCounts(userId, transfers);
+    }
+
+    private static void UpdateStreak(User user)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        if (user.LastClaimDate == null || user.LastClaimDate < today.AddDays(-1))
+            user.Streak = 1;
+        else if (user.LastClaimDate == today.AddDays(-1))
+            user.Streak += 1;
+
+        user.LastClaimDate = today;
+        if (user.Streak > user.MaxStreak)
+            user.MaxStreak = user.Streak;
+    }
+
+    private async Task DecrementVictimHexCounts(Guid userId, List<CellTransfer> transfers)
+    {
+        var stolenByUser = transfers
+            .Where(t => t.FromUserId != null && t.FromUserId != userId)
+            .GroupBy(t => t.FromUserId!.Value);
+
+        foreach (var group in stolenByUser)
+        {
+            var victim = await _db.Users.FindAsync(group.Key);
+            if (victim != null)
+            {
+                victim.HexCount = Math.Max(0, victim.HexCount - group.Count());
+            }
+        }
     }
 }
