@@ -20,6 +20,7 @@ builder.Services.AddScoped<ITerritoryService, TerritoryService>();
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<ITerritoryNotifier, TerritoryNotifier>();
+builder.Services.AddScoped<IPathValidationService, PathValidationService>();
 
 // --- SignalR ---
 builder.Services.AddSignalR();

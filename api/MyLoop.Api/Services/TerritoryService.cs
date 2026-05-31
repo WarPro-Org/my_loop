@@ -13,13 +13,16 @@ public class TerritoryService : ITerritoryService
     private readonly IHexGridService _hexGrid;
     private readonly IGeoService _geo;
     private readonly ITerritoryNotifier _notifier;
+    private readonly IPathValidationService _pathValidator;
 
-    public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo, ITerritoryNotifier notifier)
+    public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo,
+        ITerritoryNotifier notifier, IPathValidationService pathValidator)
     {
         _db = db;
         _hexGrid = hexGrid;
         _geo = geo;
         _notifier = notifier;
+        _pathValidator = pathValidator;
     }
 
     public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
@@ -27,6 +30,10 @@ public class TerritoryService : ITerritoryService
         var validationError = await ValidateClaim(userId, path);
         if (validationError != null)
             return ClaimResult.Failure(validationError);
+
+        var pathError = _pathValidator.Validate(path);
+        if (pathError != null)
+            return ClaimResult.Failure(pathError);
 
         var cells = _hexGrid.ComputeCapturedCells(path);
         if (cells.Count == 0)
