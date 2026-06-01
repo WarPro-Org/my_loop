@@ -127,6 +127,29 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
 
+    // Apply new columns/tables added in the decay + exploration feature.
+    // EnsureCreated won't add these to an existing DB — run idempotent ALTER/CREATE.
+    try
+    {
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"LastRefreshedAt\" timestamp with time zone NOT NULL DEFAULT NOW()");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""ExploredCells"" (
+                ""UserId"" uuid NOT NULL,
+                ""CellId"" bigint NOT NULL,
+                ""NeighborhoodId"" bigint NOT NULL,
+                ""FirstVisitedAt"" timestamp with time zone NOT NULL,
+                CONSTRAINT ""PK_ExploredCells"" PRIMARY KEY (""UserId"", ""CellId"")
+            )");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_ExploredCells_UserId_NeighborhoodId""
+            ON ""ExploredCells"" (""UserId"", ""NeighborhoodId"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_ExploredCells_NeighborhoodId""
+            ON ""ExploredCells"" (""NeighborhoodId"")");
+    }
+    catch { /* Column/table already exists */ }
+
     // Seed data if the Users table is empty
     if (!db.Users.Any())
     {

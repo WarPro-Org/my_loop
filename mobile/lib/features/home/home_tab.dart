@@ -13,6 +13,7 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/home/home_screen.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/animated_hexagon.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
@@ -822,11 +823,13 @@ class _ExplorationCardState extends ConsumerState<_ExplorationCard> {
     }
     try {
       final api = ref.read(apiServiceProvider);
-      // Use user's last known location or default
+      // Get user's current GPS location
+      final locationService = ref.read(locationServiceProvider);
+      final pos = await locationService.getCurrentPosition();
       final stats = await api.getExplorationStats(
         userId: userId,
-        lat: 12.9716, // TODO: use actual user location
-        lng: 77.5946,
+        lat: pos.latitude,
+        lng: pos.longitude,
       );
       if (mounted) setState(() { _neighborhoods = stats; _loading = false; });
     } catch (_) {
@@ -839,45 +842,92 @@ class _ExplorationCardState extends ConsumerState<_ExplorationCard> {
     if (_loading) return const SizedBox.shrink();
     if (_neighborhoods == null || _neighborhoods!.isEmpty) return const SizedBox.shrink();
 
-    // Show the neighborhood with most exploration (most relevant)
-    final best = _neighborhoods!.reduce((a, b) => a.percent > b.percent ? a : b);
+    // Sort by highest explored % first
+    final sorted = [..._neighborhoods!]..sort((a, b) => b.percent.compareTo(a.percent));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text('🗺️', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 8),
+            const Text(
+              'Area Exploration',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const Spacer(),
+            Text(
+              '${sorted.length} area${sorted.length > 1 ? 's' : ''}',
+              style: TextStyle(fontSize: 12, color: AppColors.grey),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 100,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: sorted.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) => _NeighborhoodTile(neighborhood: sorted[i]),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _NeighborhoodTile extends StatelessWidget {
+  final ExplorationNeighborhood neighborhood;
+  const _NeighborhoodTile({required this.neighborhood});
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = neighborhood.percent;
+    final color = pct >= 75
+        ? const Color(0xFF00D4AA)
+        : pct >= 40
+            ? AppColors.primary
+            : const Color(0xFFF59E0B);
 
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      width: 140,
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.06),
+        color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('🗺️', style: TextStyle(fontSize: 28)),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Neighborhood Explorer',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+          Row(
+            children: [
+              Icon(Icons.hexagon_outlined, size: 16, color: color),
+              const SizedBox(width: 4),
+              Text(
+                '${pct.toStringAsFixed(0)}%',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: color,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${best.exploredCount}/${best.totalCount} cells explored (${best.percent}%)',
-                  style: TextStyle(fontSize: 13, color: AppColors.dark.withValues(alpha: 0.7)),
-                ),
-                const SizedBox(height: 8),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: LinearProgressIndicator(
-                    value: best.percent / 100.0,
-                    minHeight: 6,
-                    backgroundColor: AppColors.greyLight,
-                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                  ),
-                ),
-              ],
+              ),
+            ],
+          ),
+          Text(
+            '${neighborhood.exploredCount}/${neighborhood.totalCount} cells',
+            style: TextStyle(fontSize: 11, color: AppColors.dark.withValues(alpha: 0.6)),
+          ),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: pct / 100.0,
+              minHeight: 5,
+              backgroundColor: color.withValues(alpha: 0.15),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
             ),
           ),
         ],

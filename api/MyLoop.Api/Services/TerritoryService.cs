@@ -356,10 +356,12 @@ public class TerritoryService : ITerritoryService
                 OwnerColor = t.Owner!.Color,
                 OwnerName = t.Owner!.DisplayName,
                 t.CooldownExpiresAt,
-                t.ParentCellId
+                t.ParentCellId,
+                t.LastRefreshedAt
             })
             .ToListAsync();
 
+        var decaySeconds = GameConstants.DecayDays * 86400.0;
         return cells.Select(t => new TerritoryCellResponse
         {
             CellId = t.CellId,
@@ -369,6 +371,8 @@ public class TerritoryService : ITerritoryService
             OwnerName = t.OwnerName,
             CooldownExpiresAtUtc = t.CooldownExpiresAt,
             ParentCellId = t.ParentCellId,
+            DecayProgress = Math.Clamp(
+                (DateTime.UtcNow - t.LastRefreshedAt).TotalSeconds / decaySeconds, 0.0, 1.0),
         }).ToList();
     }
 

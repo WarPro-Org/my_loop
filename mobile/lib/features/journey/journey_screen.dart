@@ -37,6 +37,7 @@ class JourneyScreen extends ConsumerStatefulWidget {
 class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   final _mapKey = GlobalKey<_JourneyMapState>();
   bool _isSubmitting = false;
+  bool _controlsVisible = true;
 
   Future<void> _onStopCapture() async {
     if (_isSubmitting) return;
@@ -157,16 +158,11 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
       );
   }
 
-  void _onJustStop() {
-    final controller = ref.read(journeyControllerProvider.notifier);
-    controller.stopJourney();
-    _showSnackbar('Walk ended — no territory captured.', AppColors.grey);
-  }
-
   @override
   Widget build(BuildContext context) {
     final journey = ref.watch(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
+    final topPadding = MediaQuery.of(context).padding.top;
 
     ref.listen(journeyControllerProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
@@ -177,24 +173,41 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          _JourneyMap(key: _mapKey, journey: journey),
-          _CloseButton(padding: MediaQuery.of(context).padding.top),
-          if (journey.status == JourneyStatus.tracking)
+          _JourneyMap(
+            key: _mapKey,
+            journey: journey,
+            onMapTapEmpty: () {
+              if (journey.status == JourneyStatus.tracking) {
+                setState(() => _controlsVisible = !_controlsVisible);
+              }
+            },
+          ),
+          _CloseButton(padding: topPadding),
+          // LIVE indicator — always visible on map (right of close button)
+          Positioned(
+            top: topPadding + 18,
+            left: 68,
+            child: _LiveIndicator(
+              claimedCount: journey.status == JourneyStatus.tracking ? journey.claimedCount : 0,
+              showCount: journey.status == JourneyStatus.tracking,
+            ),
+          ),
+          if (journey.status == JourneyStatus.tracking && _controlsVisible)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 64,
+              top: topPadding + 64,
               left: 0,
               child: _StatsBar(journey: journey, loopCount: journey.loopCount),
             ),
-          Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: _BottomControls(
-              journey: journey,
-              isSubmitting: _isSubmitting,
-              onStartJourney: controller.startJourney,
-              onStopCapture: _onStopCapture,
-              onJustStop: _onJustStop,
+          if (_controlsVisible)
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: _BottomControls(
+                journey: journey,
+                isSubmitting: _isSubmitting,
+                onStartJourney: controller.startJourney,
+                onStopCapture: _onStopCapture,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -236,7 +249,8 @@ class _CloseButton extends StatelessWidget {
 
 class _JourneyMap extends ConsumerStatefulWidget {
   final JourneyState journey;
-  const _JourneyMap({super.key, required this.journey});
+  final VoidCallback? onMapTapEmpty;
+  const _JourneyMap({super.key, required this.journey, this.onMapTapEmpty});
 
   @override
   ConsumerState<_JourneyMap> createState() => _JourneyMapState();
@@ -411,7 +425,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
 
   void _onMapTap(LatLng latLng) {
     final tappedCell = _findTappedCell(latLng.latitude, latLng.longitude);
-    if (tappedCell != null) _showHexOwnerSheet(tappedCell);
+    if (tappedCell != null) {
+      _showHexOwnerSheet(tappedCell);
+    } else {
+      widget.onMapTapEmpty?.call();
+    }
   }
 
   TerritoryCell? _findTappedCell(double lat, double lng) {
@@ -478,13 +496,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         _buildMap(center, journey, profile, userColor),
         if (!_followUser) _buildRecenterButton(),
         _buildTopRightControls(context, profile, userColor),
-        // LIVE indicator — shows during active journey
-        if (journey.status == JourneyStatus.tracking)
-          Positioned(
-            top: 12,
-            left: 16,
-            child: _LiveIndicator(claimedCount: journey.claimedCount),
-          ),
       ],
     );
   }
@@ -967,7 +978,8 @@ class _StatsBar extends StatelessWidget {
 
 class _LiveIndicator extends StatefulWidget {
   final int claimedCount;
-  const _LiveIndicator({required this.claimedCount});
+  final bool showCount;
+  const _LiveIndicator({required this.claimedCount, this.showCount = true});
 
   @override
   State<_LiveIndicator> createState() => _LiveIndicatorState();
@@ -1031,7 +1043,7 @@ class _LiveIndicatorState extends State<_LiveIndicator>
               letterSpacing: 1.2,
             ),
           ),
-          if (widget.claimedCount > 0) ...[
+          if (widget.showCount && widget.claimedCount > 0) ...[
             const SizedBox(width: 8),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
@@ -1060,14 +1072,12 @@ class _BottomControls extends StatefulWidget {
   final bool isSubmitting;
   final VoidCallback onStartJourney;
   final VoidCallback onStopCapture;
-  final VoidCallback onJustStop;
 
   const _BottomControls({
     required this.journey,
     required this.isSubmitting,
     required this.onStartJourney,
     required this.onStopCapture,
-    required this.onJustStop,
   });
 
   @override
@@ -1137,19 +1147,6 @@ class _BottomControlsState extends State<_BottomControls> {
           icon: widget.isSubmitting ? Icons.hourglass_empty : Icons.stop,
           color: hasLoop ? AppColors.primary : Colors.orange,
           onPressed: widget.isSubmitting ? null : widget.onStopCapture,
-        ),
-        const SizedBox(height: 10),
-        GestureDetector(
-          onTap: widget.isSubmitting ? null : widget.onJustStop,
-          child: Text(
-            'End walk without capturing',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.grey,
-              decoration: TextDecoration.underline,
-              decorationColor: AppColors.grey,
-            ),
-          ),
         ),
       ],
     );
