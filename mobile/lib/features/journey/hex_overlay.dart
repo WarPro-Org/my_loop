@@ -30,6 +30,9 @@ class AnimatedHexOverlay extends StatefulWidget {
   final double currentZoom;
   final bool isNewCapture;
   final bool solidMode;
+  /// Optional per-hex decay progress (0.0 = fresh, 1.0 = about to expire).
+  /// When provided, older hexes render with reduced opacity.
+  final List<double>? decayValues;
 
   const AnimatedHexOverlay({
     super.key,
@@ -38,6 +41,7 @@ class AnimatedHexOverlay extends StatefulWidget {
     required this.currentZoom,
     this.isNewCapture = false,
     this.solidMode = false,
+    this.decayValues,
   });
 
   @override
@@ -177,6 +181,10 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
 
     for (int i = 0; i < hexCount; i++) {
       final center = _computeCenter(widget.hexBoundaries[i]);
+      // Decay: reduce visibility of aging hexes (70% max fade)
+      final decayFade = widget.decayValues != null && i < widget.decayValues!.length
+          ? 1.0 - (widget.decayValues![i] * 0.7)
+          : 1.0;
       // Wave ripple: each hex has a phase offset
       final phase = (wave + (i / hexCount)) % 1.0;
       final wavePulse = (math.sin(phase * 2 * math.pi) + 1) / 2;
@@ -186,11 +194,14 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
         point: center,
         width: dotSize + 16 * zoomScale,
         height: dotSize + 16 * zoomScale,
-        child: _HexDot(
-          color: widget.userColor,
-          size: dotSize,
-          pulse: wavePulse,
-          isNewCapture: widget.isNewCapture,
+        child: Opacity(
+          opacity: decayFade,
+          child: _HexDot(
+            color: widget.userColor,
+            size: dotSize,
+            pulse: wavePulse,
+            isNewCapture: widget.isNewCapture,
+          ),
         ),
       ));
     }
@@ -212,17 +223,22 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
       final boundary = widget.hexBoundaries[i];
       final points = boundary.map((p) => LatLng(p[0], p[1])).toList();
 
+      // Decay: reduce visibility of aging hexes (70% max fade)
+      final decayFade = widget.decayValues != null && i < widget.decayValues!.length
+          ? 1.0 - (widget.decayValues![i] * 0.7)
+          : 1.0;
+
       // Per-hex wave phase — creates a sweeping light effect
       final phase = (wave + (i / math.max(hexCount, 1))) % 1.0;
       final hexWave = (math.sin(phase * 2 * math.pi) + 1) / 2;
 
-      final fillAlpha = isNew
+      final fillAlpha = (isNew
           ? 0.55 + (hexWave * 0.15)
-          : 0.40 + (hexWave * 0.15);
+          : 0.40 + (hexWave * 0.15)) * decayFade;
 
-      final borderAlpha = isNew
+      final borderAlpha = (isNew
           ? 0.85 + (pulse * 0.15)
-          : 0.70 + (pulse * 0.20);
+          : 0.70 + (pulse * 0.20)) * decayFade;
 
       final borderWidth = isNew
           ? 3.0 + (pulse * 1.5)
@@ -245,7 +261,7 @@ class _AnimatedHexOverlayState extends State<AnimatedHexOverlay>
       final shimmerAlpha = hexWave > 0.7 ? (hexWave - 0.7) / 0.3 * 0.18 : 0.0;
       innerPolygons.add(Polygon(
         points: points,
-        color: Colors.white.withValues(alpha: shimmerAlpha * entrance),
+        color: Colors.white.withValues(alpha: shimmerAlpha * entrance * decayFade),
         borderColor: Colors.transparent,
         borderStrokeWidth: 0,
       ));

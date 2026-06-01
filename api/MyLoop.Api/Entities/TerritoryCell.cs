@@ -39,6 +39,13 @@ public class TerritoryCell
     public long ParentCellId { get; set; }
 
     /// <summary>
+    /// Last time the owner physically visited (walked through) this cell.
+    /// Used for decay: cells not refreshed within 7 days lose ownership.
+    /// Set on initial claim and updated when owner walks through again.
+    /// </summary>
+    public DateTime LastRefreshedAt { get; set; }
+
+    /// <summary>
     /// The 6 (or 5) corner vertices of this hexagon, serialized as a JSON array of [lat, lng] pairs.
     /// Used by the mobile client to render the hex polygon on the map.
     /// </summary>

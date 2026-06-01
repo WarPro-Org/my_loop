@@ -37,6 +37,7 @@ class JourneyScreen extends ConsumerStatefulWidget {
 class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   final _mapKey = GlobalKey<_JourneyMapState>();
   bool _isSubmitting = false;
+  bool _controlsVisible = true;
 
   Future<void> _onStopCapture() async {
     if (_isSubmitting) return;
@@ -44,17 +45,13 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final journey = ref.read(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
 
-    // Let user tap anytime, but warn if no loop detected
-    if (journey.loopCount == 0) {
-      _showSnackbar('No loop completed yet — keep walking to close a loop!', Colors.orange);
-      return;
-    }
-
     final walkDistance = journey.distanceMeters;
     final walkDuration = journey.elapsed;
+    final claimedCount = journey.claimedCount;
     final path = controller.stopJourney();
 
-    if (path.length < 2) {
+    // If user hasn't walked at all
+    if (path.length < 2 && claimedCount == 0) {
       _showSnackbar('Walk a bit more to capture territory!', Colors.orange);
       return;
     }
@@ -62,36 +59,41 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      await _submitAndCelebrate(path, walkDistance, walkDuration);
+      // Walk-through claims already captured hexes during the walk.
+      // Try loop-based bonus claim if a loop was completed.
+      int bonusCount = 0;
+      int stolenCount = 0;
+      if (journey.loopCount > 0 && path.length >= 2) {
+        final api = ref.read(apiServiceProvider);
+        final profile = ref.read(userProfileProvider);
+        if (profile.userId != null) {
+          final result = await api.submitClaim(userId: profile.userId!, path: path);
+          bonusCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+          stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
+          _renderCapturedHexes(result);
+          _optimisticHexUpdate(bonusCount);
+        }
+      }
+
+      _mapKey.currentState?.forceReloadHexes();
+
+      final api = ref.read(apiServiceProvider);
+      final profile = ref.read(userProfileProvider);
+      if (profile.userId != null) {
+        await _refreshUserData(profile, api);
+        if (mounted) {
+          await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
+          if (mounted) {
+            final user = await api.getUser(profile.userId!);
+            final totalCaptured = claimedCount + bonusCount;
+            _showCelebration(totalCaptured, stolenCount, walkDistance, walkDuration, user.streak, journey.xpGainedThisWalk);
+          }
+        }
+      }
     } catch (e) {
       _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  Future<void> _submitAndCelebrate(
-      List<List<double>> path, double distance, Duration duration) async {
-    final api = ref.read(apiServiceProvider);
-    final profile = ref.read(userProfileProvider);
-    if (profile.userId == null) return;
-
-    final result = await api.submitClaim(userId: profile.userId!, path: path);
-    final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
-    final stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
-
-    _renderCapturedHexes(result);
-    _optimisticHexUpdate(capturedCount);
-    _mapKey.currentState?.forceReloadHexes();
-
-    await _refreshUserData(profile, api);
-
-    if (mounted) {
-      await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
-      if (mounted) {
-        final user = await api.getUser(profile.userId!);
-        _showCelebration(capturedCount, stolenCount, distance, duration, user.streak);
-      }
     }
   }
 
@@ -134,7 +136,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     }
   }
 
-  void _showCelebration(int hexCount, int stolenCount, double distance, Duration duration, int streak) {
+  void _showCelebration(int hexCount, int stolenCount, double distance, Duration duration, int streak, int xpGained) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -144,6 +146,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         distanceMeters: distance,
         duration: duration,
         streak: streak,
+        xpGained: xpGained,
       ),
     );
   }
@@ -157,44 +160,64 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
       );
   }
 
-  void _onJustStop() {
-    final controller = ref.read(journeyControllerProvider.notifier);
-    controller.stopJourney();
-    _showSnackbar('Walk ended — no territory captured.', AppColors.grey);
-  }
-
   @override
   Widget build(BuildContext context) {
     final journey = ref.watch(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
+    final topPadding = MediaQuery.of(context).padding.top;
 
     ref.listen(journeyControllerProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
         _showSnackbar(next.error!, AppColors.red);
+      }
+      // Level-up celebration
+      if (next.levelUpTo != null && next.levelUpTo != prev?.levelUpTo) {
+        _showSnackbar('🎉 Level Up! You reached Level ${next.levelUpTo}!', const Color(0xFFFFD700));
+      }
+      // Achievement unlock
+      if (next.achievementUnlocked != null && next.achievementUnlocked != prev?.achievementUnlocked) {
+        _showSnackbar('🏆 Achievement: ${next.achievementUnlocked}', const Color(0xFF8B5CF6));
       }
     });
 
     return Scaffold(
       body: Stack(
         children: [
-          _JourneyMap(key: _mapKey, journey: journey),
-          _CloseButton(padding: MediaQuery.of(context).padding.top),
-          if (journey.status == JourneyStatus.tracking)
+          _JourneyMap(
+            key: _mapKey,
+            journey: journey,
+            onMapTapEmpty: () {
+              if (journey.status == JourneyStatus.tracking) {
+                setState(() => _controlsVisible = !_controlsVisible);
+              }
+            },
+          ),
+          _CloseButton(padding: topPadding),
+          // LIVE indicator — always visible on map (right of close button)
+          Positioned(
+            top: topPadding + 18,
+            left: 68,
+            child: _LiveIndicator(
+              claimedCount: journey.status == JourneyStatus.tracking ? journey.claimedCount : 0,
+              showCount: journey.status == JourneyStatus.tracking,
+            ),
+          ),
+          if (journey.status == JourneyStatus.tracking && _controlsVisible)
             Positioned(
-              top: MediaQuery.of(context).padding.top + 64,
+              top: topPadding + 64,
               left: 0,
               child: _StatsBar(journey: journey, loopCount: journey.loopCount),
             ),
-          Positioned(
-            bottom: 0, left: 0, right: 0,
-            child: _BottomControls(
-              journey: journey,
-              isSubmitting: _isSubmitting,
-              onStartJourney: controller.startJourney,
-              onStopCapture: _onStopCapture,
-              onJustStop: _onJustStop,
+          if (_controlsVisible)
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: _BottomControls(
+                journey: journey,
+                isSubmitting: _isSubmitting,
+                onStartJourney: controller.startJourney,
+                onStopCapture: _onStopCapture,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -236,7 +259,8 @@ class _CloseButton extends StatelessWidget {
 
 class _JourneyMap extends ConsumerStatefulWidget {
   final JourneyState journey;
-  const _JourneyMap({super.key, required this.journey});
+  final VoidCallback? onMapTapEmpty;
+  const _JourneyMap({super.key, required this.journey, this.onMapTapEmpty});
 
   @override
   ConsumerState<_JourneyMap> createState() => _JourneyMapState();
@@ -411,7 +435,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
 
   void _onMapTap(LatLng latLng) {
     final tappedCell = _findTappedCell(latLng.latitude, latLng.longitude);
-    if (tappedCell != null) _showHexOwnerSheet(tappedCell);
+    if (tappedCell != null) {
+      _showHexOwnerSheet(tappedCell);
+    } else {
+      widget.onMapTapEmpty?.call();
+    }
   }
 
   TerritoryCell? _findTappedCell(double lat, double lng) {
@@ -549,6 +577,16 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
             hexBoundaries: _hexManager.userOwnHexBoundaries,
             userColor: userColor,
             currentZoom: _currentZoom,
+            solidMode: _solidHexes,
+            decayValues: _hexManager.userOwnDecayValues,
+          ),
+        // Walk-through claimed hexes — appear instantly as user walks
+        if (journey.claimedHexBoundaries.isNotEmpty)
+          AnimatedHexOverlay(
+            hexBoundaries: journey.claimedHexBoundaries,
+            userColor: userColor,
+            currentZoom: _currentZoom,
+            isNewCapture: true,
             solidMode: _solidHexes,
           ),
         if (journey.previewBoundaries.isNotEmpty)
@@ -921,6 +959,11 @@ class _StatsBar extends StatelessWidget {
           _spacerRow(),
           _statRow(Icons.loop_rounded, const Color(0xFFF59E0B),
             loopCount > 0 ? '$loopCount loop${loopCount > 1 ? 's' : ''}' : 'No loop'),
+          if (journey.xpGainedThisWalk > 0) ...[
+            _spacerRow(),
+            _statRow(Icons.star_rounded, const Color(0xFFFFD700),
+              '+${journey.xpGainedThisWalk} XP'),
+          ],
         ],
       ),
     );
@@ -944,19 +987,112 @@ class _StatsBar extends StatelessWidget {
   }
 }
 
+// ──────────────────────────────────────────────────────────────────────────────
+// LIVE indicator — pulsing dot + text + claimed count
+// ──────────────────────────────────────────────────────────────────────────────
+
+class _LiveIndicator extends StatefulWidget {
+  final int claimedCount;
+  final bool showCount;
+  const _LiveIndicator({required this.claimedCount, this.showCount = true});
+
+  @override
+  State<_LiveIndicator> createState() => _LiveIndicatorState();
+}
+
+class _LiveIndicatorState extends State<_LiveIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedBuilder(
+            animation: _pulse,
+            builder: (context, _) => Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.redAccent.withValues(alpha: 0.5 + _pulse.value * 0.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.redAccent.withValues(alpha: _pulse.value * 0.6),
+                    blurRadius: 4 + _pulse.value * 4,
+                    spreadRadius: _pulse.value * 2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'LIVE',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.2,
+            ),
+          ),
+          if (widget.showCount && widget.claimedCount > 0) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '+${widget.claimedCount}',
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _BottomControls extends StatefulWidget {
   final JourneyState journey;
   final bool isSubmitting;
   final VoidCallback onStartJourney;
   final VoidCallback onStopCapture;
-  final VoidCallback onJustStop;
 
   const _BottomControls({
     required this.journey,
     required this.isSubmitting,
     required this.onStartJourney,
     required this.onStopCapture,
-    required this.onJustStop,
   });
 
   @override
@@ -1026,19 +1162,6 @@ class _BottomControlsState extends State<_BottomControls> {
           icon: widget.isSubmitting ? Icons.hourglass_empty : Icons.stop,
           color: hasLoop ? AppColors.primary : Colors.orange,
           onPressed: widget.isSubmitting ? null : widget.onStopCapture,
-        ),
-        const SizedBox(height: 10),
-        GestureDetector(
-          onTap: widget.isSubmitting ? null : widget.onJustStop,
-          child: Text(
-            'End walk without capturing',
-            style: TextStyle(
-              fontSize: 13,
-              color: AppColors.grey,
-              decoration: TextDecoration.underline,
-              decorationColor: AppColors.grey,
-            ),
-          ),
         ),
       ],
     );

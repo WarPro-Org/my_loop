@@ -8,8 +8,12 @@ library;
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
+import 'package:myloop/shared/models/trail_claim_response.dart';
+import 'package:myloop/shared/models/daily_mission.dart';
+import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/models/user.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
@@ -94,6 +98,21 @@ class ApiService {
     return list.map((j) => TerritoryCell.fromJson(j)).toList();
   }
 
+  /// Gets exploration stats for neighborhoods near a GPS point.
+  /// Returns explored % for each nearby neighborhood (H3 res 8).
+  Future<List<ExplorationNeighborhood>> getExplorationStats({
+    required String userId,
+    required double lat,
+    required double lng,
+  }) async {
+    final response = await _dio.get(
+      '/api/territories/exploration/$userId',
+      queryParameters: {'lat': lat, 'lng': lng},
+    );
+    final list = response.data as List;
+    return list.map((j) => ExplorationNeighborhood.fromJson(j as Map<String, dynamic>)).toList();
+  }
+
   /// Returns a user's full claim history (one entry per walk submission).
   /// Used for the Hex History section on the home page.
   Future<List<Map<String, dynamic>>> getClaimHistory(String userId) async {
@@ -115,6 +134,45 @@ class ApiService {
       'path': path,
     });
     return response.data as Map<String, dynamic>;
+  }
+
+  /// Claims hexes the user physically walked through in real-time.
+  /// Sends a batch of GPS points; server computes H3 cells and claims them.
+  /// Returns the list of newly claimed hex boundaries for immediate rendering.
+  Future<TrailClaimResponse?> claimTrail({
+    required String userId,
+    required List<List<double>> points,
+  }) async {
+    try {
+      final response = await _dio.post('/api/claims/trail', data: {
+        'userId': userId,
+        'points': points,
+      });
+      final data = response.data as Map<String, dynamic>;
+      return TrailClaimResponse.fromJson(data);
+    } catch (_) {
+      return null; // Best-effort — don't block the walk
+    }
+  }
+
+  /// Single-point step claim — sends one GPS coordinate, server returns
+  /// the hex boundary if a new hex was entered. ~100ms round-trip.
+  Future<StepClaimResponse?> claimStep({
+    required String userId,
+    required double lat,
+    required double lng,
+  }) async {
+    try {
+      final response = await _dio.post('/api/claims/step', data: {
+        'userId': userId,
+        'lat': lat,
+        'lng': lng,
+      });
+      final data = response.data as Map<String, dynamic>;
+      return StepClaimResponse.fromJson(data);
+    } catch (_) {
+      return null; // Best-effort
+    }
   }
 
   /// Retrieves the leaderboard for players near the given coordinates.
@@ -226,6 +284,32 @@ class ApiService {
         .map((b) => (b as List)
             .map((p) => (p as List).map((n) => (n as num).toDouble()).toList())
             .toList())
+        .toList();
+  }
+
+  // --- Missions & XP ---
+
+  /// Get today's daily missions for the user (generates if needed).
+  Future<List<DailyMission>> getDailyMissions(String userId) async {
+    final response = await _dio.get('/api/missions/$userId');
+    final list = response.data as List<dynamic>;
+    return list
+        .map((e) => DailyMission.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Get user's XP and level info.
+  Future<XpInfo> getXpInfo(String userId) async {
+    final response = await _dio.get('/api/missions/xp/$userId');
+    return XpInfo.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Get all achievements with user's progress and unlock status.
+  Future<List<Achievement>> getAchievements(String userId) async {
+    final response = await _dio.get('/api/achievements/$userId');
+    final list = response.data as List<dynamic>;
+    return list
+        .map((e) => Achievement.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 }

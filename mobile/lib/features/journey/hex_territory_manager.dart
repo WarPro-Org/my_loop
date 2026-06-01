@@ -14,6 +14,7 @@ class HexTerritoryManager {
   final String? _userId;
 
   List<List<List<double>>> userOwnHexBoundaries = [];
+  List<double> userOwnDecayValues = [];
   Map<String, List<List<List<double>>>> otherHexesByColor = {};
   List<TerritoryCell> allCells = [];
   Set<int> userOwnCellIds = {};
@@ -28,6 +29,7 @@ class HexTerritoryManager {
     try {
       final cells = await _api.getUserTerritories(_userId);
       userOwnHexBoundaries = cells.map((c) => c.boundary).toList();
+      userOwnDecayValues = cells.map((c) => c.decayProgress).toList();
       userOwnCellIds = cells.map((c) => c.cellId).toSet();
       allCells = [
         ...allCells.where((c) => c.ownerId != _userId),
@@ -82,6 +84,7 @@ class HexTerritoryManager {
 
     // Update user-owned tracking from ALL cells (viewport may reveal owned cells)
     final newUserBoundaries = <List<List<double>>>[];
+    final newUserDecay = <double>[];
     final newUserCellIds = <int>{};
     final otherByColor = <String, List<List<List<double>>>>{};
 
@@ -89,12 +92,14 @@ class HexTerritoryManager {
       if (cell.ownerId == _userId) {
         newUserCellIds.add(cell.cellId);
         newUserBoundaries.add(cell.boundary);
+        newUserDecay.add(cell.decayProgress);
       } else {
         otherByColor.putIfAbsent(cell.ownerColor, () => []).add(cell.boundary);
       }
     }
 
     userOwnHexBoundaries = newUserBoundaries;
+    userOwnDecayValues = newUserDecay;
     userOwnCellIds = newUserCellIds;
     otherHexesByColor = otherByColor;
 

@@ -87,4 +87,18 @@ public class TerritoryController : ControllerBase
         var history = await _territoryService.GetClaimHistory(userId);
         return Ok(history);
     }
+
+    /// <summary>
+    /// Get exploration stats for neighborhoods near a GPS point.
+    /// Returns explored % for each nearby neighborhood (H3 res 8).
+    /// </summary>
+    [HttpGet("exploration/{userId:guid}")]
+    public async Task<IActionResult> GetExplorationStats(
+        [FromRoute] Guid userId,
+        [FromQuery] double lat,
+        [FromQuery] double lng)
+    {
+        var stats = await _territoryService.GetExplorationStats(userId, lat, lng);
+        return Ok(stats);
+    }
 }
