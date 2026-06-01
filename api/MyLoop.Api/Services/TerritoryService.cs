@@ -514,7 +514,23 @@ public class TerritoryService : ITerritoryService
             }
         }
 
-        return results;
+        // Merge neighborhoods that geocode to the same area name
+        var merged = results
+            .GroupBy(r => r.AreaName)
+            .Select(g => new ExplorationNeighborhood
+            {
+                NeighborhoodId = g.First().NeighborhoodId,
+                CenterLat = g.Average(r => r.CenterLat),
+                CenterLng = g.Average(r => r.CenterLng),
+                ExploredCount = g.Sum(r => r.ExploredCount),
+                TotalCount = g.Sum(r => r.TotalCount),
+                Percent = Math.Min(Math.Round(g.Sum(r => r.ExploredCount) * 100.0 / g.Sum(r => r.TotalCount), 1), 100.0),
+                AreaName = g.Key,
+            })
+            .OrderByDescending(r => r.ExploredCount)
+            .ToList();
+
+        return merged;
     }
 
     // ──────────────────────────────────────────────────────────────────────────
