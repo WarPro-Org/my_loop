@@ -10,6 +10,7 @@ import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
+import 'package:myloop/features/profile/profile_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
@@ -35,6 +36,7 @@ class HomeScreen extends ConsumerWidget {
     int currentIndex = 0;
     if (location == '/leaderboard') currentIndex = 1;
     if (location == '/achievements') currentIndex = 2;
+    if (location == '/profile') currentIndex = 3;
 
     return Scaffold(
       key: homeScaffoldKey,
@@ -44,6 +46,7 @@ class HomeScreen extends ConsumerWidget {
           HomeTab(),
           LeaderboardScreen(),
           AchievementsScreen(),
+          ProfileScreen(),
         ],
       ),
       endDrawer: const _ProfileDrawer(),
@@ -581,6 +584,8 @@ class _BottomNav extends StatelessWidget {
             context.go('/leaderboard');
           case 2:
             context.go('/achievements');
+          case 3:
+            context.go('/profile');
         }
       },
       items: const [
@@ -598,6 +603,11 @@ class _BottomNav extends StatelessWidget {
           icon: Icon(Icons.emoji_events_outlined, size: 24),
           activeIcon: Icon(Icons.emoji_events, size: 28),
           label: 'Achievements',
+        ),
+        BottomNavigationBarItem(
+          icon: Icon(Icons.person_outlined, size: 24),
+          activeIcon: Icon(Icons.person, size: 28),
+          label: 'Profile',
         ),
       ],
     );

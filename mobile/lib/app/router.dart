@@ -50,11 +50,14 @@ final router = GoRouter(
           path: '/achievements',
           pageBuilder: (context, state) => _noTransitionPage(const AchievementsScreen(), state, 'achievements'),
         ),
+        GoRoute(
+          path: '/profile',
+          pageBuilder: (context, state) => _noTransitionPage(const ProfileScreen(), state, 'profile'),
+        ),
       ],
     ),
 
     GoRoute(path: '/journey', builder: (context, state) => const JourneyScreen()),
-    GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
     GoRoute(path: '/walk-history', builder: (context, state) => const WalkHistoryScreen()),
     GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen()),
     GoRoute(
