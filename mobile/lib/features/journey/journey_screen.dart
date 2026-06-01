@@ -45,17 +45,13 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final journey = ref.read(journeyControllerProvider);
     final controller = ref.read(journeyControllerProvider.notifier);
 
-    // Let user tap anytime, but warn if no loop detected
-    if (journey.loopCount == 0) {
-      _showSnackbar('No loop completed yet — keep walking to close a loop!', Colors.orange);
-      return;
-    }
-
     final walkDistance = journey.distanceMeters;
     final walkDuration = journey.elapsed;
+    final claimedCount = journey.claimedCount;
     final path = controller.stopJourney();
 
-    if (path.length < 2) {
+    // If user hasn't walked at all
+    if (path.length < 2 && claimedCount == 0) {
       _showSnackbar('Walk a bit more to capture territory!', Colors.orange);
       return;
     }
@@ -63,36 +59,41 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     setState(() => _isSubmitting = true);
 
     try {
-      await _submitAndCelebrate(path, walkDistance, walkDuration);
+      // Walk-through claims already captured hexes during the walk.
+      // Try loop-based bonus claim if a loop was completed.
+      int bonusCount = 0;
+      int stolenCount = 0;
+      if (journey.loopCount > 0 && path.length >= 2) {
+        final api = ref.read(apiServiceProvider);
+        final profile = ref.read(userProfileProvider);
+        if (profile.userId != null) {
+          final result = await api.submitClaim(userId: profile.userId!, path: path);
+          bonusCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+          stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
+          _renderCapturedHexes(result);
+          _optimisticHexUpdate(bonusCount);
+        }
+      }
+
+      _mapKey.currentState?.forceReloadHexes();
+
+      final api = ref.read(apiServiceProvider);
+      final profile = ref.read(userProfileProvider);
+      if (profile.userId != null) {
+        await _refreshUserData(profile, api);
+        if (mounted) {
+          await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
+          if (mounted) {
+            final user = await api.getUser(profile.userId!);
+            final totalCaptured = claimedCount + bonusCount;
+            _showCelebration(totalCaptured, stolenCount, walkDistance, walkDuration, user.streak);
+          }
+        }
+      }
     } catch (e) {
       _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
-    }
-  }
-
-  Future<void> _submitAndCelebrate(
-      List<List<double>> path, double distance, Duration duration) async {
-    final api = ref.read(apiServiceProvider);
-    final profile = ref.read(userProfileProvider);
-    if (profile.userId == null) return;
-
-    final result = await api.submitClaim(userId: profile.userId!, path: path);
-    final capturedCount = (result['cellCount'] as num?)?.toInt() ?? 0;
-    final stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
-
-    _renderCapturedHexes(result);
-    _optimisticHexUpdate(capturedCount);
-    _mapKey.currentState?.forceReloadHexes();
-
-    await _refreshUserData(profile, api);
-
-    if (mounted) {
-      await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
-      if (mounted) {
-        final user = await api.getUser(profile.userId!);
-        _showCelebration(capturedCount, stolenCount, distance, duration, user.streak);
-      }
     }
   }
 

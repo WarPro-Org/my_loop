@@ -378,45 +378,63 @@ public class TerritoryService : ITerritoryService
 
     public async Task<List<ClaimHistoryEntry>> GetClaimHistory(Guid userId)
     {
-        return await _db.Claims
-            .Where(c => c.UserId == userId)
-            .OrderByDescending(c => c.CreatedAt)
-            .Select(c => new ClaimHistoryEntry
-            {
-                ClaimId = c.Id,
-                CellCount = c.CellCount,
-                AreaM2 = c.AreaM2,
-                Date = c.CreatedAt,
-            })
+        // Group all owned territory cells by the date they were claimed
+        var dailyCounts = await _db.TerritoryCells
+            .Where(t => t.OwnerId == userId)
+            .GroupBy(t => t.ClaimedAt.Date)
+            .Select(g => new { Date = g.Key, Count = g.Count() })
+            .OrderByDescending(g => g.Date)
+            .Take(30)
             .ToListAsync();
+
+        var cellArea = GameConstants.CellAreaSquareMeters;
+        return dailyCounts.Select(d => new ClaimHistoryEntry
+        {
+            ClaimId = Guid.Empty,
+            CellCount = d.Count,
+            AreaM2 = d.Count * cellArea,
+            Date = d.Date,
+        }).ToList();
     }
 
     public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng)
     {
-        var neighborhoodIds = _hexGrid.GetNearbyNeighborhoods(lat, lng, k: 1);
-
-        var counts = await _db.ExploredCells
-            .Where(e => e.UserId == userId && neighborhoodIds.Contains(e.NeighborhoodId))
-            .GroupBy(e => e.NeighborhoodId)
-            .Select(g => new { NeighborhoodId = g.Key, Count = g.Count() })
+        // Return all areas where user owns at least one hex, grouped by parent region (H3 res-3)
+        var areas = await _db.TerritoryCells
+            .Where(t => t.OwnerId == userId)
+            .GroupBy(t => t.ParentCellId)
+            .Select(g => new { ParentCellId = g.Key, OwnedCount = g.Count() })
             .ToListAsync();
 
-        var countMap = counts.ToDictionary(c => c.NeighborhoodId, c => c.Count);
+        if (areas.Count == 0) return [];
 
-        return neighborhoodIds.Select(nId =>
+        // For each area, get total cells in that region (all players)
+        var parentIds = areas.Select(a => a.ParentCellId).ToList();
+        var totalCounts = await _db.TerritoryCells
+            .Where(t => parentIds.Contains(t.ParentCellId))
+            .GroupBy(t => t.ParentCellId)
+            .Select(g => new { ParentCellId = g.Key, TotalCount = g.Count() })
+            .ToListAsync();
+
+        var totalMap = totalCounts.ToDictionary(t => t.ParentCellId, t => t.TotalCount);
+
+        return areas.Select(a =>
         {
-            var center = _hexGrid.GetCellCenter(nId);
-            countMap.TryGetValue(nId, out var explored);
+            var center = _hexGrid.GetCellCenter(a.ParentCellId);
+            totalMap.TryGetValue(a.ParentCellId, out var total);
+            if (total == 0) total = a.OwnedCount;
             return new ExplorationNeighborhood
             {
-                NeighborhoodId = nId,
+                NeighborhoodId = a.ParentCellId,
                 CenterLat = center.Lat,
                 CenterLng = center.Lng,
-                ExploredCount = explored,
-                TotalCount = GameConstants.CellsPerNeighborhood,
-                Percent = Math.Round(explored * 100.0 / GameConstants.CellsPerNeighborhood, 1),
+                ExploredCount = a.OwnedCount,
+                TotalCount = total,
+                Percent = Math.Round(a.OwnedCount * 100.0 / total, 1),
             };
-        }).ToList();
+        })
+        .OrderByDescending(n => n.ExploredCount)
+        .ToList();
     }
 
     // ──────────────────────────────────────────────────────────────────────────

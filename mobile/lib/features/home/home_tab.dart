@@ -918,7 +918,7 @@ class _NeighborhoodTile extends StatelessWidget {
             ],
           ),
           Text(
-            '${neighborhood.exploredCount}/${neighborhood.totalCount} cells',
+            '${neighborhood.exploredCount}/${neighborhood.totalCount} hexes',
             style: TextStyle(fontSize: 11, color: AppColors.dark.withValues(alpha: 0.6)),
           ),
           ClipRRect(
