@@ -18,11 +18,13 @@ public class TerritoryService : ITerritoryService
     private readonly GeocodingService _geocoding;
     private readonly IMissionService _missionService;
     private readonly IAchievementService _achievementService;
+    private readonly ILogger<TerritoryService> _logger;
 
     public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo,
         ITerritoryNotifier notifier, IPathValidationService pathValidator,
         IPushNotificationService pushService, GeocodingService geocoding,
-        IMissionService missionService, IAchievementService achievementService)
+        IMissionService missionService, IAchievementService achievementService,
+        ILogger<TerritoryService> logger)
     {
         _db = db;
         _hexGrid = hexGrid;
@@ -33,6 +35,7 @@ public class TerritoryService : ITerritoryService
         _geocoding = geocoding;
         _missionService = missionService;
         _achievementService = achievementService;
+        _logger = logger;
     }
 
     public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
@@ -85,8 +88,9 @@ public class TerritoryService : ITerritoryService
                          + (int)(distanceKm * GameConstants.XpPerKmWalked);
 
             // Progress daily missions
+            MissionProgressResult? missionResult = null;
             if (newCells + stolenCells > 0)
-                await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells);
+                missionResult = await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells);
             if (stolenCells > 0)
                 await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells);
             await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, newCells + stolenCells);
@@ -94,17 +98,27 @@ public class TerritoryService : ITerritoryService
             if (newExplorations > 0)
                 await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
 
-            // Award XP (also saves changes)
-            await _missionService.AwardXp(userId, xpAmount, "loop_claim");
-
             // Check achievements
-            await _achievementService.CheckAndUnlock(userId);
+            var newAchievements = await _achievementService.CheckAndUnlock(userId);
+
+            // Award XP (also saves changes)
+            var xpResult = await _missionService.AwardXp(userId, xpAmount, "loop_claim");
 
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
+            // Real-time push notifications (AFTER commit)
             await BroadcastOwnershipChanges(userId, cells, transfers);
             await NotifyVictimsOfTheft(userId, transfers);
+
+            // Personal deltas to claiming user
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+            _ = PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
+
+            // Victim deltas
+            var victimIds = transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct();
+            foreach (var victimId in victimIds)
+                _ = PushVictimDelta(victimId);
 
             return ClaimResult.Succeeded(new ClaimResponse
             {
@@ -145,6 +159,17 @@ public class TerritoryService : ITerritoryService
         var claimed = new List<TrailHexResponse>();
         var transfers = new List<CellTransfer>();
         var claimId = Guid.NewGuid();
+
+        // Create Claim entity for FK integrity (trail claims)
+        var trailClaim = new Claim
+        {
+            Id = claimId,
+            UserId = userId,
+            CellCount = cells.Count,
+            AreaM2 = cells.Count * 4234.0,
+        };
+        trailClaim.SetPolygon(points);
+        _db.Claims.Add(trailClaim);
 
         // Load user for home location (decay calculation)
         var trailUser = await _db.Users.FindAsync(userId);
@@ -215,21 +240,31 @@ public class TerritoryService : ITerritoryService
         // Award XP + mission progress
         var xpAmount = newCells * GameConstants.XpPerHexCaptured
                      + stolenCells * GameConstants.XpPerHexStolen;
+        MissionProgressResult? missionResult = null;
         if (newCells + stolenCells > 0)
-            await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells);
+            missionResult = await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells);
         if (stolenCells > 0)
             await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells);
         if (newExplorations > 0)
             await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
 
-        await _missionService.AwardXp(userId, xpAmount, "trail_claim");
-        await _achievementService.CheckAndUnlock(userId);
+        var newAchievements = await _achievementService.CheckAndUnlock(userId);
+        var xpResult = await _missionService.AwardXp(userId, xpAmount, "trail_claim");
 
         await _db.SaveChangesAsync();
 
         // Broadcast changes for real-time multiplayer
         await BroadcastOwnershipChanges(userId, cells.Where(c =>
             claimed.Any(cl => cl.CellId == c.CellId)).ToList(), transfers);
+
+        // Personal deltas to claiming user
+        var trailUserForPush = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        _ = PushPersonalDeltas(userId, trailUserForPush, xpResult, xpAmount, missionResult, newAchievements);
+
+        // Victim deltas
+        var victimIds = transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct();
+        foreach (var victimId in victimIds)
+            _ = PushVictimDelta(victimId);
 
         var stolenCount = claimed.Count(c => c.WasStolen);
         return TrailClaimResult.Succeeded(new TrailClaimResponse
@@ -263,6 +298,17 @@ public class TerritoryService : ITerritoryService
         var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
         var claimId = Guid.NewGuid();
         string? previousOwnerName = null;
+
+        // Create a Claim entity for FK integrity (step claims are 1-cell claims)
+        var claim = new Claim
+        {
+            Id = claimId,
+            UserId = userId,
+            CellCount = 1,
+            AreaM2 = 4234, // ~4,234 m² per H3 res-11 hex
+        };
+        claim.SetPolygon([[lat, lng]]);
+        _db.Claims.Add(claim);
 
         // Load user for home location (decay calculation)
         var user = await _db.Users.FindAsync(userId);
@@ -306,7 +352,7 @@ public class TerritoryService : ITerritoryService
         var missionType = existing != null ? MissionType.StealHex : MissionType.CaptureHexes;
 
         // Record all mission progress (tracked in memory, saved together)
-        await _missionService.RecordProgress(userId, missionType, 1);
+        var missionResult = await _missionService.RecordProgress(userId, missionType, 1);
         await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, 1);
         // ~30m per hex for walk distance approximation
         await _missionService.RecordProgress(userId, MissionType.WalkDistance, 30);
@@ -321,9 +367,18 @@ public class TerritoryService : ITerritoryService
         // Award capture XP (this calls SaveChangesAsync once for everything)
         var xpResult = await _missionService.AwardXp(userId, xpAmount, "hex_capture");
 
-        // Broadcast for real-time multiplayer (fire-and-forget)
+        // ── Real-time push notifications (fire-and-forget, AFTER save) ──
+
+        // Public: hex ownership broadcast to region
         _ = BroadcastOwnershipChanges(userId, [hexCell],
             [CreateTransfer(hexCell.CellId, existing?.OwnerId, userId, claimId)]);
+
+        // Personal: push state deltas to claiming user
+        _ = PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
+
+        // Victim: push decremented stats
+        if (existing != null && existing.OwnerId != Guid.Empty)
+            _ = PushVictimDelta(existing.OwnerId);
 
         return new StepClaimResponse
         {
@@ -863,6 +918,115 @@ public class TerritoryService : ITerritoryService
         foreach (var group in victimGroups)
         {
             await _pushService.NotifyHexStolen(group.Key, thief.DisplayName, group.Count());
+        }
+    }
+
+    /// <summary>
+    /// Pushes all personal state deltas to the claiming user via SignalR.
+    /// Fire-and-forget — errors are logged but don't block the claim response.
+    /// </summary>
+    private async Task PushPersonalDeltas(
+        Guid userId,
+        Entities.User? user,
+        XpGainResult xpResult,
+        int xpAmount,
+        MissionProgressResult? missionResult,
+        List<AchievementUnlock> newAchievements)
+    {
+        try
+        {
+            if (user == null) return;
+
+            // 1. User stats (absolute values)
+            var statsDelta = new UserStatsDelta(
+                HexCount: user.HexCount,
+                TotalHexesCaptured: user.TotalHexesCaptured,
+                TotalHexesStolen: user.TotalHexesStolen,
+                Streak: user.Streak,
+                IsStreakActive: user.IsStreakActive,
+                DistanceKm: user.DistanceKm
+            );
+            await _notifier.NotifyUserStatsAsync(userId, statsDelta);
+
+            // 2. XP delta
+            var neededXp = GameConstants.XpForLevel(xpResult.Level + 1) - GameConstants.XpForLevel(xpResult.Level);
+            var progressXp = (int)(xpResult.TotalXp - GameConstants.XpForLevel(xpResult.Level));
+            var progressPercent = neededXp > 0 ? (double)progressXp / neededXp : 0;
+
+            var xpDelta = new XpDelta(
+                XpGained: xpAmount + (missionResult?.XpEarned ?? 0),
+                TotalXp: xpResult.TotalXp,
+                Level: xpResult.Level,
+                LeveledUp: xpResult.LeveledUp,
+                ProgressXp: progressXp,
+                NeededXp: neededXp,
+                ProgressPercent: progressPercent
+            );
+            await _notifier.NotifyXpAsync(userId, xpDelta);
+
+            // 3. Mission progress
+            if (missionResult?.Missions != null)
+            {
+                var missionUpdates = missionResult.Missions.Select(m => new MissionUpdate(
+                    MissionId: m.Id,
+                    Type: m.Type.ToString(),
+                    CurrentProgress: m.CurrentProgress,
+                    TargetValue: m.TargetValue,
+                    Completed: m.IsCompleted,
+                    XpAwarded: m.IsCompleted ? m.XpReward : 0
+                )).ToList();
+
+                var missionDelta = new MissionDelta(
+                    Updates: missionUpdates,
+                    AllMissionsComplete: missionResult.AllMissionsComplete,
+                    BonusXp: missionResult.BonusXp
+                );
+                await _notifier.NotifyMissionAsync(userId, missionDelta);
+            }
+
+            // 4. Achievement unlocks
+            if (newAchievements.Count > 0)
+            {
+                var achievementDelta = new AchievementDelta(
+                    Unlocks: newAchievements.Select(a => new AchievementUnlockEvent(
+                        Id: a.AchievementId,
+                        Name: a.Name,
+                        Icon: a.Icon,
+                        XpAwarded: a.XpAwarded
+                    )).ToList()
+                );
+                await _notifier.NotifyAchievementAsync(userId, achievementDelta);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to push personal deltas to user {UserId}", userId);
+        }
+    }
+
+    /// <summary>
+    /// Pushes decremented stats to theft victim via SignalR.
+    /// </summary>
+    private async Task PushVictimDelta(Guid victimUserId)
+    {
+        try
+        {
+            var victim = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == victimUserId);
+            if (victim == null) return;
+
+            var statsDelta = new UserStatsDelta(
+                HexCount: victim.HexCount,
+                TotalHexesCaptured: victim.TotalHexesCaptured,
+                TotalHexesStolen: victim.TotalHexesStolen,
+                Streak: victim.Streak,
+                IsStreakActive: victim.IsStreakActive,
+                DistanceKm: victim.DistanceKm
+            );
+            await _notifier.NotifyUserStatsAsync(victimUserId, statsDelta);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to push victim delta to user {UserId}", victimUserId);
         }
     }
 }

@@ -214,6 +214,18 @@ class ApiService {
     return AppUser.fromJson(response.data);
   }
 
+  /// Fetches the FULL game state in one call: profile, XP, missions,
+  /// achievements, exploration, rank. Single network round-trip.
+  Future<Map<String, dynamic>?> getGameState(String userId) async {
+    try {
+      final response = await _dio.get('/api/users/$userId/game-state');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('[API] getGameState failed: $e');
+      return null;
+    }
+  }
+
   /// Looks up a user by Firebase UID. Returns null if not registered.
   Future<AppUser?> getUserByUid(String firebaseUid) async {
     try {

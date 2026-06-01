@@ -16,11 +16,12 @@ import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/hydration.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
-import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/notification_service.dart';
 
@@ -118,10 +119,13 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   }
 
   Future<void> _refreshUserData(dynamic profile, ApiService api) async {
-    final user = await api.getUser(profile.userId!);
+    // Re-hydrate all slices (single API call) — SignalR may already have
+    // pushed deltas, but this ensures consistency for the celebration dialog.
+    await hydrateAllSlices(ref);
+    final ps = ref.read(profileSliceProvider);
+
     int updatedRank = profile.rank;
     try {
-      // Refresh leaderboard first so rank reflects the new hex count
       await api.refreshLeaderboard();
       final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId!, scope: 'city');
       updatedRank = lb.myRank ?? profile.rank;
@@ -129,17 +133,11 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
     if (mounted) {
       ref.read(userProfileProvider.notifier).updateStats(
-        hexCount: user.hexCount,
-        streak: user.streak,
-        distanceKm: user.distanceKm,
+        hexCount: ps.hexCount,
+        streak: ps.streak,
+        distanceKm: ps.distanceKm,
         rank: updatedRank,
       );
-      // Invalidate all home page providers so they refetch fresh data on next observe
-      ref.invalidate(dailyMissionsProvider);
-      ref.invalidate(xpInfoProvider);
-      ref.invalidate(explorationProvider);
-      ref.invalidate(achievementsProvider);
-      ref.invalidate(homeTabLoadedProvider);
     }
   }
 

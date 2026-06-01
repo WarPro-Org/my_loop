@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Models;
@@ -18,15 +20,18 @@ public class ClaimsController : ControllerBase
     private readonly ITerritoryService _territoryService;
     private readonly IHexGridService _hexGridService;
     private readonly ILogger<ClaimsController> _logger;
+    private readonly IWebHostEnvironment _env;
 
     public ClaimsController(
         ITerritoryService territoryService,
         IHexGridService hexGridService,
-        ILogger<ClaimsController> logger)
+        ILogger<ClaimsController> logger,
+        IWebHostEnvironment env)
     {
         _territoryService = territoryService;
         _hexGridService = hexGridService;
         _logger = logger;
+        _env = env;
     }
 
     /// <summary>
@@ -145,5 +150,27 @@ public class ClaimsController : ControllerBase
             if (double.IsInfinity(point[0]) || double.IsInfinity(point[1])) return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// DEV-ONLY: Trigger a step claim without auth for E2E testing the SignalR push pipeline.
+    /// Calls ProcessStepClaim directly and returns the push result.
+    /// REMOVE BEFORE PRODUCTION.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("dev/test-push")]
+    public async Task<IActionResult> DevTestPush([FromBody] StepClaimRequest request)
+    {
+        if (!_env.IsDevelopment()) return NotFound();
+
+        try
+        {
+            var result = await _territoryService.ProcessStepClaim(request.UserId, request.Lat, request.Lng);
+            return Ok(new { success = true, result, message = "Push pipeline executed — check SignalR client" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, error = ex.Message });
+        }
     }
 }

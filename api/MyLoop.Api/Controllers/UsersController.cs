@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
@@ -205,5 +206,94 @@ public class UsersController : ControllerBase
             .ToListAsync();
 
         return Ok(claims);
+    }
+
+    /// <summary>
+    /// Returns the FULL game state for a user in a single call:
+    /// profile + XP + missions + achievements + exploration + rank.
+    /// The mobile app calls this once on load and after every walk capture
+    /// instead of 7 separate API calls.
+    /// </summary>
+    [HttpGet("{id:guid}/game-state")]
+    public async Task<IActionResult> GetGameState([FromRoute] Guid id)
+    {
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return NotFound();
+
+        // XP & Level
+        var currentLevelXp = Constants.GameConstants.XpForLevel(user.Level);
+        var nextLevelXp = Constants.GameConstants.XpForLevel(user.Level + 1);
+        var progressXp = user.TotalXp - currentLevelXp;
+        var neededXp = nextLevelXp - currentLevelXp;
+
+        // Missions
+        var missionService = HttpContext.RequestServices.GetRequiredService<IMissionService>();
+        var missions = await missionService.GetTodaysMissions(id);
+
+        // Achievements
+        var achievementService = HttpContext.RequestServices.GetRequiredService<IAchievementService>();
+        var achievements = await achievementService.GetAllForUser(id);
+
+        // Exploration
+        var territoryService = HttpContext.RequestServices.GetRequiredService<ITerritoryService>();
+        var exploration = await territoryService.GetExplorationStats(id, 0, 0);
+
+        // Rank (city leaderboard)
+        int rank = 0;
+        try
+        {
+            var leaderboard = await _db.Users
+                .Where(u => u.City == user.City && !string.IsNullOrEmpty(u.City))
+                .OrderByDescending(u => u.HexCount)
+                .Select(u => u.Id)
+                .ToListAsync();
+            rank = leaderboard.IndexOf(id) + 1;
+        }
+        catch { /* non-critical */ }
+
+        return Ok(new
+        {
+            // Profile
+            user.Id,
+            user.DisplayName,
+            user.Color,
+            user.AvatarId,
+            user.HexCount,
+            user.TotalHexesCaptured,
+            user.TotalHexesStolen,
+            user.Streak,
+            user.IsStreakActive,
+            user.DistanceKm,
+            Rank = rank,
+
+            // XP
+            Xp = new
+            {
+                user.TotalXp,
+                user.Level,
+                ProgressXp = progressXp,
+                NeededXp = neededXp,
+                ProgressPercent = neededXp > 0 ? Math.Round(progressXp * 100.0 / neededXp, 1) : 100.0,
+            },
+
+            // Daily Missions
+            Missions = missions.Select(m => new
+            {
+                m.Id,
+                m.Type,
+                m.Description,
+                m.TargetValue,
+                m.CurrentProgress,
+                m.XpReward,
+                m.IsCompleted,
+                m.CompletedAt,
+            }),
+
+            // Achievements
+            Achievements = achievements,
+
+            // Exploration
+            Exploration = exploration,
+        });
     }
 }

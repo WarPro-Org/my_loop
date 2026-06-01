@@ -5,6 +5,7 @@
 /// authentication, navigates to the avatar picker screen.
 library;
 
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +15,9 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/push_notification_service.dart';
+import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/hydration.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -250,6 +253,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
         // Initialize push notifications after login
         ref.read(pushNotificationProvider).initialize(existing.id);
+
+        // Connect SignalR with auth token for personal event group
+        final token = await fb.FirebaseAuth.instance.currentUser?.getIdToken();
+        await ref.read(territoryRealtimeProvider).connect(
+          token: token,
+          userId: existing.id,
+        );
+
+        // Hydrate all state slices from unified endpoint
+        await hydrateAllSlices(ref);
+
         if (mounted) context.go('/home');
         return;
       }
@@ -298,6 +312,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           distanceKm: user.distanceKm,
           rank: rank,
         );
+
+        // Connect SignalR + hydrate slices
+        final token = await fb.FirebaseAuth.instance.currentUser?.getIdToken();
+        await ref.read(territoryRealtimeProvider).connect(
+          token: token,
+          userId: user.id,
+        );
+        await hydrateAllSlices(ref);
       }
       if (mounted) context.go('/home');
     } catch (e) {

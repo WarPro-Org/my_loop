@@ -16,6 +16,10 @@ import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/missions_slice.dart';
+import 'package:myloop/shared/state/xp_slice.dart';
+import 'package:myloop/shared/state/achievements_slice.dart';
+import 'package:myloop/shared/state/exploration_slice.dart';
 import 'package:myloop/shared/widgets/animated_hexagon.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
@@ -71,6 +75,8 @@ class _HomeTabState extends ConsumerState<HomeTab> {
   @override
   void initState() {
     super.initState();
+    // Slices are hydrated on login — no manual refresh needed here.
+
     // Skip shimmer if we've already loaded once this session
     final alreadyLoaded = ref.read(homeTabLoadedProvider);
     if (alreadyLoaded) {
@@ -262,22 +268,21 @@ class _HomeTabState extends ConsumerState<HomeTab> {
 /// DAILY MISSIONS CARD
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Provider that fetches today's missions from the API.
-final dailyMissionsProvider = FutureProvider.autoDispose<List<DailyMission>>((ref) async {
-  final api = ref.read(apiServiceProvider);
-  final profile = ref.read(userProfileProvider);
-  final userId = profile.userId;
-  if (userId == null || userId.isEmpty) return [];
-  return api.getDailyMissions(userId);
+/// Provider that reads today's missions from the missions slice.
+final dailyMissionsProvider = Provider<List<DailyMission>>((ref) {
+  return ref.watch(missionsSliceProvider).missions;
 });
 
-/// Provider that fetches XP info from the API.
-final xpInfoProvider = FutureProvider.autoDispose<XpInfo>((ref) async {
-  final api = ref.read(apiServiceProvider);
-  final profile = ref.read(userProfileProvider);
-  final userId = profile.userId;
-  if (userId == null || userId.isEmpty) return const XpInfo();
-  return api.getXpInfo(userId);
+/// Provider that reads XP info from the XP slice.
+final xpInfoProvider = Provider<XpInfo>((ref) {
+  final xp = ref.watch(xpSliceProvider);
+  return XpInfo(
+    totalXp: xp.totalXp,
+    level: xp.level,
+    progressXp: xp.progressXp,
+    neededXp: xp.neededXp,
+    progressPercent: xp.progressPercent,
+  );
 });
 
 /// A card showing 3 daily missions with individual progress bars + XP rewards.
@@ -286,7 +291,7 @@ class _DailyMissionsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final missionsAsync = ref.watch(dailyMissionsProvider);
+    final missions = ref.watch(dailyMissionsProvider);
 
     return Container(
       width: double.infinity,
@@ -331,24 +336,17 @@ class _DailyMissionsCard extends ConsumerWidget {
           const SizedBox(height: 16),
 
           // Missions list
-          missionsAsync.when(
-            data: (missions) => Column(
-              children: missions.map((m) => _MissionRow(mission: m)).toList(),
-            ),
-            loading: () => const Center(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: CircularProgressIndicator(
-                  color: AppColors.white,
-                  strokeWidth: 2,
+          missions.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: Text(
+                    'Missions loading...',
+                    style: TextStyle(color: AppColors.white, fontSize: 13),
+                  ),
+                )
+              : Column(
+                  children: missions.map((m) => _MissionRow(mission: m)).toList(),
                 ),
-              ),
-            ),
-            error: (_, __) => const Text(
-              'Could not load missions',
-              style: TextStyle(color: AppColors.white, fontSize: 13),
-            ),
-          ),
         ],
       ),
     );
@@ -503,23 +501,21 @@ class _XpProgressBar extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final xpAsync = ref.watch(xpInfoProvider);
+    final xp = ref.watch(xpInfoProvider);
 
-    return xpAsync.when(
-      data: (xp) {
-        final progress = xp.neededXp > 0
-            ? (xp.progressXp / xp.neededXp).clamp(0.0, 1.0)
-            : 0.0;
+    final progress = xp.neededXp > 0
+        ? (xp.progressXp / xp.neededXp).clamp(0.0, 1.0)
+        : 0.0;
 
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A2E),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
               // Level circle (left side — "where we are")
               Container(
                 width: 36,
@@ -640,10 +636,6 @@ class _XpProgressBar extends ConsumerWidget {
             ],
           ),
         );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-    );
   }
 }
 
@@ -651,13 +643,9 @@ class _XpProgressBar extends ConsumerWidget {
 /// ACHIEVEMENTS CARD
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Provider that fetches all achievements for the user.
-final achievementsProvider = FutureProvider.autoDispose<List<Achievement>>((ref) async {
-  final api = ref.read(apiServiceProvider);
-  final profile = ref.read(userProfileProvider);
-  final userId = profile.userId;
-  if (userId == null || userId.isEmpty) return [];
-  return api.getAchievements(userId);
+/// Provider that reads achievements from the achievements slice.
+final achievementsProvider = Provider<List<Achievement>>((ref) {
+  return ref.watch(achievementsSliceProvider).achievements;
 });
 
 /// Shows recently unlocked achievements and next closest ones.
@@ -666,92 +654,86 @@ class _AchievementsCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final achievementsAsync = ref.watch(achievementsProvider);
+    final achievements = ref.watch(achievementsProvider);
 
-    return achievementsAsync.when(
-      data: (achievements) {
-        if (achievements.isEmpty) return const SizedBox.shrink();
+    if (achievements.isEmpty) return const SizedBox.shrink();
 
-        final unlocked = achievements.where((a) => a.unlocked).toList();
-        final locked = achievements.where((a) => !a.unlocked).toList();
-        // Show top 3 closest-to-unlock
-        locked.sort((a, b) => b.progress.compareTo(a.progress));
-        final nextUp = locked.take(3).toList();
+    final unlocked = achievements.where((a) => a.unlocked).toList();
+    final locked = achievements.where((a) => !a.unlocked).toList();
+    // Show top 3 closest-to-unlock
+    locked.sort((a, b) => b.progress.compareTo(a.progress));
+    final nextUp = locked.take(3).toList();
 
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1A1A2E),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1A1A2E),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Row(
-                children: [
-                  const Text('🏆', style: TextStyle(fontSize: 24)),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Achievements',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${unlocked.length}/${achievements.length}',
-                      style: const TextStyle(
-                        color: Color(0xFF8B5CF6),
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (unlocked.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                // Recently unlocked (show last 3)
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: unlocked.reversed.take(5).map((a) => _AchievementBadge(
-                    icon: a.icon,
-                    name: a.name,
-                    unlocked: true,
-                  )).toList(),
-                ),
-              ],
-              if (nextUp.isNotEmpty) ...[
-                const SizedBox(height: 16),
-                Text(
-                  'Next up',
+              const Text('🏆', style: TextStyle(fontSize: 24)),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Text(
+                  'Achievements',
                   style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.5),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 8),
-                ...nextUp.map((a) => _AchievementProgressRow(achievement: a)),
-              ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${unlocked.length}/${achievements.length}',
+                  style: const TextStyle(
+                    color: Color(0xFF8B5CF6),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
             ],
           ),
-        );
-      },
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
+          if (unlocked.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            // Recently unlocked (show last 3)
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: unlocked.reversed.take(5).map((a) => _AchievementBadge(
+                icon: a.icon,
+                name: a.name,
+                unlocked: true,
+              )).toList(),
+            ),
+          ],
+          if (nextUp.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text(
+              'Next up',
+              style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.5),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...nextUp.map((a) => _AchievementProgressRow(achievement: a)),
+          ],
+        ],
+      ),
     );
   }
 }
@@ -1265,14 +1247,9 @@ class _MiniStat extends StatelessWidget {
 /// EXPLORATION CARD
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// Provider that fetches exploration stats (invalidatable after claims).
-final explorationProvider = FutureProvider.autoDispose<List<ExplorationNeighborhood>>((ref) async {
-  final api = ref.read(apiServiceProvider);
-  final profile = ref.read(userProfileProvider);
-  final userId = profile.userId;
-  if (userId == null || userId.isEmpty) return [];
-  // lat/lng not used by the API query — pass 0,0
-  return api.getExplorationStats(userId: userId, lat: 0, lng: 0);
+/// Provider that reads exploration stats from the exploration slice.
+final explorationProvider = Provider<List<ExplorationNeighborhood>>((ref) {
+  return ref.watch(explorationSliceProvider).neighborhoods;
 });
 
 /// Shows exploration % for the user's nearest neighborhood.
@@ -1281,94 +1258,72 @@ class _ExplorationCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final explorationAsync = ref.watch(explorationProvider);
+    final neighborhoods = ref.watch(explorationProvider);
 
-    return explorationAsync.when(
-      loading: () => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Text('🗺️', style: TextStyle(fontSize: 22)),
-              const SizedBox(width: 8),
-              const Text(
-                'Area Exploration',
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-        ],
-      ),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (neighborhoods) {
-        if (neighborhoods.isEmpty) {
-          return Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF00D4AA).withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFF00D4AA).withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                const Text('🗺️', style: TextStyle(fontSize: 24)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Area Exploration',
-                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                      ),
-                      Text(
-                        'Start walking to explore your neighborhood!',
-                        style: TextStyle(fontSize: 12, color: AppColors.dark.withValues(alpha: 0.6)),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
-
-        final sorted = [...neighborhoods]..sort((a, b) => b.percent.compareTo(a.percent));
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    if (neighborhoods.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF00D4AA).withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFF00D4AA).withValues(alpha: 0.3)),
+        ),
+        child: Row(
           children: [
-            Row(
-              children: [
-                const Text('🗺️', style: TextStyle(fontSize: 22)),
-                const SizedBox(width: 8),
-                const Text(
-                  'Area Exploration',
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-                ),
-                const Spacer(),
-                Text(
-                  '${sorted.length} area${sorted.length > 1 ? 's' : ''}',
-                  style: TextStyle(fontSize: 12, color: AppColors.grey),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 100,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: sorted.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, i) => _NeighborhoodTile(neighborhood: sorted[i]),
+            const Text('🗺️', style: TextStyle(fontSize: 24)),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Area Exploration',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                  ),
+                  Text(
+                    'Start walking to explore your neighborhood!',
+                    style: TextStyle(fontSize: 12, color: AppColors.dark.withValues(alpha: 0.6)),
+                  ),
+                ],
               ),
             ),
           ],
-        );
-      },
+        ),
+      );
+    }
+
+    final sorted = [...neighborhoods]..sort((a, b) => b.percent.compareTo(a.percent));
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Text('🗺️', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 8),
+            const Text(
+              'Area Exploration',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+            ),
+            const Spacer(),
+            Text(
+              '${sorted.length} area${sorted.length > 1 ? 's' : ''}',
+              style: TextStyle(fontSize: 12, color: AppColors.grey),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 100,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: sorted.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            itemBuilder: (context, i) => _NeighborhoodTile(neighborhood: sorted[i]),
+          ),
+        ),
+      ],
     );
   }
 }

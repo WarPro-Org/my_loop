@@ -53,4 +53,23 @@ class Achievement {
     6 => 'Missions',
     _ => 'Other',
   };
+
+  Achievement copyWith({
+    bool? unlocked,
+    DateTime? unlockedAt,
+    double? progress,
+  }) {
+    return Achievement(
+      id: id,
+      name: name,
+      description: description,
+      icon: icon,
+      category: category,
+      threshold: threshold,
+      xpReward: xpReward,
+      unlocked: unlocked ?? this.unlocked,
+      unlockedAt: unlockedAt ?? this.unlockedAt,
+      progress: progress ?? this.progress,
+    );
+  }
 }
