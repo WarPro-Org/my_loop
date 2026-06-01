@@ -226,7 +226,7 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
         distanceKm: user.distanceKm,
       );
 
-      if (mounted) context.go('/home');
+      if (mounted) context.go('/set-home');
     } catch (e) {
       // If registration failed, try to look up existing user by UID
       // (handles race conditions and re-registration)

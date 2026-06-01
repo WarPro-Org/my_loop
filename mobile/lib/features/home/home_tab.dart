@@ -258,16 +258,16 @@ class _HomeTabState extends ConsumerState<HomeTab> {
             const _DailyMissionsCard(),
             const SizedBox(height: 20),
 
+            // Level & Tier progression
+            const _ProgressionCard(),
+            const SizedBox(height: 20),
+
             // Quick stats row (interactive)
             _QuickStats(),
             const SizedBox(height: 24),
 
             // Exploration progress for nearby neighborhoods
             const _ExplorationCard(),
-            const SizedBox(height: 24),
-
-            // Recent achievements
-            const _AchievementsCard(),
             const SizedBox(height: 24),
 
             // Reels-style info carousel
@@ -519,6 +519,235 @@ class _MissionRow extends StatelessWidget {
       MissionType.captureInOneWalk => '💪',
     };
   }
+}
+
+/// ─────────────────────────────────────────────────────────────────────────────
+/// PROGRESSION CARD (Level from XP + Tier from Hexes)
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shows dual progression: XP→Level (permanent) and Hexes→Tier (competitive/dynamic).
+class _ProgressionCard extends ConsumerWidget {
+  const _ProgressionCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final xpAsync = ref.watch(xpInfoProvider);
+    final profile = ref.watch(userProfileProvider);
+    final hexCount = profile.hexCount;
+    final tier = _getTier(hexCount);
+    final nextTier = _getNextTier(hexCount);
+
+    return xpAsync.when(
+      data: (xp) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1A1A2E),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          children: [
+            // Two-column: Level | Tier
+            Row(
+              children: [
+                // LEFT: Level (XP-based, permanent)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [const Color(0xFF6366F1), const Color(0xFF8B5CF6)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${xp.level}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'LEVEL',
+                        style: TextStyle(
+                          color: Color(0xFF8B5CF6),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${xp.totalXp} XP',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // XP progress bar to next level
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: xp.progressPercent.clamp(0.0, 1.0),
+                          minHeight: 5,
+                          backgroundColor: Colors.white.withValues(alpha: 0.1),
+                          valueColor: const AlwaysStoppedAnimation(Color(0xFF8B5CF6)),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${xp.progressXp}/${xp.neededXp} to Lvl ${xp.level + 1}',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 9,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Divider
+                Container(
+                  width: 1,
+                  height: 100,
+                  color: Colors.white.withValues(alpha: 0.1),
+                ),
+                // RIGHT: Tier (Hex-based, competitive)
+                Expanded(
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [tier.color, tier.color.withValues(alpha: 0.6)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            tier.emoji,
+                            style: const TextStyle(fontSize: 24),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        tier.name.toUpperCase(),
+                        style: TextStyle(
+                          color: tier.color,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '$hexCount hexes',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      // Progress to next tier
+                      if (nextTier != null) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: ((hexCount - tier.minHexes) / (nextTier.minHexes - tier.minHexes)).clamp(0.0, 1.0),
+                            minHeight: 5,
+                            backgroundColor: Colors.white.withValues(alpha: 0.1),
+                            valueColor: AlwaysStoppedAnimation(tier.color),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${nextTier.minHexes - hexCount} to ${nextTier.name}',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.4),
+                            fontSize: 9,
+                          ),
+                        ),
+                      ] else ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: LinearProgressIndicator(
+                            value: 1.0,
+                            minHeight: 5,
+                            backgroundColor: Colors.white.withValues(alpha: 0.1),
+                            valueColor: AlwaysStoppedAnimation(tier.color),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          'MAX TIER',
+                          style: TextStyle(
+                            color: tier.color.withValues(alpha: 0.7),
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+
+  static _TierInfo _getTier(int hexCount) {
+    for (final t in _tiers.reversed) {
+      if (hexCount >= t.minHexes) return t;
+    }
+    return _tiers.first;
+  }
+
+  static _TierInfo? _getNextTier(int hexCount) {
+    for (int i = 0; i < _tiers.length - 1; i++) {
+      if (hexCount >= _tiers[i].minHexes && hexCount < _tiers[i + 1].minHexes) {
+        return _tiers[i + 1];
+      }
+    }
+    return null;
+  }
+
+  static final _tiers = [
+    _TierInfo('Bronze', '🥉', 0, const Color(0xFFCD7F32)),
+    _TierInfo('Silver', '🥈', 50, const Color(0xFFC0C0C0)),
+    _TierInfo('Gold', '🥇', 200, const Color(0xFFFFD700)),
+    _TierInfo('Platinum', '💠', 500, const Color(0xFF00CED1)),
+    _TierInfo('Crystal', '💎', 1500, const Color(0xFFE040FB)),
+    _TierInfo('Diamond', '👑', 3000, const Color(0xFF00E5FF)),
+  ];
+}
+
+class _TierInfo {
+  final String name;
+  final String emoji;
+  final int minHexes;
+  final Color color;
+  _TierInfo(this.name, this.emoji, this.minHexes, this.color);
 }
 
 /// ─────────────────────────────────────────────────────────────────────────────

@@ -161,6 +161,22 @@ using (var scope = app.Services.CreateScope())
             "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TotalHexesStolen\" integer NOT NULL DEFAULT 0");
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AllMissionsCompleteDays\" integer NOT NULL DEFAULT 0");
+
+        // Region-specific decay schema
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"DecayDays\" integer NOT NULL DEFAULT 7");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"HomeLat\" double precision");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"HomeLng\" double precision");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"HomeCity\" text NOT NULL DEFAULT ''");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"HomeState\" text NOT NULL DEFAULT ''");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"HomeCountry\" text NOT NULL DEFAULT ''");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"HomeContinent\" text NOT NULL DEFAULT ''");
         db.Database.ExecuteSqlRaw(@"
             CREATE TABLE IF NOT EXISTS ""DailyMissions"" (
                 ""Id"" uuid NOT NULL,
@@ -194,6 +210,17 @@ using (var scope = app.Services.CreateScope())
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_UserAchievements_UserId""
             ON ""UserAchievements"" (""UserId"")");
+
+        // Performance: BRIN index for viewport spatial queries (much faster than B-tree for range scans)
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Geo_Brin""
+            ON ""TerritoryCells"" USING BRIN (""CenterLat"", ""CenterLng"")
+            WITH (pages_per_range = 128)");
+
+        // Performance: Index for decay cleanup query (avoids full table scan)
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Decay""
+            ON ""TerritoryCells"" (""LastRefreshedAt"", ""DecayDays"")");
     }
     catch { /* Column/table already exists */ }
 

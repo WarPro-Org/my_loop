@@ -113,8 +113,16 @@ public class TerritoryService : ITerritoryService
         var transfers = new List<CellTransfer>();
         var claimId = Guid.NewGuid();
 
+        // Load user for home location (decay calculation)
+        var trailUser = await _db.Users.FindAsync(userId);
+
         foreach (var hexCell in cells)
         {
+            var cellCenter = _hexGrid.GetCellCenter(hexCell.CellId);
+
+            // Calculate per-cell decay based on geographic comparison
+            var cellDecayDays = await CalculateDecayDays(trailUser, cellCenter.Lat, cellCenter.Lng);
+
             if (existingCells.TryGetValue(hexCell.CellId, out var existing))
             {
                 if (existing.OwnerId == userId) continue; // already ours
@@ -123,6 +131,7 @@ public class TerritoryService : ITerritoryService
                 var prevOwnerName = existing.Owner?.DisplayName;
                 transfers.Add(CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId));
                 UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
+                existing.DecayDays = cellDecayDays;
                 claimed.Add(new TrailHexResponse
                 {
                     CellId = hexCell.CellId,
@@ -133,7 +142,7 @@ public class TerritoryService : ITerritoryService
             }
             else
             {
-                var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry);
+                var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry, cellDecayDays);
                 _db.TerritoryCells.Add(newCell);
                 transfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
                 claimed.Add(new TrailHexResponse
@@ -151,13 +160,12 @@ public class TerritoryService : ITerritoryService
         _db.CellTransfers.AddRange(transfers);
 
         // Update user stats (lightweight — no full claim record)
-        var user = await _db.Users.FindAsync(userId);
-        if (user != null)
+        if (trailUser != null)
         {
             var newCells = transfers.Count(t => t.FromUserId == null);
             var stolenCells = transfers.Count(t => t.FromUserId != null);
-            user.HexCount += newCells + stolenCells;
-            user.TotalHexesCaptured += newCells + stolenCells;
+            trailUser.HexCount += newCells + stolenCells;
+            trailUser.TotalHexesCaptured += newCells + stolenCells;
             await DecrementVictimHexCounts(userId, transfers);
         }
 
@@ -200,6 +208,13 @@ public class TerritoryService : ITerritoryService
         var claimId = Guid.NewGuid();
         string? previousOwnerName = null;
 
+        // Load user for home location (decay calculation)
+        var user = await _db.Users.FindAsync(userId);
+        var cellCenter = _hexGrid.GetCellCenter(hexCell.CellId);
+
+        // Calculate decay days: if home not set, use default. Otherwise compare geography.
+        var decayDays = await CalculateDecayDays(user, cellCenter.Lat, cellCenter.Lng);
+
         if (existing != null)
         {
             // Steal from another player
@@ -207,12 +222,13 @@ public class TerritoryService : ITerritoryService
             var transfer = CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId);
             _db.CellTransfers.Add(transfer);
             UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
+            existing.DecayDays = decayDays;
             await DecrementVictimHexCounts(userId, [transfer]);
         }
         else
         {
             // New cell — claim it
-            var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry);
+            var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry, decayDays);
             _db.TerritoryCells.Add(newCell);
             _db.CellTransfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
         }
@@ -221,7 +237,6 @@ public class TerritoryService : ITerritoryService
         var isNewExploration = await RecordExploration(userId, hexCell.CellId);
 
         // Update claimer stats
-        var user = await _db.Users.FindAsync(userId);
         if (user != null)
         {
             user.HexCount += 1;
@@ -278,7 +293,7 @@ public class TerritoryService : ITerritoryService
         double minLat, double minLng, double maxLat, double maxLng)
     {
         var filtered = await _db.TerritoryCells
-            .Include(t => t.Owner)
+            .AsNoTracking()
             .Where(t => t.CenterLat >= minLat && t.CenterLat <= maxLat
                      && t.CenterLng >= minLng && t.CenterLng <= maxLng)
             .Take(GameConstants.MaxViewportCells)
@@ -382,7 +397,7 @@ public class TerritoryService : ITerritoryService
     public async Task<List<TerritoryCellResponse>> GetUserTerritories(Guid userId)
     {
         var cells = await _db.TerritoryCells
-            .Include(t => t.Owner)
+            .AsNoTracking()
             .Where(t => t.OwnerId == userId)
             .OrderByDescending(t => t.ClaimedAt)
             .Take(GameConstants.MaxUserTerritoryCells)
@@ -435,44 +450,59 @@ public class TerritoryService : ITerritoryService
 
     public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng)
     {
-        // Return all areas where user owns at least one hex, grouped by parent region (H3 res-3)
-        var areas = await _db.TerritoryCells
-            .Where(t => t.OwnerId == userId)
-            .GroupBy(t => t.ParentCellId)
-            .Select(g => new { ParentCellId = g.Key, OwnedCount = g.Count() })
+        // Group by res-8 neighborhood (~500m zones) — gives actual neighborhood-sized areas
+        var areas = await _db.ExploredCells
+            .AsNoTracking()
+            .Where(e => e.UserId == userId)
+            .GroupBy(e => e.NeighborhoodId)
+            .Select(g => new { NeighborhoodId = g.Key, ExploredCount = g.Count() })
             .ToListAsync();
 
         if (areas.Count == 0) return [];
 
-        // For each area, get total cells in that region (all players)
-        var parentIds = areas.Select(a => a.ParentCellId).ToList();
-        var totalCounts = await _db.TerritoryCells
-            .Where(t => parentIds.Contains(t.ParentCellId))
-            .GroupBy(t => t.ParentCellId)
-            .Select(g => new { ParentCellId = g.Key, TotalCount = g.Count() })
-            .ToListAsync();
-
-        var totalMap = totalCounts.ToDictionary(t => t.ParentCellId, t => t.TotalCount);
-
+        // Geocode neighborhoods in parallel-safe manner:
+        // First pass: resolve names (cached hits are instant, uncached queued)
         var results = new List<ExplorationNeighborhood>();
-        foreach (var a in areas.OrderByDescending(a => a.OwnedCount))
-        {
-            var center = _hexGrid.GetCellCenter(a.ParentCellId);
-            totalMap.TryGetValue(a.ParentCellId, out var total);
-            if (total == 0) total = a.OwnedCount;
+        var geocodeTasks = new List<(int Index, Task<string> Task)>();
 
-            var areaName = await _geocoding.GetAreaName(center.Lat, center.Lng);
+        foreach (var a in areas.OrderByDescending(a => a.ExploredCount))
+        {
+            var center = _hexGrid.GetCellCenter(a.NeighborhoodId);
+            var percent = Math.Round(a.ExploredCount * 100.0 / GameConstants.CellsPerNeighborhood, 1);
 
             results.Add(new ExplorationNeighborhood
             {
-                NeighborhoodId = a.ParentCellId,
+                NeighborhoodId = a.NeighborhoodId,
                 CenterLat = center.Lat,
                 CenterLng = center.Lng,
-                ExploredCount = a.OwnedCount,
-                TotalCount = total,
-                Percent = Math.Round(a.OwnedCount * 100.0 / total, 1),
-                AreaName = areaName,
+                ExploredCount = a.ExploredCount,
+                TotalCount = GameConstants.CellsPerNeighborhood,
+                Percent = Math.Min(percent, 100.0),
+                AreaName = "", // Will be filled below
             });
+
+            geocodeTasks.Add((results.Count - 1, _geocoding.GetAreaName(center.Lat, center.Lng)));
+        }
+
+        // Await all geocoding (throttled internally, but cached hits resolve instantly)
+        // Cap at 5 seconds total — return what we have if Nominatim is slow
+        var allNames = Task.WhenAll(geocodeTasks.Select(t => t.Task));
+        if (await Task.WhenAny(allNames, Task.Delay(5000)) == allNames)
+        {
+            var names = await allNames;
+            for (int i = 0; i < geocodeTasks.Count; i++)
+                results[geocodeTasks[i].Index].AreaName = names[i];
+        }
+        else
+        {
+            // Timeout — fill in whatever completed
+            for (int i = 0; i < geocodeTasks.Count; i++)
+            {
+                if (geocodeTasks[i].Task.IsCompletedSuccessfully)
+                    results[geocodeTasks[i].Index].AreaName = geocodeTasks[i].Task.Result;
+                else
+                    results[geocodeTasks[i].Index].AreaName = $"Area {i + 1}";
+            }
         }
 
         return results;
@@ -526,18 +556,27 @@ public class TerritoryService : ITerritoryService
             .Where(t => cellIds.Contains(t.CellId))
             .ToDictionaryAsync(t => t.CellId);
 
+        // Load user for decay calculation
+        var assignUser = await _db.Users.FindAsync(userId);
+
         foreach (var hexCell in cells)
         {
+            var cellCenter = _hexGrid.GetCellCenter(hexCell.CellId);
+
+            // Calculate per-cell decay based on geographic comparison
+            var cellDecayDays = await CalculateDecayDays(assignUser, cellCenter.Lat, cellCenter.Lng);
+
             if (existingCells.TryGetValue(hexCell.CellId, out var existing))
             {
                 if (IsOnCooldown(existing)) continue;
                 if (existing.OwnerId == userId) continue;
                 transfers.Add(CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId));
                 UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
+                existing.DecayDays = cellDecayDays;
             }
             else
             {
-                var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry);
+                var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry, cellDecayDays);
                 _db.TerritoryCells.Add(newCell);
                 transfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
             }
@@ -581,7 +620,7 @@ public class TerritoryService : ITerritoryService
         cell.SetBoundary(hexCell.Boundary);
     }
 
-    private TerritoryCell CreateNewCell(Guid userId, Guid claimId, HexCell hexCell, DateTime cooldownExpiry)
+    private TerritoryCell CreateNewCell(Guid userId, Guid claimId, HexCell hexCell, DateTime cooldownExpiry, int decayDays = GameConstants.DecayDays)
     {
         var center = _hexGrid.GetCellCenter(hexCell.CellId);
         var cell = new TerritoryCell
@@ -595,9 +634,45 @@ public class TerritoryService : ITerritoryService
             CenterLat = center.Lat,
             CenterLng = center.Lng,
             ParentCellId = _hexGrid.GetParentCellId(hexCell.CellId),
+            DecayDays = decayDays,
         };
         cell.SetBoundary(hexCell.Boundary);
         return cell;
+    }
+
+    /// <summary>
+    /// Calculates decay days for a hex at (lat, lng) relative to the user's home.
+    /// - If user has no home set → default 7 days (they need to set home in onboarding).
+    /// - If within 30km of home → 7 days (skip geocoding, definitely same city).
+    /// - If farther → reverse-geocode and compare city/state/country/continent.
+    /// Geocoding results are cached per coordinate bucket so repeated nearby hexes are fast.
+    /// </summary>
+    private async Task<int> CalculateDecayDays(User? user, double hexLat, double hexLng)
+    {
+        // No home set → use default (user hasn't completed onboarding)
+        if (user == null || user.HomeLat == null || user.HomeLng == null)
+            return GameConstants.DecayDays;
+
+        // Fast path: within 30km of home = definitely same city, no geocoding needed
+        var distanceKm = _geo.HaversineMeters(
+            user.HomeLat.Value, user.HomeLng.Value, hexLat, hexLng) / 1000.0;
+
+        if (distanceKm < GameConstants.SameCityDistanceKm)
+            return GameConstants.DecayDays;
+
+        // Far from home → geocode the hex location and compare against user's home
+        // GeocodingService caches results, so repeated calls for nearby hexes are free
+        var hexLocation = await _geocoding.GetLocationInfo(hexLat, hexLng);
+
+        if (hexLocation.IsEmpty)
+        {
+            // Geocoding failed — fall back to distance-based estimate
+            return GameConstants.GetDecayDaysForDistance(distanceKm);
+        }
+
+        return GameConstants.GetDecayDaysFromLocation(
+            user.HomeCity, user.HomeState, user.HomeCountry, user.HomeContinent,
+            hexLocation.City, hexLocation.State, hexLocation.Country, hexLocation.Continent);
     }
 
     private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers, double totalDistance)
@@ -631,18 +706,16 @@ public class TerritoryService : ITerritoryService
 
     private async Task<bool> RecordExploration(Guid userId, long cellId)
     {
-        var exists = await _db.ExploredCells
-            .AnyAsync(e => e.UserId == userId && e.CellId == cellId);
-        if (exists) return false;
+        var neighborhoodId = _hexGrid.GetNeighborhoodId(cellId);
+        var now = DateTime.UtcNow;
 
-        _db.ExploredCells.Add(new Entities.ExploredCell
-        {
-            UserId = userId,
-            CellId = cellId,
-            NeighborhoodId = _hexGrid.GetNeighborhoodId(cellId),
-            FirstVisitedAt = DateTime.UtcNow,
-        });
-        return true;
+        // Upsert: INSERT ... ON CONFLICT DO NOTHING — single round-trip, no race conditions
+        var rowsAffected = await _db.Database.ExecuteSqlAsync($"""
+            INSERT INTO "ExploredCells" ("UserId", "CellId", "NeighborhoodId", "FirstVisitedAt")
+            VALUES ({userId}, {cellId}, {neighborhoodId}, {now})
+            ON CONFLICT ("UserId", "CellId") DO NOTHING
+            """);
+        return rowsAffected > 0;
     }
 
     private async Task DecrementVictimHexCounts(Guid userId, List<CellTransfer> transfers)

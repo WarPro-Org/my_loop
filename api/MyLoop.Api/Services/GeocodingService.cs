@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using MyLoop.Api.Models;
 
 namespace MyLoop.Api.Services;
 
@@ -11,6 +12,7 @@ public class GeocodingService
 {
     private readonly HttpClient _http;
     private readonly ConcurrentDictionary<string, string> _cache = new();
+    private readonly ConcurrentDictionary<string, LocationInfo> _locationCache = new();
     private readonly SemaphoreSlim _throttle = new(1, 1); // 1 req/sec Nominatim policy
     private DateTime _lastRequest = DateTime.MinValue;
 
@@ -38,7 +40,7 @@ public class GeocodingService
             if (elapsed.TotalMilliseconds < 1100)
                 await Task.Delay(1100 - (int)elapsed.TotalMilliseconds);
 
-            var url = $"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=14&addressdetails=1";
+            var url = $"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=16&addressdetails=1";
             var response = await _http.GetAsync(url);
             _lastRequest = DateTime.UtcNow;
 
@@ -99,4 +101,101 @@ public class GeocodingService
 
     private static string FallbackName(double lat, double lng)
         => $"Area ({lat:F2}, {lng:F2})";
+
+    /// <summary>
+    /// Returns full location info (city, state, country) for decay/home calculations.
+    /// Results are cached per 4-decimal coordinate bucket.
+    /// </summary>
+    public async Task<LocationInfo> GetLocationInfo(double lat, double lng)
+    {
+        var cacheKey = $"loc:{lat:F4},{lng:F4}";
+        if (_locationCache.TryGetValue(cacheKey, out var cached))
+            return cached;
+
+        await _throttle.WaitAsync();
+        try
+        {
+            var elapsed = DateTime.UtcNow - _lastRequest;
+            if (elapsed.TotalMilliseconds < 1100)
+                await Task.Delay(1100 - (int)elapsed.TotalMilliseconds);
+
+            var url = $"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json&zoom=10&addressdetails=1";
+            var response = await _http.GetAsync(url);
+            _lastRequest = DateTime.UtcNow;
+
+            if (!response.IsSuccessStatusCode)
+                return CacheLocationAndReturn(cacheKey, new LocationInfo());
+
+            var json = await response.Content.ReadAsStringAsync();
+            var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            if (!root.TryGetProperty("address", out var addr))
+                return CacheLocationAndReturn(cacheKey, new LocationInfo());
+
+            var info = new LocationInfo
+            {
+                City = ExtractField(addr, "city", "town", "municipality", "village"),
+                State = ExtractField(addr, "state", "province", "region", "state_district"),
+                Country = ExtractField(addr, "country"),
+                CountryCode = ExtractField(addr, "country_code"),
+            };
+            info.Continent = ContinentFromCountryCode(info.CountryCode);
+
+            return CacheLocationAndReturn(cacheKey, info);
+        }
+        catch
+        {
+            return CacheLocationAndReturn(cacheKey, new LocationInfo());
+        }
+        finally
+        {
+            _throttle.Release();
+        }
+    }
+
+    private static string ExtractField(JsonElement addr, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (addr.TryGetProperty(key, out var val))
+            {
+                var str = val.GetString();
+                if (!string.IsNullOrWhiteSpace(str)) return str;
+            }
+        }
+        return "";
+    }
+
+    private LocationInfo CacheLocationAndReturn(string key, LocationInfo info)
+    {
+        _locationCache.TryAdd(key, info);
+        return info;
+    }
+
+    private static string ContinentFromCountryCode(string code)
+    {
+        if (string.IsNullOrEmpty(code)) return "";
+        code = code.ToUpperInvariant();
+        // Simplified continent mapping by country code
+        return code switch
+        {
+            "US" or "CA" or "MX" or "GT" or "BZ" or "HN" or "SV" or "NI" or "CR" or "PA"
+                or "CU" or "JM" or "HT" or "DO" or "PR" or "TT" => "NA",
+            "BR" or "AR" or "CO" or "VE" or "PE" or "CL" or "EC" or "BO" or "PY" or "UY"
+                or "GY" or "SR" => "SA",
+            "GB" or "DE" or "FR" or "IT" or "ES" or "PT" or "NL" or "BE" or "SE" or "NO"
+                or "DK" or "FI" or "PL" or "CZ" or "AT" or "CH" or "IE" or "GR" or "RO"
+                or "BG" or "HR" or "SK" or "HU" or "UA" or "RU" or "BY" or "LT" or "LV"
+                or "EE" or "RS" or "BA" or "ME" or "MK" or "AL" or "SI" or "IS" or "LU"
+                or "MT" or "CY" or "MD" or "GE" or "AM" or "AZ" => "EU",
+            "IN" or "CN" or "JP" or "KR" or "ID" or "TH" or "VN" or "PH" or "MY" or "SG"
+                or "BD" or "PK" or "LK" or "NP" or "MM" or "KH" or "LA" or "TW" or "HK"
+                or "MO" or "MN" or "KZ" or "UZ" or "TM" or "KG" or "TJ" or "AF"
+                or "IR" or "IQ" or "SA" or "AE" or "QA" or "KW" or "OM" or "YE" or "JO"
+                or "LB" or "SY" or "IL" or "PS" or "BH" or "TR" => "AS",
+            "AU" or "NZ" or "FJ" or "PG" or "WS" or "TO" => "OC",
+            _ => "AF" // Default remaining to Africa
+        };
+    }
 }

@@ -18,14 +18,16 @@ public class UsersController : ControllerBase
     private readonly IUserService _userService;
     private readonly IValidationService _validation;
     private readonly IPushNotificationService _pushService;
+    private readonly GeocodingService _geocoding;
     private readonly AppDbContext _db;
 
     public UsersController(IUserService userService, IValidationService validation,
-        IPushNotificationService pushService, AppDbContext db)
+        IPushNotificationService pushService, GeocodingService geocoding, AppDbContext db)
     {
         _userService = userService;
         _validation = validation;
         _pushService = pushService;
+        _geocoding = geocoding;
         _db = db;
     }
 
@@ -134,6 +136,48 @@ public class UsersController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Token)) return BadRequest("Token is required");
         await _pushService.RegisterDeviceToken(id, request.Token, request.Platform ?? "ios");
         return Ok();
+    }
+
+    /// <summary>
+    /// Set the user's home location. Called during onboarding.
+    /// Reverse geocodes the coordinates to determine city/state/country/continent.
+    /// </summary>
+    [HttpPost("{id:guid}/home")]
+    public async Task<IActionResult> SetHome([FromRoute] Guid id, [FromBody] SetHomeRequest request)
+    {
+        if (request.Lat < -90 || request.Lat > 90 || request.Lng < -180 || request.Lng > 180)
+            return BadRequest("Invalid coordinates");
+
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return NotFound();
+
+        // Reverse geocode to get city/state/country
+        var location = await _geocoding.GetLocationInfo(request.Lat, request.Lng);
+
+        user.HomeLat = request.Lat;
+        user.HomeLng = request.Lng;
+        user.HomeCity = location.City;
+        user.HomeState = location.State;
+        user.HomeCountry = location.Country;
+        user.HomeContinent = location.Continent;
+
+        // Also set City/Country for leaderboards if not already set
+        if (string.IsNullOrEmpty(user.City))
+            user.City = location.City;
+        if (string.IsNullOrEmpty(user.Country))
+            user.Country = location.Country;
+
+        await _db.SaveChangesAsync();
+
+        return Ok(new
+        {
+            user.HomeLat,
+            user.HomeLng,
+            user.HomeCity,
+            user.HomeState,
+            user.HomeCountry,
+            user.HomeContinent
+        });
     }
 
     /// <summary>

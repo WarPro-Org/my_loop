@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:myloop/features/auth/login_screen.dart';
 import 'package:myloop/features/auth/avatar_picker_screen.dart';
 import 'package:myloop/features/auth/local_signup_screen.dart';
+import 'package:myloop/features/auth/set_home_screen.dart';
 import 'package:myloop/features/home/home_screen.dart';
 import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/features/journey/journey_screen.dart';
@@ -32,6 +33,7 @@ final router = GoRouter(
     GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
     GoRoute(path: '/local-signup', builder: (context, state) => const LocalSignupScreen()),
     GoRoute(path: '/avatar', builder: (context, state) => AvatarPickerScreen(prefillName: (state.extra as Map<String, dynamic>?)?['name'] as String?)),
+    GoRoute(path: '/set-home', builder: (context, state) => const SetHomeScreen()),
 
     ShellRoute(
       builder: (context, state, child) => HomeScreen(child: child),

@@ -64,6 +64,7 @@ public class AchievementService : IAchievementService
 
         // Convergence loop: achievements awarding XP can trigger level achievements
         int previousCount;
+        int iteration = 0;
         do
         {
             previousCount = newUnlocks.Count;
@@ -96,7 +97,8 @@ public class AchievementService : IAchievementService
                     XpAwarded = def.XpReward,
                 });
             }
-        } while (newUnlocks.Count > previousCount); // Re-check if XP from unlocks triggered new thresholds
+            iteration++;
+        } while (newUnlocks.Count > previousCount && iteration < 5); // Safety bound: max 5 convergence passes
 
         return newUnlocks;
     }

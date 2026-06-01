@@ -64,6 +64,24 @@ public class User
     /// <summary>The country the user is in (for country-scope leaderboard).</summary>
     public string Country { get; set; } = "";
 
+    /// <summary>Latitude of the user's home location (set during onboarding, used for decay distance calculation).</summary>
+    public double? HomeLat { get; set; }
+
+    /// <summary>Longitude of the user's home location (set during onboarding, used for decay distance calculation).</summary>
+    public double? HomeLng { get; set; }
+
+    /// <summary>Home city name (from reverse geocoding the user's chosen home location).</summary>
+    public string HomeCity { get; set; } = "";
+
+    /// <summary>Home state/region name (from reverse geocoding).</summary>
+    public string HomeState { get; set; } = "";
+
+    /// <summary>Home country name (from reverse geocoding).</summary>
+    public string HomeCountry { get; set; } = "";
+
+    /// <summary>Home continent code (from reverse geocoding).</summary>
+    public string HomeContinent { get; set; } = "";
+
     /// <summary>Authentication provider used to create this account (e.g., "google", "apple", "local").</summary>
     public string AuthProvider { get; set; } = "local";
 
