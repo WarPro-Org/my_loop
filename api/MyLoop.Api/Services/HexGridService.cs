@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using H3;
 using H3.Algorithms;
 using H3.Extensions;
@@ -13,6 +14,8 @@ public class HexGridService : IHexGridService
 {
     private readonly IGeoService _geoService;
     private static readonly GeometryFactory GeomFactory = new();
+    // Cache H3 boundary computations — same cell always returns same boundary
+    private static readonly ConcurrentDictionary<long, double[][]> BoundaryCache = new();
 
     public HexGridService(IGeoService geoService)
     {
@@ -302,6 +305,10 @@ public class HexGridService : IHexGridService
 
     private static double[][] GetCellBoundaryVertices(H3Index index)
     {
+        var cellId = (long)(ulong)index;
+        if (BoundaryCache.TryGetValue(cellId, out var cached))
+            return cached;
+
         var polygon = index.GetCellBoundary(GeomFactory);
         var coords = polygon.ExteriorRing.Coordinates;
 
@@ -310,6 +317,8 @@ public class HexGridService : IHexGridService
         {
             vertices[i] = [coords[i].Y, coords[i].X];
         }
+
+        BoundaryCache.TryAdd(cellId, vertices);
         return vertices;
     }
 

@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 
 namespace MyLoop.Api.Services;
@@ -43,33 +42,34 @@ public class DecayCleanupService : BackgroundService
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var cutoff = DateTime.UtcNow.AddDays(-GameConstants.DecayDays);
+        // Pure SQL: decrement owner hex counts and delete decayed cells in one shot.
+        // No entity loading, no memory pressure, no N+1 user lookups.
+        var decremented = await db.Database.ExecuteSqlRawAsync("""
+            WITH decayed AS (
+                SELECT "OwnerId", COUNT(*) as cnt
+                FROM "TerritoryCells"
+                WHERE "LastRefreshedAt" + ("DecayDays" || ' days')::interval < NOW()
+                GROUP BY "OwnerId"
+            )
+            UPDATE "Users" u
+            SET "HexCount" = GREATEST(0, u."HexCount" - d.cnt)
+            FROM decayed d
+            WHERE u."Id" = d."OwnerId"
+            """, ct);
 
-        // Find all cells whose owner hasn't refreshed within the decay window
-        var decayedCells = await db.TerritoryCells
-            .Where(t => t.LastRefreshedAt < cutoff)
-            .Take(1000) // Process in batches to avoid long transactions
-            .ToListAsync(ct);
+        var deleted = await db.Database.ExecuteSqlRawAsync("""
+            DELETE FROM "TerritoryCells"
+            WHERE "CellId" IN (
+                SELECT "CellId" FROM "TerritoryCells"
+                WHERE "LastRefreshedAt" + ("DecayDays" || ' days')::interval < NOW()
+                LIMIT 1000
+            )
+            """, ct);
 
-        if (decayedCells.Count == 0) return;
-
-        // Group by owner to decrement hex counts efficiently
-        var ownerGroups = decayedCells.GroupBy(c => c.OwnerId).ToList();
-
-        foreach (var group in ownerGroups)
+        if (deleted > 0)
         {
-            var user = await db.Users.FindAsync([group.Key], ct);
-            if (user != null)
-            {
-                user.HexCount = Math.Max(0, user.HexCount - group.Count());
-            }
+            _logger.LogInformation("Decay cleanup: released {Count} cells, updated {Owners} owners",
+                deleted, decremented);
         }
-
-        // Remove the decayed cells from the territory map
-        db.TerritoryCells.RemoveRange(decayedCells);
-        await db.SaveChangesAsync(ct);
-
-        _logger.LogInformation("Decay cleanup: released {Count} cells from {Owners} owners",
-            decayedCells.Count, ownerGroups.Count);
     }
 }

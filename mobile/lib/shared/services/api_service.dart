@@ -257,6 +257,20 @@ class ApiService {
     });
   }
 
+  /// Sets the user's home location for decay calculations.
+  /// Called during onboarding after registration.
+  Future<Map<String, dynamic>> setHome({
+    required String userId,
+    required double lat,
+    required double lng,
+  }) async {
+    final response = await _dio.post('/api/users/$userId/home', data: {
+      'lat': lat,
+      'lng': lng,
+    });
+    return response.data as Map<String, dynamic>;
+  }
+
   /// Fetches paginated walk history (claims) for a user.
   Future<List<Map<String, dynamic>>> getWalkHistory({
     required String userId,

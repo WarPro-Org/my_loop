@@ -16,7 +16,7 @@ public static class GameConstants
     public const int LoopSkipNeighbors = 10;
     public const double MinFillAreaSquareMeters = 5_000.0;
     public const double DeduplicationOverlapThreshold = 0.80;
-    public const double CellCooldownHours = 5.0;
+    public const double CellCooldownHours = 0.0167; // ~1 minute (for testing)
 
     // --- H3 Hex Grid ---
     /// <summary>
@@ -29,8 +29,65 @@ public static class GameConstants
     public const double CellAreaSquareMeters = 2_150.0;
 
     // --- Decay ---
-    /// <summary>Hex cells decay after this many days without the owner walking through them.</summary>
+    /// <summary>Default hex decay for local territory (same city).</summary>
     public const int DecayDays = 7;
+    /// <summary>Decay for hexes in a different city but same state/region.</summary>
+    public const int DecayDaysOtherCity = 15;
+    /// <summary>Decay for hexes in a different state/region but same country.</summary>
+    public const int DecayDaysOtherRegion = 30;
+    /// <summary>Decay for hexes in a different country but same continent.</summary>
+    public const int DecayDaysOtherCountry = 60;
+    /// <summary>Decay for hexes on a different continent.</summary>
+    public const int DecayDaysOtherContinent = 90;
+
+    /// <summary>
+    /// Distance threshold (km) below which we skip geocoding and assume "same city".
+    /// </summary>
+    public const double SameCityDistanceKm = 30;
+
+    /// <summary>
+    /// Returns decay days based on geographic comparison between user's home and hex location.
+    /// Uses actual administrative boundaries (city/state/country/continent).
+    /// </summary>
+    public static int GetDecayDaysFromLocation(
+        string homeCity, string homeState, string homeCountry, string homeContinent,
+        string hexCity, string hexState, string hexCountry, string hexContinent)
+    {
+        // Same city → local decay
+        if (!string.IsNullOrEmpty(homeCity) && !string.IsNullOrEmpty(hexCity)
+            && string.Equals(homeCity, hexCity, StringComparison.OrdinalIgnoreCase))
+            return DecayDays;
+
+        // Same state/region → other city decay
+        if (!string.IsNullOrEmpty(homeState) && !string.IsNullOrEmpty(hexState)
+            && string.Equals(homeState, hexState, StringComparison.OrdinalIgnoreCase))
+            return DecayDaysOtherCity;
+
+        // Same country → other region decay
+        if (!string.IsNullOrEmpty(homeCountry) && !string.IsNullOrEmpty(hexCountry)
+            && string.Equals(homeCountry, hexCountry, StringComparison.OrdinalIgnoreCase))
+            return DecayDaysOtherRegion;
+
+        // Same continent → other country decay
+        if (!string.IsNullOrEmpty(homeContinent) && !string.IsNullOrEmpty(hexContinent)
+            && string.Equals(homeContinent, hexContinent, StringComparison.OrdinalIgnoreCase))
+            return DecayDaysOtherCountry;
+
+        // Different continent
+        return DecayDaysOtherContinent;
+    }
+
+    /// <summary>
+    /// Fallback: returns decay days based on raw distance when geocoding is unavailable.
+    /// </summary>
+    public static int GetDecayDaysForDistance(double distanceKm)
+    {
+        if (distanceKm < 30) return DecayDays;
+        if (distanceKm < 200) return DecayDaysOtherCity;
+        if (distanceKm < 1000) return DecayDaysOtherRegion;
+        if (distanceKm < 5000) return DecayDaysOtherCountry;
+        return DecayDaysOtherContinent;
+    }
 
     /// <summary>Total child cells at res-11 within one res-8 neighborhood hex (7^3 = 343).</summary>
     public const int CellsPerNeighborhood = 343;

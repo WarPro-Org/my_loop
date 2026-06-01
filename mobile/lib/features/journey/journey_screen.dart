@@ -366,6 +366,9 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
 
   Future<void> _refreshViewportHexes() async {
     if (!_mapReady) return;
+    // LOD: Only load other players' individual hexes at zoom 14+
+    // At lower zoom, only the user's own hexes (preloaded) are visible
+    if (_currentZoom < 14.0) return;
     final bounds = _mapController.camera.visibleBounds;
     await _hexManager.loadViewport(
       minLat: bounds.south, minLng: bounds.west,
@@ -666,6 +669,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   }
 
   List<Widget> _buildOtherPlayerHexes() {
+    // LOD: Only render other players' hexes at zoom 14+
+    if (_currentZoom < 14.0) return [];
     return _hexManager.otherHexesByColor.entries.map((entry) => AnimatedHexOverlay(
       hexBoundaries: entry.value,
       userColor: Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000),

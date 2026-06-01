@@ -40,10 +40,17 @@ public class TerritoryCell
 
     /// <summary>
     /// Last time the owner physically visited (walked through) this cell.
-    /// Used for decay: cells not refreshed within 7 days lose ownership.
+    /// Used for decay: cells not refreshed within DecayDays lose ownership.
     /// Set on initial claim and updated when owner walks through again.
     /// </summary>
     public DateTime LastRefreshedAt { get; set; }
+
+    /// <summary>
+    /// How many days this cell survives without a refresh before decaying.
+    /// Calculated at capture time based on distance from owner's home location.
+    /// Local (same city): 7d, Other city: 15d, Other region: 30d, Other country: 60d, Other continent: 90d.
+    /// </summary>
+    public int DecayDays { get; set; } = 7;
 
     /// <summary>
     /// The 6 (or 5) corner vertices of this hexagon, serialized as a JSON array of [lat, lng] pairs.
