@@ -15,9 +15,9 @@ import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/services/api_service.dart';
-import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/animated_hexagon.dart';
+import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
 import 'package:go_router/go_router.dart';
@@ -141,12 +141,17 @@ class _HomeTabState extends ConsumerState<HomeTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: animated hex mascot + greeting + avatar settings button
+            // Header: avatar + greeting + tier badge
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Animated hex mascot — same size as avatar button
-                const AnimatedHexagon(size: 52),
+                // Player avatar emoji (no background)
+                AvatarWidget(
+                  avatarId: profile.avatarId,
+                  color: profile.color,
+                  size: 52,
+                  showBackground: false,
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -1266,51 +1271,26 @@ class _MiniStat extends StatelessWidget {
 /// EXPLORATION CARD
 /// ─────────────────────────────────────────────────────────────────────────────
 
+/// Provider that fetches exploration stats (invalidatable after claims).
+final explorationProvider = FutureProvider.autoDispose<List<ExplorationNeighborhood>>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  final profile = ref.read(userProfileProvider);
+  final userId = profile.userId;
+  if (userId == null || userId.isEmpty) return [];
+  // lat/lng not used by the API query — pass 0,0
+  return api.getExplorationStats(userId: userId, lat: 0, lng: 0);
+});
+
 /// Shows exploration % for the user's nearest neighborhood.
-class _ExplorationCard extends ConsumerStatefulWidget {
+class _ExplorationCard extends ConsumerWidget {
   const _ExplorationCard();
 
   @override
-  ConsumerState<_ExplorationCard> createState() => _ExplorationCardState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    final explorationAsync = ref.watch(explorationProvider);
 
-class _ExplorationCardState extends ConsumerState<_ExplorationCard> {
-  List<ExplorationNeighborhood>? _neighborhoods;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadExploration();
-  }
-
-  Future<void> _loadExploration() async {
-    final profile = ref.read(userProfileProvider);
-    final userId = profile.userId;
-    if (userId == null) {
-      setState(() => _loading = false);
-      return;
-    }
-    try {
-      final api = ref.read(apiServiceProvider);
-      // Get user's current GPS location
-      final locationService = ref.read(locationServiceProvider);
-      final pos = await locationService.getCurrentPosition();
-      final stats = await api.getExplorationStats(
-        userId: userId,
-        lat: pos.latitude,
-        lng: pos.longitude,
-      );
-      if (mounted) setState(() { _neighborhoods = stats; _loading = false; });
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return Column(
+    return explorationAsync.when(
+      loading: () => Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
@@ -1326,73 +1306,75 @@ class _ExplorationCardState extends ConsumerState<_ExplorationCard> {
           const SizedBox(height: 12),
           const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
         ],
-      );
-    }
-    if (_neighborhoods == null || _neighborhoods!.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF00D4AA).withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: const Color(0xFF00D4AA).withValues(alpha: 0.3)),
-        ),
-        child: Row(
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (neighborhoods) {
+        if (neighborhoods.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00D4AA).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: const Color(0xFF00D4AA).withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                const Text('🗺️', style: TextStyle(fontSize: 24)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Area Exploration',
+                        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                      ),
+                      Text(
+                        'Start walking to explore your neighborhood!',
+                        style: TextStyle(fontSize: 12, color: AppColors.dark.withValues(alpha: 0.6)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final sorted = [...neighborhoods]..sort((a, b) => b.percent.compareTo(a.percent));
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('🗺️', style: TextStyle(fontSize: 24)),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Area Exploration',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                  ),
-                  Text(
-                    'Start walking to explore your neighborhood!',
-                    style: TextStyle(fontSize: 12, color: AppColors.dark.withValues(alpha: 0.6)),
-                  ),
-                ],
+            Row(
+              children: [
+                const Text('🗺️', style: TextStyle(fontSize: 22)),
+                const SizedBox(width: 8),
+                const Text(
+                  'Area Exploration',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
+                ),
+                const Spacer(),
+                Text(
+                  '${sorted.length} area${sorted.length > 1 ? 's' : ''}',
+                  style: TextStyle(fontSize: 12, color: AppColors.grey),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 100,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: sorted.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, i) => _NeighborhoodTile(neighborhood: sorted[i]),
               ),
             ),
           ],
-        ),
-      );
-    }
-
-    // Sort by highest explored % first
-    final sorted = [..._neighborhoods!]..sort((a, b) => b.percent.compareTo(a.percent));
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Text('🗺️', style: TextStyle(fontSize: 22)),
-            const SizedBox(width: 8),
-            const Text(
-              'Area Exploration',
-              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16),
-            ),
-            const Spacer(),
-            Text(
-              '${sorted.length} area${sorted.length > 1 ? 's' : ''}',
-              style: TextStyle(fontSize: 12, color: AppColors.grey),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 100,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: sorted.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, i) => _NeighborhoodTile(neighborhood: sorted[i]),
-          ),
-        ),
-      ],
+        );
+      },
     );
   }
 }

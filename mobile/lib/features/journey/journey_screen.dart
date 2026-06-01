@@ -20,6 +20,7 @@ import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
+import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/notification_service.dart';
 
@@ -133,6 +134,11 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         distanceKm: user.distanceKm,
         rank: updatedRank,
       );
+      // Invalidate all home page providers so they refetch fresh data
+      ref.invalidate(dailyMissionsProvider);
+      ref.invalidate(xpInfoProvider);
+      ref.invalidate(explorationProvider);
+      ref.invalidate(achievementsProvider);
     }
   }
 

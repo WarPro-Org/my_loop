@@ -1,13 +1,17 @@
 /// Profile screen - displays player identity, stats, and settings.
 library;
 
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
+import 'package:myloop/shared/widgets/hex_trophy.dart';
 
 /// The player's profile screen with identity, stats, and settings.
 class ProfileScreen extends ConsumerWidget {
@@ -33,28 +37,111 @@ class ProfileScreen extends ConsumerWidget {
               AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 80),
               const SizedBox(height: 12),
               Text(profile.displayName, style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 32),
-              _SettingsSection(),
+              const SizedBox(height: 6),
+              // Tier label
+              Text(
+                HexTier.fullLabel(profile.hexCount),
+                style: TextStyle(
+                  color: HexTier.fromHexes(profile.hexCount).color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 24),
+
+              // Quick stats row
+              Row(
+                children: [
+                  _ProfileStat(label: 'Hexes', value: '${profile.hexCount}'),
+                  _ProfileStat(label: 'Streak', value: '${profile.streak}'),
+                  _ProfileStat(label: 'Distance', value: '${profile.distanceKm.toStringAsFixed(1)} km'),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Walk History
+              _SettingsTile(
+                icon: Icons.history_outlined,
+                label: 'Walk History',
+                onTap: () => context.push('/walk-history'),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Settings section
+              _SettingsTile(
+                icon: Icons.palette_outlined,
+                label: 'Change Avatar & Color',
+                onTap: () => _showAvatarColorPicker(context, ref),
+              ),
+              _SettingsTile(
+                icon: Icons.edit_outlined,
+                label: 'Edit Display Name',
+                onTap: () => _showNameEditor(context, ref),
+              ),
+              _SettingsTile(
+                icon: Icons.notifications_outlined,
+                label: 'Notifications',
+                onTap: () => context.push('/notifications'),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Sign out
+              _SettingsTile(
+                icon: Icons.logout_outlined,
+                label: 'Sign Out',
+                iconColor: AppColors.red,
+                onTap: () async {
+                  ref.read(userProfileProvider.notifier).clear();
+                  await ref.read(authServiceProvider).signOut();
+                  if (context.mounted) context.go('/login');
+                },
+              ),
+              _SettingsTile(
+                icon: Icons.delete_forever_outlined,
+                label: 'Delete Account',
+                iconColor: Colors.red.shade900,
+                onTap: () => _confirmDeleteAccount(context, ref),
+              ),
+
+              SizedBox(height: MediaQuery.of(context).padding.bottom + 24),
             ],
           ),
         ),
       ),
     );
   }
-}
 
-class _SettingsSection extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Settings', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 12),
-        _SettingsTile(icon: Icons.palette, label: 'Change Avatar & Color', onTap: () => _showAvatarColorPicker(context, ref)),
-        _SettingsTile(icon: Icons.edit, label: 'Edit Display Name', onTap: () => _showNameEditor(context, ref)),
-        _SettingsTile(icon: Icons.logout, label: 'Sign Out', onTap: () => context.go('/login')),
-      ],
+  void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Account', style: TextStyle(fontWeight: FontWeight.w700)),
+        content: const Text(
+          'This will permanently delete your account, all territory, stats, and progress. This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final profile = ref.read(userProfileProvider);
+              final api = ref.read(apiServiceProvider);
+              final uid = profile.userId;
+              if (uid == null) return;
+              try {
+                await api.deleteAccount(uid);
+                await FirebaseAuth.instance.currentUser?.delete();
+              } catch (_) {
+                await FirebaseAuth.instance.signOut();
+              }
+              if (context.mounted) context.go('/login');
+            },
+            child: Text('Delete', style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -201,7 +288,8 @@ class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _SettingsTile({required this.icon, required this.label, required this.onTap});
+  final Color? iconColor;
+  const _SettingsTile({required this.icon, required this.label, required this.onTap, this.iconColor});
 
   @override
   Widget build(BuildContext context) {
@@ -215,10 +303,38 @@ class _SettingsTile extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: ListTile(
-          leading: Icon(icon, color: AppColors.dark),
-          title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          leading: Icon(icon, color: iconColor ?? AppColors.dark),
+          title: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: iconColor ?? AppColors.dark)),
           trailing: const Icon(Icons.chevron_right, color: AppColors.grey),
           onTap: onTap,
+        ),
+      ),
+    );
+  }
+}
+
+class _ProfileStat extends StatelessWidget {
+  final String label;
+  final String value;
+  const _ProfileStat({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        margin: const EdgeInsets.symmetric(horizontal: 4),
+        decoration: BoxDecoration(
+          color: AppColors.snow,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.greyLight, width: 1.5),
+        ),
+        child: Column(
+          children: [
+            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 2),
+            Text(label, style: TextStyle(fontSize: 11, color: AppColors.grey, fontWeight: FontWeight.w600)),
+          ],
         ),
       ),
     );

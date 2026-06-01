@@ -32,6 +32,7 @@ class AvatarWidget extends StatelessWidget {
   final String color;
   final double size;
   final int hexes; // kept for API compat, not used visually
+  final bool showBackground;
 
   const AvatarWidget({
     super.key,
@@ -39,12 +40,23 @@ class AvatarWidget extends StatelessWidget {
     required this.color,
     this.size = 48,
     this.hexes = 0,
+    this.showBackground = true,
   });
 
   @override
   Widget build(BuildContext context) {
     final emoji = avatarEmojis[avatarId.clamp(0, avatarEmojis.length - 1)];
     final bgColor = Color(int.parse(color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+
+    if (!showBackground) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Center(
+          child: Text(emoji, style: TextStyle(fontSize: size * 0.55)),
+        ),
+      );
+    }
 
     return Container(
       width: size,
