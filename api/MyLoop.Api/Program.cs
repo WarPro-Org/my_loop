@@ -153,15 +153,37 @@ using (var scope = app.Services.CreateScope())
             ON ""ExploredCells"" (""NeighborhoodId"")");
 
         // Backfill ExploredCells from TerritoryCells for any cells that were captured
-        // before the ExploredCells tracking was added
-        db.Database.ExecuteSqlRaw(@"
-            INSERT INTO ""ExploredCells"" (""UserId"", ""CellId"", ""NeighborhoodId"", ""FirstVisitedAt"")
-            SELECT t.""OwnerId"", t.""CellId"", t.""ParentCellId"", t.""ClaimedAt""
-            FROM ""TerritoryCells"" t
-            WHERE NOT EXISTS (
-                SELECT 1 FROM ""ExploredCells"" e
-                WHERE e.""UserId"" = t.""OwnerId"" AND e.""CellId"" = t.""CellId""
-            )");
+        // before the ExploredCells tracking was added — computes correct res-8 neighborhood
+        var hexGrid = scope.ServiceProvider.GetRequiredService<IHexGridService>();
+        var unbackfilled = db.Database.SqlQueryRaw<long>(
+            @"SELECT t.""CellId"" FROM ""TerritoryCells"" t
+              WHERE NOT EXISTS (
+                  SELECT 1 FROM ""ExploredCells"" e
+                  WHERE e.""UserId"" = t.""OwnerId"" AND e.""CellId"" = t.""CellId""
+              )").ToList();
+
+        if (unbackfilled.Count > 0)
+        {
+            // Also fix any existing rows that used the wrong parent resolution
+            db.Database.ExecuteSqlRaw(@"DELETE FROM ""ExploredCells""");
+
+            var cells = db.TerritoryCells.AsNoTracking()
+                .Select(t => new { t.CellId, t.OwnerId, t.ClaimedAt })
+                .ToList();
+
+            foreach (var batch in cells.Chunk(500))
+            {
+                foreach (var c in batch)
+                {
+                    var neighborhoodId = hexGrid.GetNeighborhoodId(c.CellId);
+                    db.Database.ExecuteSqlRaw(
+                        @"INSERT INTO ""ExploredCells"" (""UserId"", ""CellId"", ""NeighborhoodId"", ""FirstVisitedAt"")
+                          VALUES ({0}, {1}, {2}, {3})
+                          ON CONFLICT (""UserId"", ""CellId"") DO NOTHING",
+                        c.OwnerId, c.CellId, neighborhoodId, c.ClaimedAt);
+                }
+            }
+        }
 
         // XP & Missions schema
         db.Database.ExecuteSqlRaw(
