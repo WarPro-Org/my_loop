@@ -176,9 +176,14 @@ public class TerritoryService : ITerritoryService
         var existing = await _db.TerritoryCells.Include(t => t.Owner)
             .FirstOrDefaultAsync(t => t.CellId == hexCell.CellId);
 
-        // Already ours — no-op
+        // Already ours — refresh decay timer and record exploration, but no new claim
         if (existing != null && existing.OwnerId == userId)
+        {
+            existing.LastRefreshedAt = DateTime.UtcNow;
+            await RecordExploration(userId, hexCell.CellId);
+            await _db.SaveChangesAsync();
             return new StepClaimResponse { Claimed = false };
+        }
 
         // On cooldown — can't steal
         if (existing != null && IsOnCooldown(existing))
@@ -204,6 +209,9 @@ public class TerritoryService : ITerritoryService
             _db.TerritoryCells.Add(newCell);
             _db.CellTransfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
         }
+
+        // Record exploration (permanent)
+        await RecordExploration(userId, hexCell.CellId);
 
         // Update claimer stats
         var user = await _db.Users.FindAsync(userId);
@@ -244,10 +252,12 @@ public class TerritoryService : ITerritoryService
                 OwnerColor = t.Owner!.Color,
                 OwnerName = t.Owner!.DisplayName,
                 t.CooldownExpiresAt,
-                t.ParentCellId
+                t.ParentCellId,
+                t.LastRefreshedAt
             })
             .ToListAsync();
 
+        var decaySeconds = GameConstants.DecayDays * 86400.0;
         return filtered.Select(t => new TerritoryCellResponse
         {
             CellId = t.CellId,
@@ -257,6 +267,8 @@ public class TerritoryService : ITerritoryService
             OwnerName = t.OwnerName,
             CooldownExpiresAtUtc = t.CooldownExpiresAt,
             ParentCellId = t.ParentCellId,
+            DecayProgress = Math.Clamp(
+                (DateTime.UtcNow - t.LastRefreshedAt).TotalSeconds / decaySeconds, 0.0, 1.0),
         }).ToList();
     }
 
@@ -375,6 +387,34 @@ public class TerritoryService : ITerritoryService
             .ToListAsync();
     }
 
+    public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng)
+    {
+        var neighborhoodIds = _hexGrid.GetNearbyNeighborhoods(lat, lng, k: 1);
+
+        var counts = await _db.ExploredCells
+            .Where(e => e.UserId == userId && neighborhoodIds.Contains(e.NeighborhoodId))
+            .GroupBy(e => e.NeighborhoodId)
+            .Select(g => new { NeighborhoodId = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var countMap = counts.ToDictionary(c => c.NeighborhoodId, c => c.Count);
+
+        return neighborhoodIds.Select(nId =>
+        {
+            var center = _hexGrid.GetCellCenter(nId);
+            countMap.TryGetValue(nId, out var explored);
+            return new ExplorationNeighborhood
+            {
+                NeighborhoodId = nId,
+                CenterLat = center.Lat,
+                CenterLng = center.Lng,
+                ExploredCount = explored,
+                TotalCount = GameConstants.CellsPerNeighborhood,
+                Percent = Math.Round(explored * 100.0 / GameConstants.CellsPerNeighborhood, 1),
+            };
+        }).ToList();
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Private helpers — ProcessClaim decomposition
     // ──────────────────────────────────────────────────────────────────────────
@@ -470,6 +510,7 @@ public class TerritoryService : ITerritoryService
         cell.OwnerId = userId;
         cell.ClaimId = claimId;
         cell.ClaimedAt = DateTime.UtcNow;
+        cell.LastRefreshedAt = DateTime.UtcNow;
         cell.CooldownExpiresAt = cooldownExpiry;
         cell.CenterLat = center.Lat;
         cell.CenterLng = center.Lng;
@@ -486,6 +527,7 @@ public class TerritoryService : ITerritoryService
             OwnerId = userId,
             ClaimId = claimId,
             ClaimedAt = DateTime.UtcNow,
+            LastRefreshedAt = DateTime.UtcNow,
             CooldownExpiresAt = cooldownExpiry,
             CenterLat = center.Lat,
             CenterLng = center.Lng,
@@ -522,6 +564,21 @@ public class TerritoryService : ITerritoryService
         user.LastClaimDate = today;
         if (user.Streak > user.MaxStreak)
             user.MaxStreak = user.Streak;
+    }
+
+    private async Task RecordExploration(Guid userId, long cellId)
+    {
+        var exists = await _db.ExploredCells
+            .AnyAsync(e => e.UserId == userId && e.CellId == cellId);
+        if (exists) return;
+
+        _db.ExploredCells.Add(new Entities.ExploredCell
+        {
+            UserId = userId,
+            CellId = cellId,
+            NeighborhoodId = _hexGrid.GetNeighborhoodId(cellId),
+            FirstVisitedAt = DateTime.UtcNow,
+        });
     }
 
     private async Task DecrementVictimHexCounts(Guid userId, List<CellTransfer> transfers)

@@ -1,7 +1,7 @@
 using MyLoop.Api.Entities;
 using MyLoop.Api.Models;
 
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// User operations — registration, lookup, profile updates.

@@ -1,6 +1,6 @@
 using MyLoop.Api.Models;
 
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Geographic math operations — distance, area, and coordinate helpers.

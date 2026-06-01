@@ -1,4 +1,4 @@
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Validates walk paths for physical plausibility.

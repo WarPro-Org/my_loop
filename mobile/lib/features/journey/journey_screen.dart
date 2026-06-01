@@ -557,6 +557,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
             userColor: userColor,
             currentZoom: _currentZoom,
             solidMode: _solidHexes,
+            decayValues: _hexManager.userOwnDecayValues,
           ),
         // Walk-through claimed hexes — appear instantly as user walks
         if (journey.claimedHexBoundaries.isNotEmpty)

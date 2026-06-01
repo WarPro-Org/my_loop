@@ -1,4 +1,4 @@
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Input validation — display names, colors, avatar IDs.

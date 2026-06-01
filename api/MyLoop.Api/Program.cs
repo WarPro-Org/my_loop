@@ -22,6 +22,7 @@ builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<ITerritoryNotifier, TerritoryNotifier>();
 builder.Services.AddScoped<IPathValidationService, PathValidationService>();
 builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
+builder.Services.AddHostedService<DecayCleanupService>();
 
 // --- SignalR ---
 builder.Services.AddSignalR();
@@ -121,101 +122,10 @@ app.MapGet("/terms", () => Results.Content("""
 """, "text/html"));
 
 // Ensure the database schema exists on startup.
-// This is a dev convenience — in production, use EF Core migrations instead.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
-
-    // Add AuthProvider column if missing (handles existing DBs without recreating)
-    try
-    {
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AuthProvider\" text NOT NULL DEFAULT 'local'");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopTenFinishes\" integer NOT NULL DEFAULT 0");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopHundredFinishes\" integer NOT NULL DEFAULT 0");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TopThousandFinishes\" integer NOT NULL DEFAULT 0");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"LastClaimDate\" date");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TotalHexesCaptured\" integer NOT NULL DEFAULT 0");
-    }
-    catch { /* Column already exists or DB was just created with it */ }
-
-    // Add territory ownership history columns and table (handles existing DBs)
-    try
-    {
-        // New columns on TerritoryCells for spatial queries
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CenterLat\" double precision NOT NULL DEFAULT 0");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CenterLng\" double precision NOT NULL DEFAULT 0");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"ParentCellId\" bigint NOT NULL DEFAULT 0");
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"CooldownExpiresAt\" timestamp with time zone");
-
-        // Drop PreviousOwnerId if it exists (replaced by CellTransfers table)
-        db.Database.ExecuteSqlRaw(
-            "ALTER TABLE \"TerritoryCells\" DROP COLUMN IF EXISTS \"PreviousOwnerId\"");
-
-        // CellTransfers table — ownership history for revenge recapture feature
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS ""CellTransfers"" (
-                ""Id"" uuid PRIMARY KEY,
-                ""CellId"" bigint NOT NULL,
-                ""FromUserId"" uuid NULL,
-                ""ToUserId"" uuid NOT NULL,
-                ""ClaimId"" uuid NOT NULL,
-                ""TransferredAt"" timestamp with time zone NOT NULL
-            )");
-
-        // Indexes for CellTransfers (idempotent with IF NOT EXISTS)
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_CellTransfers_FromUserId_TransferredAt""
-            ON ""CellTransfers"" (""FromUserId"", ""TransferredAt"" DESC)");
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_CellTransfers_ToUserId_TransferredAt""
-            ON ""CellTransfers"" (""ToUserId"", ""TransferredAt"" DESC)");
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_CellTransfers_CellId""
-            ON ""CellTransfers"" (""CellId"")");
-
-        // Indexes for TerritoryCells columns
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_CenterLatLng""
-            ON ""TerritoryCells"" (""CenterLat"", ""CenterLng"")");
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId""
-            ON ""TerritoryCells"" (""ParentCellId"")");
-
-        // True 2D spatial index using PostgreSQL native point + GiST
-        // This uses an expression index: point(CenterLng, CenterLat) — note: PG point is (x, y) = (lng, lat)
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Center_GiST""
-            ON ""TerritoryCells"" USING gist (point(""CenterLng"", ""CenterLat""))");
-
-        // DeviceTokens table for push notifications
-        db.Database.ExecuteSqlRaw(@"
-            CREATE TABLE IF NOT EXISTS ""DeviceTokens"" (
-                ""Id"" uuid PRIMARY KEY,
-                ""UserId"" uuid NOT NULL,
-                ""Token"" text NOT NULL,
-                ""Platform"" text NOT NULL DEFAULT 'ios',
-                ""CreatedAt"" timestamp with time zone NOT NULL,
-                ""LastUsedAt"" timestamp with time zone NOT NULL
-            )");
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_DeviceTokens_UserId""
-            ON ""DeviceTokens"" (""UserId"")");
-        db.Database.ExecuteSqlRaw(@"
-            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DeviceTokens_Token""
-            ON ""DeviceTokens"" (""Token"")");
-    }
-    catch { /* Tables/columns already exist or DB was just created with them */ }
 
     // Seed data if the Users table is empty
     if (!db.Users.Any())

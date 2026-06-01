@@ -1,4 +1,4 @@
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Broadcasts territory ownership changes to connected clients in real-time.

@@ -67,6 +67,12 @@ public class HexGridService : IHexGridService
         return (long)(ulong)parent;
     }
 
+    public long GetNeighborhoodId(long cellId)
+    {
+        var parent = ToH3Index(cellId).GetParentForResolution(GameConstants.H3NeighborhoodResolution);
+        return (long)(ulong)parent;
+    }
+
     public double CalculateArea(int cellCount)
     {
         return cellCount * GameConstants.CellAreaSquareMeters;
@@ -305,5 +311,15 @@ public class HexGridService : IHexGridService
             vertices[i] = [coords[i].Y, coords[i].X];
         }
         return vertices;
+    }
+
+    public List<long> GetNearbyNeighborhoods(double lat, double lng, int k = 1)
+    {
+        var latRad = lat * Math.PI / 180.0;
+        var lngRad = lng * Math.PI / 180.0;
+        var center = H3Index.FromLatLng(new LatLng(latRad, lngRad), GameConstants.H3NeighborhoodResolution);
+
+        var disk = center.GridDiskDistances(k);
+        return disk.Select(d => (long)(ulong)d.Index).ToList();
     }
 }

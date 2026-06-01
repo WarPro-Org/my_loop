@@ -9,6 +9,12 @@ public class TerritoryCellResponse
     public string? OwnerName { get; set; }
     public DateTime? CooldownExpiresAtUtc { get; set; }
     public long ParentCellId { get; set; }
+
+    /// <summary>
+    /// Decay progress from 0.0 (just refreshed) to 1.0 (about to expire).
+    /// Client uses this to fade hex opacity, showing urgency to revisit.
+    /// </summary>
+    public double DecayProgress { get; set; }
 }
 
 public class TerritoryStatsResponse
@@ -59,4 +65,28 @@ public class CellTransferDetail
     public Guid ToUserId { get; set; }
     public DateTime TransferredAt { get; set; }
     public Guid ClaimId { get; set; }
+}
+
+/// <summary>
+/// Exploration stats for one neighborhood (H3 resolution 8 parent).
+/// </summary>
+public class ExplorationNeighborhood
+{
+    /// <summary>H3 cell ID of the neighborhood (res 8).</summary>
+    public long NeighborhoodId { get; set; }
+
+    /// <summary>Center lat of the neighborhood.</summary>
+    public double CenterLat { get; set; }
+
+    /// <summary>Center lng of the neighborhood.</summary>
+    public double CenterLng { get; set; }
+
+    /// <summary>Number of unique cells the user has explored in this neighborhood.</summary>
+    public int ExploredCount { get; set; }
+
+    /// <summary>Total cells possible in this neighborhood (343 for res 8→11).</summary>
+    public int TotalCount { get; set; }
+
+    /// <summary>Exploration percentage (0.0 to 100.0).</summary>
+    public double Percent { get; set; }
 }

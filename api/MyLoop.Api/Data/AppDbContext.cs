@@ -34,6 +34,9 @@ public class AppDbContext : DbContext
     /// <summary>Gets the set of FCM device tokens for push notifications.</summary>
     public DbSet<DeviceToken> DeviceTokens => Set<DeviceToken>();
 
+    /// <summary>Gets the set of explored hex cells (permanent discovery records).</summary>
+    public DbSet<ExploredCell> ExploredCells => Set<ExploredCell>();
+
     /// <summary>
     /// Configures the entity model: primary keys, unique constraints, and indexes
     /// for efficient query patterns used by the game.
@@ -69,6 +72,14 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(l => new { l.Date, l.Rank }); // fast lookup: "top N on this date"
             e.HasIndex(l => new { l.UserId, l.Date }).IsUnique(); // prevent duplicate entries per user/day
+        });
+
+        // ExploredCell: permanent record of hex discovery (for exploration %)
+        modelBuilder.Entity<ExploredCell>(e =>
+        {
+            e.HasKey(x => new { x.UserId, x.CellId }); // composite PK
+            e.HasIndex(x => new { x.UserId, x.NeighborhoodId }); // fast: "how many cells has user explored in this neighborhood"
+            e.HasIndex(x => x.NeighborhoodId); // fast: "total explored cells in neighborhood"
         });
     }
 }

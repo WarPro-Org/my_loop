@@ -25,10 +25,15 @@ public static class GameConstants
     /// </summary>
     public const int H3Resolution = 11;
     public const int H3ParentResolution = 3;
+    public const int H3NeighborhoodResolution = 8;
     public const double CellAreaSquareMeters = 2_150.0;
 
-    /// <summary>Apothem (center-to-edge) at res 11, ~25m.</summary>
-    public const double HexApothemMeters = 25.0;
+    // --- Decay ---
+    /// <summary>Hex cells decay after this many days without the owner walking through them.</summary>
+    public const int DecayDays = 7;
+
+    /// <summary>Total child cells at res-11 within one res-8 neighborhood hex (7^3 = 343).</summary>
+    public const int CellsPerNeighborhood = 343;
 
     // --- Viewport / Query Limits ---
     public const int MaxViewportCells = 500;
@@ -45,7 +50,6 @@ public static class GameConstants
     public const int MaxHistoryDepth = 50;
     public const int MaxStolenCellsResponse = 200;
     public const int MaxStolenDaysLookback = 30;
-    public const int RevengeDaysWindow = 7;
 
     // --- Validation ---
     public const int MinDisplayNameLength = 2;

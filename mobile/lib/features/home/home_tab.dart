@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/home/home_screen.dart';
+import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/animated_hexagon.dart';
@@ -256,6 +257,10 @@ class _HomeTabState extends ConsumerState<HomeTab> {
 
             // Quick stats row (interactive)
             _QuickStats(),
+            const SizedBox(height: 24),
+
+            // Exploration progress for nearby neighborhoods
+            const _ExplorationCard(),
             const SizedBox(height: 24),
 
             // Reels-style info carousel
@@ -781,6 +786,101 @@ class _MiniStat extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// ─────────────────────────────────────────────────────────────────────────────
+/// EXPLORATION CARD
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Shows exploration % for the user's nearest neighborhood.
+class _ExplorationCard extends ConsumerStatefulWidget {
+  const _ExplorationCard();
+
+  @override
+  ConsumerState<_ExplorationCard> createState() => _ExplorationCardState();
+}
+
+class _ExplorationCardState extends ConsumerState<_ExplorationCard> {
+  List<ExplorationNeighborhood>? _neighborhoods;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExploration();
+  }
+
+  Future<void> _loadExploration() async {
+    final profile = ref.read(userProfileProvider);
+    final userId = profile.userId;
+    if (userId == null) {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final api = ref.read(apiServiceProvider);
+      // Use user's last known location or default
+      final stats = await api.getExplorationStats(
+        userId: userId,
+        lat: 12.9716, // TODO: use actual user location
+        lng: 77.5946,
+      );
+      if (mounted) setState(() { _neighborhoods = stats; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) return const SizedBox.shrink();
+    if (_neighborhoods == null || _neighborhoods!.isEmpty) return const SizedBox.shrink();
+
+    // Show the neighborhood with most exploration (most relevant)
+    final best = _neighborhoods!.reduce((a, b) => a.percent > b.percent ? a : b);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+      ),
+      child: Row(
+        children: [
+          const Text('🗺️', style: TextStyle(fontSize: 28)),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Neighborhood Explorer',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '${best.exploredCount}/${best.totalCount} cells explored (${best.percent}%)',
+                  style: TextStyle(fontSize: 13, color: AppColors.dark.withValues(alpha: 0.7)),
+                ),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: best.percent / 100.0,
+                    minHeight: 6,
+                    backgroundColor: AppColors.greyLight,
+                    valueColor: const AlwaysStoppedAnimation<Color>(AppColors.primary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

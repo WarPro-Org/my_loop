@@ -17,6 +17,8 @@ class TerritoryCell {
   final List<List<double>> boundary; // [[lat, lng], ...]
   final DateTime? cooldownExpiresAtUtc;
   final int parentCellId; // H3 res-3 parent (SignalR region group key)
+  /// Decay progress: 0.0 = just refreshed, 1.0 = about to expire.
+  final double decayProgress;
 
   const TerritoryCell({
     required this.cellId,
@@ -26,6 +28,7 @@ class TerritoryCell {
     this.ownerName = '',
     this.cooldownExpiresAtUtc,
     this.parentCellId = 0,
+    this.decayProgress = 0.0,
   });
 
   /// Whether this cell is currently under cooldown protection.
@@ -57,6 +60,7 @@ class TerritoryCell {
           ? DateTime.parse(json['cooldownExpiresAtUtc'] as String)
           : null,
       parentCellId: json['parentCellId'] as int? ?? 0,
+      decayProgress: (json['decayProgress'] as num?)?.toDouble() ?? 0.0,
     );
   }
 }

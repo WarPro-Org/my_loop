@@ -1,6 +1,6 @@
 using MyLoop.Api.Models;
 
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Territory operations — claim processing, territory queries, stolen cells.
@@ -53,6 +53,12 @@ public interface ITerritoryService
     /// Gets ALL territory cells owned by a specific user (regardless of viewport).
     /// </summary>
     Task<List<TerritoryCellResponse>> GetUserTerritories(Guid userId);
+
+    /// <summary>
+    /// Gets exploration stats: for each neighborhood near the user,
+    /// returns the number of cells explored vs total cells in that neighborhood.
+    /// </summary>
+    Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng);
 
     /// <summary>
     /// Gets a user's claim history — one entry per claim submission.

@@ -8,6 +8,7 @@ library;
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/models/trail_claim_response.dart';
@@ -93,6 +94,21 @@ class ApiService {
     final response = await _dio.get('/api/territories/user/$userId');
     final list = response.data as List;
     return list.map((j) => TerritoryCell.fromJson(j)).toList();
+  }
+
+  /// Gets exploration stats for neighborhoods near a GPS point.
+  /// Returns explored % for each nearby neighborhood (H3 res 8).
+  Future<List<ExplorationNeighborhood>> getExplorationStats({
+    required String userId,
+    required double lat,
+    required double lng,
+  }) async {
+    final response = await _dio.get(
+      '/api/territories/exploration/$userId',
+      queryParameters: {'lat': lat, 'lng': lng},
+    );
+    final list = response.data as List;
+    return list.map((j) => ExplorationNeighborhood.fromJson(j as Map<String, dynamic>)).toList();
   }
 
   /// Returns a user's full claim history (one entry per walk submission).

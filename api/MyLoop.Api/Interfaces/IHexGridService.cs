@@ -1,6 +1,6 @@
 using MyLoop.Api.Models;
 
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Hex grid operations — converts GPS data into H3 hex cells.
@@ -24,6 +24,12 @@ public interface IHexGridService
     long GetParentCellId(long cellId);
 
     /// <summary>
+    /// Gets the H3 parent cell ID at resolution 8 (~700m neighborhood).
+    /// Used for exploration % bucketing.
+    /// </summary>
+    long GetNeighborhoodId(long cellId);
+
+    /// <summary>
     /// Calculates the total area for a given number of hex cells.
     /// </summary>
     double CalculateArea(int cellCount);
@@ -45,4 +51,10 @@ public interface IHexGridService
     /// Returns the cell ID and boundary polygon.
     /// </summary>
     HexCell GetCellAtPoint(double lat, double lng);
+
+    /// <summary>
+    /// Gets neighborhood IDs (res 8) within radius k of the given GPS point.
+    /// Returns the center neighborhood + ring-k neighbors.
+    /// </summary>
+    List<long> GetNearbyNeighborhoods(double lat, double lng, int k = 1);
 }

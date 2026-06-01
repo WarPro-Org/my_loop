@@ -1,4 +1,4 @@
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Sends push notifications to users via Firebase Cloud Messaging.

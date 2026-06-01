@@ -1,6 +1,6 @@
 using MyLoop.Api.Models;
 
-namespace MyLoop.Api.Services;
+namespace MyLoop.Api.Interfaces;
 
 /// <summary>
 /// Leaderboard operations — querying and refreshing daily rankings.
