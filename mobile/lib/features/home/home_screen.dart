@@ -605,15 +605,15 @@ class _BottomNav extends ConsumerWidget {
           label: 'Achievements',
         ),
         BottomNavigationBarItem(
-          icon: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 28),
+          icon: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 34),
           activeIcon: Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: AppColors.primary, width: 2),
             ),
-            child: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 30),
+            child: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 36),
           ),
-          label: 'Profile',
+          label: '',
         ),
       ],
     );

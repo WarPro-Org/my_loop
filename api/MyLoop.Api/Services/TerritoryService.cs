@@ -450,12 +450,22 @@ public class TerritoryService : ITerritoryService
 
     public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng)
     {
-        // Group by res-8 neighborhood (~500m zones) — gives actual neighborhood-sized areas
+        // Group by res-8 neighborhood — use average of actual cell centers for geocoding
         var areas = await _db.ExploredCells
             .AsNoTracking()
             .Where(e => e.UserId == userId)
-            .GroupBy(e => e.NeighborhoodId)
-            .Select(g => new { NeighborhoodId = g.Key, ExploredCount = g.Count() })
+            .Join(_db.TerritoryCells.AsNoTracking(),
+                e => e.CellId,
+                t => t.CellId,
+                (e, t) => new { e.NeighborhoodId, t.CenterLat, t.CenterLng })
+            .GroupBy(x => x.NeighborhoodId)
+            .Select(g => new
+            {
+                NeighborhoodId = g.Key,
+                ExploredCount = g.Count(),
+                AvgLat = g.Average(x => x.CenterLat),
+                AvgLng = g.Average(x => x.CenterLng)
+            })
             .ToListAsync();
 
         if (areas.Count == 0) return [];
@@ -467,21 +477,20 @@ public class TerritoryService : ITerritoryService
 
         foreach (var a in areas.OrderByDescending(a => a.ExploredCount))
         {
-            var center = _hexGrid.GetCellCenter(a.NeighborhoodId);
             var percent = Math.Round(a.ExploredCount * 100.0 / GameConstants.CellsPerNeighborhood, 1);
 
             results.Add(new ExplorationNeighborhood
             {
                 NeighborhoodId = a.NeighborhoodId,
-                CenterLat = center.Lat,
-                CenterLng = center.Lng,
+                CenterLat = a.AvgLat,
+                CenterLng = a.AvgLng,
                 ExploredCount = a.ExploredCount,
                 TotalCount = GameConstants.CellsPerNeighborhood,
                 Percent = Math.Min(percent, 100.0),
                 AreaName = "", // Will be filled below
             });
 
-            geocodeTasks.Add((results.Count - 1, _geocoding.GetAreaName(center.Lat, center.Lng)));
+            geocodeTasks.Add((results.Count - 1, _geocoding.GetAreaName(a.AvgLat, a.AvgLng)));
         }
 
         // Await all geocoding (throttled internally, but cached hits resolve instantly)
