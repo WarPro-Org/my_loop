@@ -10,7 +10,6 @@ import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
-import 'package:myloop/features/profile/profile_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
@@ -36,7 +35,6 @@ class HomeScreen extends ConsumerWidget {
     int currentIndex = 0;
     if (location == '/leaderboard') currentIndex = 1;
     if (location == '/achievements') currentIndex = 2;
-    if (location == '/profile') currentIndex = 3;
 
     return Scaffold(
       key: homeScaffoldKey,
@@ -46,7 +44,6 @@ class HomeScreen extends ConsumerWidget {
           HomeTab(),
           LeaderboardScreen(),
           AchievementsScreen(),
-          ProfileScreen(),
         ],
       ),
       endDrawer: const _ProfileDrawer(),
@@ -568,12 +565,14 @@ class _JourneyButtonState extends ConsumerState<_JourneyButton> with SingleTicke
 }
 
 /// Bottom navigation bar: Home, Ranks, Achievements.
-class _BottomNav extends StatelessWidget {
+class _BottomNav extends ConsumerWidget {
   final int currentIndex;
   const _BottomNav({required this.currentIndex});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profile = ref.watch(userProfileProvider);
+
     return BottomNavigationBar(
       currentIndex: currentIndex,
       onTap: (index) {
@@ -585,28 +584,35 @@ class _BottomNav extends StatelessWidget {
           case 2:
             context.go('/achievements');
           case 3:
-            context.go('/profile');
+            // Open side drawer instead of navigating
+            homeScaffoldKey.currentState?.openEndDrawer();
         }
       },
-      items: const [
-        BottomNavigationBarItem(
+      items: [
+        const BottomNavigationBarItem(
           icon: Icon(Icons.home_outlined, size: 24),
           activeIcon: Icon(Icons.home, size: 28),
           label: 'Home',
         ),
-        BottomNavigationBarItem(
+        const BottomNavigationBarItem(
           icon: Icon(Icons.leaderboard_outlined, size: 24),
           activeIcon: Icon(Icons.leaderboard, size: 28),
           label: 'Ranks',
         ),
-        BottomNavigationBarItem(
+        const BottomNavigationBarItem(
           icon: Icon(Icons.emoji_events_outlined, size: 24),
           activeIcon: Icon(Icons.emoji_events, size: 28),
           label: 'Achievements',
         ),
         BottomNavigationBarItem(
-          icon: Icon(Icons.person_outlined, size: 24),
-          activeIcon: Icon(Icons.person, size: 28),
+          icon: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 28),
+          activeIcon: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.primary, width: 2),
+            ),
+            child: AvatarWidget(avatarId: profile.avatarId, color: profile.color, size: 30),
+          ),
           label: 'Profile',
         ),
       ],

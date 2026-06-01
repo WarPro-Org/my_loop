@@ -49,16 +49,6 @@ class ProfileScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 24),
 
-              // Quick stats row
-              Row(
-                children: [
-                  _ProfileStat(label: 'Hexes', value: '${profile.hexCount}'),
-                  _ProfileStat(label: 'Streak', value: '${profile.streak}'),
-                  _ProfileStat(label: 'Distance', value: '${profile.distanceKm.toStringAsFixed(1)} km'),
-                ],
-              ),
-              const SizedBox(height: 24),
-
               // Walk History
               _SettingsTile(
                 icon: Icons.history_outlined,
@@ -307,34 +297,6 @@ class _SettingsTile extends StatelessWidget {
           title: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: iconColor ?? AppColors.dark)),
           trailing: const Icon(Icons.chevron_right, color: AppColors.grey),
           onTap: onTap,
-        ),
-      ),
-    );
-  }
-}
-
-class _ProfileStat extends StatelessWidget {
-  final String label;
-  final String value;
-  const _ProfileStat({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        margin: const EdgeInsets.symmetric(horizontal: 4),
-        decoration: BoxDecoration(
-          color: AppColors.snow,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.greyLight, width: 1.5),
-        ),
-        child: Column(
-          children: [
-            Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 2),
-            Text(label, style: TextStyle(fontSize: 11, color: AppColors.grey, fontWeight: FontWeight.w600)),
-          ],
         ),
       ),
     );

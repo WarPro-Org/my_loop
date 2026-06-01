@@ -17,7 +17,6 @@ import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/animated_hexagon.dart';
-import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
 import 'package:go_router/go_router.dart';
@@ -141,17 +140,12 @@ class _HomeTabState extends ConsumerState<HomeTab> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header: avatar + greeting + tier badge
+            // Header: hex icon + greeting + tier badge
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Player avatar emoji (no background)
-                AvatarWidget(
-                  avatarId: profile.avatarId,
-                  color: profile.color,
-                  size: 52,
-                  showBackground: false,
-                ),
+                // Animated hex icon
+                const AnimatedHexagon(size: 44),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(

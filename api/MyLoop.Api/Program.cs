@@ -152,6 +152,17 @@ using (var scope = app.Services.CreateScope())
             CREATE INDEX IF NOT EXISTS ""IX_ExploredCells_NeighborhoodId""
             ON ""ExploredCells"" (""NeighborhoodId"")");
 
+        // Backfill ExploredCells from TerritoryCells for any cells that were captured
+        // before the ExploredCells tracking was added
+        db.Database.ExecuteSqlRaw(@"
+            INSERT INTO ""ExploredCells"" (""UserId"", ""CellId"", ""NeighborhoodId"", ""FirstVisitedAt"")
+            SELECT t.""OwnerId"", t.""CellId"", t.""ParentCellId"", t.""ClaimedAt""
+            FROM ""TerritoryCells"" t
+            WHERE NOT EXISTS (
+                SELECT 1 FROM ""ExploredCells"" e
+                WHERE e.""UserId"" = t.""OwnerId"" AND e.""CellId"" = t.""CellId""
+            )");
+
         // XP & Missions schema
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TotalXp\" bigint NOT NULL DEFAULT 0");
