@@ -67,6 +67,39 @@ public class TerritoryService : ITerritoryService
 
             var totalDistance = _geo.CalculatePathDistance(path);
             await UpdateUserStats(userId, transfers, totalDistance);
+
+            // Record exploration for all captured cells
+            var newExplorations = 0;
+            foreach (var cell in cells)
+            {
+                if (await RecordExploration(userId, cell.CellId))
+                    newExplorations++;
+            }
+
+            // Award XP for captured hexes + distance walked
+            var newCells = transfers.Count(t => t.FromUserId == null);
+            var stolenCells = transfers.Count(t => t.FromUserId != null);
+            var distanceKm = totalDistance / 1000.0;
+            var xpAmount = newCells * GameConstants.XpPerHexCaptured
+                         + stolenCells * GameConstants.XpPerHexStolen
+                         + (int)(distanceKm * GameConstants.XpPerKmWalked);
+
+            // Progress daily missions
+            if (newCells + stolenCells > 0)
+                await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells);
+            if (stolenCells > 0)
+                await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells);
+            await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, newCells + stolenCells);
+            await _missionService.RecordProgress(userId, MissionType.WalkDistance, (int)totalDistance);
+            if (newExplorations > 0)
+                await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
+
+            // Award XP (also saves changes)
+            await _missionService.AwardXp(userId, xpAmount, "loop_claim");
+
+            // Check achievements
+            await _achievementService.CheckAndUnlock(userId);
+
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
@@ -159,15 +192,38 @@ public class TerritoryService : ITerritoryService
 
         _db.CellTransfers.AddRange(transfers);
 
-        // Update user stats (lightweight — no full claim record)
+        // Update user stats
+        var newCells = transfers.Count(t => t.FromUserId == null);
+        var stolenCells = transfers.Count(t => t.FromUserId != null);
         if (trailUser != null)
         {
-            var newCells = transfers.Count(t => t.FromUserId == null);
-            var stolenCells = transfers.Count(t => t.FromUserId != null);
             trailUser.HexCount += newCells + stolenCells;
             trailUser.TotalHexesCaptured += newCells + stolenCells;
+            if (stolenCells > 0) trailUser.TotalHexesStolen += stolenCells;
+            UpdateStreak(trailUser);
             await DecrementVictimHexCounts(userId, transfers);
         }
+
+        // Record exploration for all claimed cells
+        var newExplorations = 0;
+        foreach (var c in claimed)
+        {
+            if (await RecordExploration(userId, c.CellId))
+                newExplorations++;
+        }
+
+        // Award XP + mission progress
+        var xpAmount = newCells * GameConstants.XpPerHexCaptured
+                     + stolenCells * GameConstants.XpPerHexStolen;
+        if (newCells + stolenCells > 0)
+            await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells);
+        if (stolenCells > 0)
+            await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells);
+        if (newExplorations > 0)
+            await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
+
+        await _missionService.AwardXp(userId, xpAmount, "trail_claim");
+        await _achievementService.CheckAndUnlock(userId);
 
         await _db.SaveChangesAsync();
 
@@ -725,6 +781,7 @@ public class TerritoryService : ITerritoryService
             user.Streak += 1;
 
         user.LastClaimDate = today;
+        user.IsStreakActive = true;
         if (user.Streak > user.MaxStreak)
             user.MaxStreak = user.Streak;
     }
