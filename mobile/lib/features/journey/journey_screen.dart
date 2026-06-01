@@ -473,7 +473,10 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _showHexOwnerSheet(TerritoryCell cell) {
     final profile = ref.read(userProfileProvider);
     final isOwn = cell.ownerId == profile.userId;
-    final ownerColor = Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+    // Show owner's actual color only for own hexes; black for others
+    final ownerColor = isOwn
+        ? Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000)
+        : const Color(0xFF1A1A1A);
 
     showModalBottomSheet(
       context: context,
@@ -677,13 +680,18 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   List<Widget> _buildOtherPlayerHexes() {
     // LOD: Only render other players' hexes at zoom 14+
     if (_currentZoom < 14.0) return [];
-    return _hexManager.otherHexesByColor.entries.map((entry) => AnimatedHexOverlay(
-      hexBoundaries: entry.value,
-      userColor: Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000),
+    // Show all other players' hexes in dark black regardless of their profile color
+    final allOtherBoundaries = _hexManager.otherHexesByColor.values
+        .expand((list) => list)
+        .toList();
+    if (allOtherBoundaries.isEmpty) return [];
+    return [AnimatedHexOverlay(
+      hexBoundaries: allOtherBoundaries,
+      userColor: const Color(0xFF1A1A1A),
       currentZoom: _currentZoom,
       isNewCapture: false,
       solidMode: _solidHexes,
-    )).toList();
+    )];
   }
 
   PolylineLayer _buildPathPolyline(JourneyState journey) {
