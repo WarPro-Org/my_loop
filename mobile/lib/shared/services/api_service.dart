@@ -12,6 +12,8 @@ import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/models/trail_claim_response.dart';
+import 'package:myloop/shared/models/daily_mission.dart';
+import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/models/user.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
@@ -282,6 +284,32 @@ class ApiService {
         .map((b) => (b as List)
             .map((p) => (p as List).map((n) => (n as num).toDouble()).toList())
             .toList())
+        .toList();
+  }
+
+  // --- Missions & XP ---
+
+  /// Get today's daily missions for the user (generates if needed).
+  Future<List<DailyMission>> getDailyMissions(String userId) async {
+    final response = await _dio.get('/api/missions/$userId');
+    final list = response.data as List<dynamic>;
+    return list
+        .map((e) => DailyMission.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Get user's XP and level info.
+  Future<XpInfo> getXpInfo(String userId) async {
+    final response = await _dio.get('/api/missions/xp/$userId');
+    return XpInfo.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  /// Get all achievements with user's progress and unlock status.
+  Future<List<Achievement>> getAchievements(String userId) async {
+    final response = await _dio.get('/api/achievements/$userId');
+    final list = response.data as List<dynamic>;
+    return list
+        .map((e) => Achievement.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 }

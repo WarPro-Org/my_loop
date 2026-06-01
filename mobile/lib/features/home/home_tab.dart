@@ -12,6 +12,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/home/home_screen.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
+import 'package:myloop/shared/models/daily_mission.dart';
+import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -253,7 +255,7 @@ class _HomeTabState extends ConsumerState<HomeTab> {
             const SizedBox(height: 28),
 
             // Daily challenge card
-            _DailyChallengeCard(),
+            const _DailyMissionsCard(),
             const SizedBox(height: 20),
 
             // Quick stats row (interactive)
@@ -262,6 +264,10 @@ class _HomeTabState extends ConsumerState<HomeTab> {
 
             // Exploration progress for nearby neighborhoods
             const _ExplorationCard(),
+            const SizedBox(height: 24),
+
+            // Recent achievements
+            const _AchievementsCard(),
             const SizedBox(height: 24),
 
             // Reels-style info carousel
@@ -279,22 +285,35 @@ class _HomeTabState extends ConsumerState<HomeTab> {
 }
 
 /// ─────────────────────────────────────────────────────────────────────────────
-/// DAILY CHALLENGE CARD
+/// DAILY MISSIONS CARD
 /// ─────────────────────────────────────────────────────────────────────────────
 
-/// A gradient card showing today's challenge with a progress bar.
-///
-/// Shows the user's actual hex count toward a daily target of 5.
-class _DailyChallengeCard extends ConsumerWidget {
+/// Provider that fetches today's missions from the API.
+final dailyMissionsProvider = FutureProvider.autoDispose<List<DailyMission>>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  final profile = ref.read(userProfileProvider);
+  final userId = profile.userId;
+  if (userId == null || userId.isEmpty) return [];
+  return api.getDailyMissions(userId);
+});
+
+/// Provider that fetches XP info from the API.
+final xpInfoProvider = FutureProvider.autoDispose<XpInfo>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  final profile = ref.read(userProfileProvider);
+  final userId = profile.userId;
+  if (userId == null || userId.isEmpty) return const XpInfo();
+  return api.getXpInfo(userId);
+});
+
+/// A card showing 3 daily missions with individual progress bars + XP rewards.
+class _DailyMissionsCard extends ConsumerWidget {
+  const _DailyMissionsCard();
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(userProfileProvider);
-    final todayHexes = profile.hexCount; // TODO: replace with today-only count from API
-    const dailyTarget = 5;
-    final progress = (todayHexes / dailyTarget).clamp(0.0, 1.0);
-    final label = todayHexes == 0
-        ? 'Start your first walk!'
-        : '$todayHexes / $dailyTarget hexes captured';
+    final missionsAsync = ref.watch(dailyMissionsProvider);
+    final xpAsync = ref.watch(xpInfoProvider);
 
     return Container(
       width: double.infinity,
@@ -317,13 +336,14 @@ class _DailyChallengeCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Row(
+          // Header with XP level
+          Row(
             children: [
-              Text('🎯', style: TextStyle(fontSize: 28)),
-              SizedBox(width: 8),
-              Expanded(
+              const Text('🎯', style: TextStyle(fontSize: 28)),
+              const SizedBox(width: 8),
+              const Expanded(
                 child: Text(
-                  'Daily Challenge',
+                  'Daily Missions',
                   style: TextStyle(
                     color: AppColors.white,
                     fontSize: 18,
@@ -331,34 +351,357 @@ class _DailyChallengeCard extends ConsumerWidget {
                   ),
                 ),
               ),
+              // XP Level badge
+              xpAsync.when(
+                data: (xp) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    'Lv ${xp.level}',
+                    style: const TextStyle(
+                      color: AppColors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                loading: () => const SizedBox.shrink(),
+                error: (_, __) => const SizedBox.shrink(),
+              ),
             ],
           ),
-          const SizedBox(height: 12),
-          Text(
-            todayHexes == 0 ? 'Capture 5 hexagons today!' : 'Capture 5 new hexagons today!',
-            style: const TextStyle(
-              color: AppColors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+          const SizedBox(height: 16),
+
+          // Missions list
+          missionsAsync.when(
+            data: (missions) => Column(
+              children: missions.map((m) => _MissionRow(mission: m)).toList(),
+            ),
+            loading: () => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: CircularProgressIndicator(
+                  color: AppColors.white,
+                  strokeWidth: 2,
+                ),
+              ),
+            ),
+            error: (_, __) => const Text(
+              'Could not load missions',
+              style: TextStyle(color: AppColors.white, fontSize: 13),
             ),
           ),
-          const SizedBox(height: 12),
-          // Progress bar
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: progress,
-              minHeight: 10,
-              backgroundColor: AppColors.white.withValues(alpha: 0.3),
-              valueColor: const AlwaysStoppedAnimation(AppColors.white),
+
+          // XP progress bar
+          xpAsync.when(
+            data: (xp) => Column(
+              children: [
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Text(
+                      '${xp.totalXp} XP',
+                      style: const TextStyle(
+                        color: AppColors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      'Level ${xp.level + 1}: ${xp.neededXp - xp.progressXp} XP to go',
+                      style: TextStyle(
+                        color: AppColors.white.withValues(alpha: 0.7),
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: xp.progressPercent / 100.0,
+                    minHeight: 6,
+                    backgroundColor: AppColors.white.withValues(alpha: 0.2),
+                    valueColor: const AlwaysStoppedAnimation(AppColors.white),
+                  ),
+                ),
+              ],
+            ),
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MissionRow extends StatelessWidget {
+  final DailyMission mission;
+  const _MissionRow({required this.mission});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          // Mission icon
+          Text(_iconForType(mission.type), style: const TextStyle(fontSize: 20)),
+          const SizedBox(width: 10),
+          // Description + progress
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  mission.description,
+                  style: TextStyle(
+                    color: AppColors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    decoration: mission.isCompleted ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                    value: mission.progressPercent,
+                    minHeight: 5,
+                    backgroundColor: AppColors.white.withValues(alpha: 0.2),
+                    valueColor: AlwaysStoppedAnimation(
+                      mission.isCompleted
+                          ? const Color(0xFF4ADE80)
+                          : AppColors.white.withValues(alpha: 0.8),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(width: 10),
+          // XP reward
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: mission.isCompleted
+                  ? const Color(0xFF4ADE80).withValues(alpha: 0.3)
+                  : AppColors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              mission.isCompleted ? '✓' : '+${mission.xpReward} XP',
+              style: TextStyle(
+                color: mission.isCompleted ? const Color(0xFF4ADE80) : AppColors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _iconForType(MissionType type) {
+    return switch (type) {
+      MissionType.captureHexes => '⬡',
+      MissionType.walkDistance => '🚶',
+      MissionType.stealHex => '⚔️',
+      MissionType.exploreNewArea => '🗺️',
+      MissionType.maintainStreak => '🔥',
+      MissionType.captureInOneWalk => '💪',
+    };
+  }
+}
+
+/// ─────────────────────────────────────────────────────────────────────────────
+/// ACHIEVEMENTS CARD
+/// ─────────────────────────────────────────────────────────────────────────────
+
+/// Provider that fetches all achievements for the user.
+final achievementsProvider = FutureProvider.autoDispose<List<Achievement>>((ref) async {
+  final api = ref.read(apiServiceProvider);
+  final profile = ref.read(userProfileProvider);
+  final userId = profile.userId;
+  if (userId == null || userId.isEmpty) return [];
+  return api.getAchievements(userId);
+});
+
+/// Shows recently unlocked achievements and next closest ones.
+class _AchievementsCard extends ConsumerWidget {
+  const _AchievementsCard();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final achievementsAsync = ref.watch(achievementsProvider);
+
+    return achievementsAsync.when(
+      data: (achievements) {
+        if (achievements.isEmpty) return const SizedBox.shrink();
+
+        final unlocked = achievements.where((a) => a.unlocked).toList();
+        final locked = achievements.where((a) => !a.unlocked).toList();
+        // Show top 3 closest-to-unlock
+        locked.sort((a, b) => b.progress.compareTo(a.progress));
+        final nextUp = locked.take(3).toList();
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1A1A2E),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text('🏆', style: TextStyle(fontSize: 24)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Achievements',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF8B5CF6).withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '${unlocked.length}/${achievements.length}',
+                      style: const TextStyle(
+                        color: Color(0xFF8B5CF6),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (unlocked.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                // Recently unlocked (show last 3)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: unlocked.reversed.take(5).map((a) => _AchievementBadge(
+                    icon: a.icon,
+                    name: a.name,
+                    unlocked: true,
+                  )).toList(),
+                ),
+              ],
+              if (nextUp.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text(
+                  'Next up',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...nextUp.map((a) => _AchievementProgressRow(achievement: a)),
+              ],
+            ],
+          ),
+        );
+      },
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+    );
+  }
+}
+
+class _AchievementBadge extends StatelessWidget {
+  final String icon;
+  final String name;
+  final bool unlocked;
+  const _AchievementBadge({required this.icon, required this.name, required this.unlocked});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: name,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: unlocked
+              ? const Color(0xFF8B5CF6).withValues(alpha: 0.15)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: unlocked
+                ? const Color(0xFF8B5CF6).withValues(alpha: 0.4)
+                : Colors.white.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Text(icon, style: const TextStyle(fontSize: 20)),
+      ),
+    );
+  }
+}
+
+class _AchievementProgressRow extends StatelessWidget {
+  final Achievement achievement;
+  const _AchievementProgressRow({required this.achievement});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Text(achievement.icon, style: const TextStyle(fontSize: 18)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  achievement.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: achievement.progress,
+                    minHeight: 4,
+                    backgroundColor: Colors.white.withValues(alpha: 0.1),
+                    valueColor: const AlwaysStoppedAnimation(Color(0xFF8B5CF6)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
           Text(
-            label,
-            style: const TextStyle(
-              color: AppColors.white,
-              fontSize: 12,
+            '${(achievement.progress * 100).toInt()}%',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.5),
+              fontSize: 11,
               fontWeight: FontWeight.w600,
             ),
           ),

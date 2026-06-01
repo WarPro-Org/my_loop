@@ -59,6 +59,10 @@ class StepClaimResponse {
   final List<List<double>> boundary;
   final bool wasStolen;
   final String? previousOwnerName;
+  final int xpGained;
+  final bool leveledUp;
+  final int newLevel;
+  final List<AchievementUnlocked> achievementsUnlocked;
 
   const StepClaimResponse({
     this.claimed = false,
@@ -66,6 +70,10 @@ class StepClaimResponse {
     this.boundary = const [],
     this.wasStolen = false,
     this.previousOwnerName,
+    this.xpGained = 0,
+    this.leveledUp = false,
+    this.newLevel = 0,
+    this.achievementsUnlocked = const [],
   });
 
   factory StepClaimResponse.fromJson(Map<String, dynamic> json) {
@@ -76,12 +84,45 @@ class StepClaimResponse {
     final boundary = rawBoundary
         .map((p) => (p as List<dynamic>).map((v) => (v as num).toDouble()).toList())
         .toList();
+
+    final rawAchievements = json['achievementsUnlocked'] as List<dynamic>? ?? [];
+    final achievements = rawAchievements
+        .map((a) => AchievementUnlocked.fromJson(a as Map<String, dynamic>))
+        .toList();
+
     return StepClaimResponse(
       claimed: true,
       cellId: json['cellId'] as int? ?? 0,
       boundary: boundary,
       wasStolen: json['wasStolen'] as bool? ?? false,
       previousOwnerName: json['previousOwnerName'] as String?,
+      xpGained: json['xpGained'] as int? ?? 0,
+      leveledUp: json['leveledUp'] as bool? ?? false,
+      newLevel: json['newLevel'] as int? ?? 0,
+      achievementsUnlocked: achievements,
+    );
+  }
+}
+
+class AchievementUnlocked {
+  final String id;
+  final String name;
+  final String icon;
+  final int xpAwarded;
+
+  const AchievementUnlocked({
+    required this.id,
+    required this.name,
+    required this.icon,
+    this.xpAwarded = 0,
+  });
+
+  factory AchievementUnlocked.fromJson(Map<String, dynamic> json) {
+    return AchievementUnlocked(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      icon: json['icon'] as String? ?? '🏆',
+      xpAwarded: json['xpAwarded'] as int? ?? 0,
     );
   }
 }

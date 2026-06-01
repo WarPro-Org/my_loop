@@ -22,6 +22,8 @@ builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<ITerritoryNotifier, TerritoryNotifier>();
 builder.Services.AddScoped<IPathValidationService, PathValidationService>();
 builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
+builder.Services.AddScoped<IMissionService, MissionService>();
+builder.Services.AddScoped<IAchievementService, AchievementService>();
 builder.Services.AddSingleton<GeocodingService>();
 builder.Services.AddHttpClient<GeocodingService>();
 builder.Services.AddHostedService<DecayCleanupService>();
@@ -149,6 +151,49 @@ using (var scope = app.Services.CreateScope())
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_ExploredCells_NeighborhoodId""
             ON ""ExploredCells"" (""NeighborhoodId"")");
+
+        // XP & Missions schema
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TotalXp\" bigint NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"Level\" integer NOT NULL DEFAULT 1");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TotalHexesStolen\" integer NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"AllMissionsCompleteDays\" integer NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""DailyMissions"" (
+                ""Id"" uuid NOT NULL,
+                ""UserId"" uuid NOT NULL,
+                ""Date"" date NOT NULL,
+                ""Type"" integer NOT NULL,
+                ""TargetValue"" integer NOT NULL,
+                ""CurrentProgress"" integer NOT NULL DEFAULT 0,
+                ""XpReward"" integer NOT NULL,
+                ""CompletedAt"" timestamp with time zone,
+                ""Description"" text NOT NULL DEFAULT '',
+                CONSTRAINT ""PK_DailyMissions"" PRIMARY KEY (""Id"")
+            )");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_DailyMissions_UserId_Date""
+            ON ""DailyMissions"" (""UserId"", ""Date"")");
+
+        // Achievements schema
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""UserAchievements"" (
+                ""Id"" uuid NOT NULL,
+                ""UserId"" uuid NOT NULL,
+                ""AchievementId"" text NOT NULL,
+                ""UnlockedAt"" timestamp with time zone NOT NULL,
+                ""XpAwarded"" integer NOT NULL DEFAULT 0,
+                CONSTRAINT ""PK_UserAchievements"" PRIMARY KEY (""Id"")
+            )");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_UserAchievements_UserId_AchievementId""
+            ON ""UserAchievements"" (""UserId"", ""AchievementId"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_UserAchievements_UserId""
+            ON ""UserAchievements"" (""UserId"")");
     }
     catch { /* Column/table already exists */ }
 

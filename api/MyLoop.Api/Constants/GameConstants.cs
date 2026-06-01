@@ -55,4 +55,22 @@ public static class GameConstants
     public const int MinDisplayNameLength = 2;
     public const int MaxDisplayNameLength = 20;
     public const int MaxAvatarId = 50;
+
+    // --- XP & Levels ---
+    public const int XpPerHexCaptured = 10;
+    public const int XpPerHexStolen = 25;
+    public const int XpPerKmWalked = 50;
+    public const int XpStreakBonus = 20; // per day of active streak
+    public const int XpMissionComplete = 0; // awarded per-mission (varies)
+    public const int XpAllMissionsBonus = 100; // bonus for completing all 3 daily
+    public const int MissionsPerDay = 3;
+
+    /// <summary>XP threshold to reach a given level. Level 1 = 0 XP, Level 2 = 100 XP, Level 3 = 400 XP, Level 10 = 8100 XP.</summary>
+    /// <summary>XP threshold to reach a given level. Level 1 = 0 XP, Level 2 = 100 XP, Level 10 = 8100 XP.</summary>
+    public static int XpForLevel(int level) => (level - 1) * (level - 1) * 100;
+    public static int LevelFromXp(long xp)
+    {
+        var level = 1 + (int)Math.Sqrt(xp / 100.0);
+        return Math.Max(1, level);
+    }
 }

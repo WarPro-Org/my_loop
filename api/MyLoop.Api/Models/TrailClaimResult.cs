@@ -54,4 +54,24 @@ public class StepClaimResponse
 
     /// <summary>Name of the previous owner (if stolen).</summary>
     public string? PreviousOwnerName { get; set; }
+
+    /// <summary>XP gained from this capture.</summary>
+    public int XpGained { get; set; }
+
+    /// <summary>True if the user leveled up from this capture.</summary>
+    public bool LeveledUp { get; set; }
+
+    /// <summary>New level after this capture (only meaningful if LeveledUp is true).</summary>
+    public int NewLevel { get; set; }
+
+    /// <summary>Achievements unlocked by this capture (empty if none).</summary>
+    public List<AchievementUnlockedDto> AchievementsUnlocked { get; set; } = [];
+}
+
+public class AchievementUnlockedDto
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Icon { get; set; } = "";
+    public int XpAwarded { get; set; }
 }

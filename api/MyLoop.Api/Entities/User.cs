@@ -66,4 +66,16 @@ public class User
 
     /// <summary>Authentication provider used to create this account (e.g., "google", "apple", "local").</summary>
     public string AuthProvider { get; set; } = "local";
+
+    /// <summary>Total hexes stolen from other players (lifetime).</summary>
+    public int TotalHexesStolen { get; set; }
+
+    /// <summary>Total days with all daily missions completed.</summary>
+    public int AllMissionsCompleteDays { get; set; }
+
+    /// <summary>Total experience points earned lifetime.</summary>
+    public long TotalXp { get; set; }
+
+    /// <summary>Current level (computed from TotalXp).</summary>
+    public int Level { get; set; } = 1;
 }

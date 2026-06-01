@@ -86,7 +86,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
           if (mounted) {
             final user = await api.getUser(profile.userId!);
             final totalCaptured = claimedCount + bonusCount;
-            _showCelebration(totalCaptured, stolenCount, walkDistance, walkDuration, user.streak);
+            _showCelebration(totalCaptured, stolenCount, walkDistance, walkDuration, user.streak, journey.xpGainedThisWalk);
           }
         }
       }
@@ -136,7 +136,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     }
   }
 
-  void _showCelebration(int hexCount, int stolenCount, double distance, Duration duration, int streak) {
+  void _showCelebration(int hexCount, int stolenCount, double distance, Duration duration, int streak, int xpGained) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -146,6 +146,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         distanceMeters: distance,
         duration: duration,
         streak: streak,
+        xpGained: xpGained,
       ),
     );
   }
@@ -168,6 +169,14 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     ref.listen(journeyControllerProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
         _showSnackbar(next.error!, AppColors.red);
+      }
+      // Level-up celebration
+      if (next.levelUpTo != null && next.levelUpTo != prev?.levelUpTo) {
+        _showSnackbar('🎉 Level Up! You reached Level ${next.levelUpTo}!', const Color(0xFFFFD700));
+      }
+      // Achievement unlock
+      if (next.achievementUnlocked != null && next.achievementUnlocked != prev?.achievementUnlocked) {
+        _showSnackbar('🏆 Achievement: ${next.achievementUnlocked}', const Color(0xFF8B5CF6));
       }
     });
 
@@ -950,6 +959,11 @@ class _StatsBar extends StatelessWidget {
           _spacerRow(),
           _statRow(Icons.loop_rounded, const Color(0xFFF59E0B),
             loopCount > 0 ? '$loopCount loop${loopCount > 1 ? 's' : ''}' : 'No loop'),
+          if (journey.xpGainedThisWalk > 0) ...[
+            _spacerRow(),
+            _statRow(Icons.star_rounded, const Color(0xFFFFD700),
+              '+${journey.xpGainedThisWalk} XP'),
+          ],
         ],
       ),
     );

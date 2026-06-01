@@ -34,6 +34,12 @@ class JourneyState {
   final int claimedCount;
   /// Last stolen hex info for UI feedback.
   final String? lastStolenFrom;
+  /// Total XP gained during this walk.
+  final int xpGainedThisWalk;
+  /// Non-null if a level-up just happened (the new level number).
+  final int? levelUpTo;
+  /// Last achievement unlocked (for toast notification).
+  final String? achievementUnlocked;
 
   const JourneyState({
     this.status = JourneyStatus.idle,
@@ -47,6 +53,9 @@ class JourneyState {
     this.claimedHexBoundaries = const [],
     this.claimedCount = 0,
     this.lastStolenFrom,
+    this.xpGainedThisWalk = 0,
+    this.levelUpTo,
+    this.achievementUnlocked,
   });
 
   JourneyState copyWith({
@@ -61,6 +70,9 @@ class JourneyState {
     List<List<List<double>>>? claimedHexBoundaries,
     int? claimedCount,
     String? lastStolenFrom,
+    int? xpGainedThisWalk,
+    int? levelUpTo,
+    String? achievementUnlocked,
   }) {
     return JourneyState(
       status: status ?? this.status,
@@ -74,6 +86,9 @@ class JourneyState {
       claimedHexBoundaries: claimedHexBoundaries ?? this.claimedHexBoundaries,
       claimedCount: claimedCount ?? this.claimedCount,
       lastStolenFrom: lastStolenFrom ?? this.lastStolenFrom,
+      xpGainedThisWalk: xpGainedThisWalk ?? this.xpGainedThisWalk,
+      levelUpTo: levelUpTo,
+      achievementUnlocked: achievementUnlocked,
     );
   }
 }
@@ -209,10 +224,16 @@ class JourneyController extends Notifier<JourneyState> {
       final result = await api.claimStep(userId: userId, lat: lat, lng: lng);
       if (result != null && result.claimed && state.status == JourneyStatus.tracking) {
         final updatedBoundaries = [...state.claimedHexBoundaries, result.boundary];
+        final achievementName = result.achievementsUnlocked.isNotEmpty
+            ? '${result.achievementsUnlocked.first.icon} ${result.achievementsUnlocked.first.name}'
+            : null;
         state = state.copyWith(
           claimedHexBoundaries: updatedBoundaries,
           claimedCount: state.claimedCount + 1,
           lastStolenFrom: result.wasStolen ? result.previousOwnerName : null,
+          xpGainedThisWalk: state.xpGainedThisWalk + result.xpGained,
+          levelUpTo: result.leveledUp ? result.newLevel : null,
+          achievementUnlocked: achievementName,
         );
       }
     } catch (_) {

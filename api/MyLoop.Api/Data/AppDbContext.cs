@@ -37,6 +37,12 @@ public class AppDbContext : DbContext
     /// <summary>Gets the set of explored hex cells (permanent discovery records).</summary>
     public DbSet<ExploredCell> ExploredCells => Set<ExploredCell>();
 
+    /// <summary>Gets the set of daily missions assigned to users.</summary>
+    public DbSet<DailyMission> DailyMissions => Set<DailyMission>();
+
+    /// <summary>Gets the set of unlocked achievements per user.</summary>
+    public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
+
     /// <summary>
     /// Configures the entity model: primary keys, unique constraints, and indexes
     /// for efficient query patterns used by the game.
@@ -80,6 +86,19 @@ public class AppDbContext : DbContext
             e.HasKey(x => new { x.UserId, x.CellId }); // composite PK
             e.HasIndex(x => new { x.UserId, x.NeighborhoodId }); // fast: "how many cells has user explored in this neighborhood"
             e.HasIndex(x => x.NeighborhoodId); // fast: "total explored cells in neighborhood"
+        });
+
+        // DailyMission: user missions per day
+        modelBuilder.Entity<DailyMission>(e =>
+        {
+            e.HasIndex(m => new { m.UserId, m.Date }); // fast: "get today's missions for user"
+        });
+
+        // UserAchievement: one unlock per user per achievement
+        modelBuilder.Entity<UserAchievement>(e =>
+        {
+            e.HasIndex(a => a.UserId); // fast: "all achievements for user"
+            e.HasIndex(a => new { a.UserId, a.AchievementId }).IsUnique(); // prevent duplicates
         });
     }
 }

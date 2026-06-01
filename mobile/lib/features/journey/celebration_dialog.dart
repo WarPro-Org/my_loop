@@ -10,6 +10,7 @@ class CelebrationDialog extends StatelessWidget {
   final double distanceMeters;
   final Duration duration;
   final int streak;
+  final int xpGained;
 
   const CelebrationDialog({
     super.key,
@@ -18,6 +19,7 @@ class CelebrationDialog extends StatelessWidget {
     required this.distanceMeters,
     required this.duration,
     required this.streak,
+    this.xpGained = 0,
   });
 
   @override
@@ -42,6 +44,8 @@ class CelebrationDialog extends StatelessWidget {
             _StatRow(icon: '📏', label: 'Distance walked', value: _formatDistance()),
             _StatRow(icon: '⏱️', label: 'Walk time', value: _formatDuration()),
             _StatRow(icon: '🔥', label: 'Current streak', value: '$streak day${streak == 1 ? '' : 's'}'),
+            if (xpGained > 0)
+              _StatRow(icon: '⭐', label: 'XP earned', value: '+$xpGained'),
             const SizedBox(height: 24),
             SizedBox(
               width: double.infinity,

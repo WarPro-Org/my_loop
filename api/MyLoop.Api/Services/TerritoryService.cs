@@ -16,10 +16,13 @@ public class TerritoryService : ITerritoryService
     private readonly IPathValidationService _pathValidator;
     private readonly IPushNotificationService _pushService;
     private readonly GeocodingService _geocoding;
+    private readonly IMissionService _missionService;
+    private readonly IAchievementService _achievementService;
 
     public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo,
         ITerritoryNotifier notifier, IPathValidationService pathValidator,
-        IPushNotificationService pushService, GeocodingService geocoding)
+        IPushNotificationService pushService, GeocodingService geocoding,
+        IMissionService missionService, IAchievementService achievementService)
     {
         _db = db;
         _hexGrid = hexGrid;
@@ -28,6 +31,8 @@ public class TerritoryService : ITerritoryService
         _pathValidator = pathValidator;
         _pushService = pushService;
         _geocoding = geocoding;
+        _missionService = missionService;
+        _achievementService = achievementService;
     }
 
     public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
@@ -212,8 +217,8 @@ public class TerritoryService : ITerritoryService
             _db.CellTransfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
         }
 
-        // Record exploration (permanent)
-        await RecordExploration(userId, hexCell.CellId);
+        // Record exploration (permanent) — returns true if this was a genuinely new cell
+        var isNewExploration = await RecordExploration(userId, hexCell.CellId);
 
         // Update claimer stats
         var user = await _db.Users.FindAsync(userId);
@@ -221,10 +226,29 @@ public class TerritoryService : ITerritoryService
         {
             user.HexCount += 1;
             user.TotalHexesCaptured += 1;
+            if (existing != null) user.TotalHexesStolen += 1;
             UpdateStreak(user);
         }
 
-        await _db.SaveChangesAsync();
+        // Award XP + mission progress in a single save
+        var xpAmount = existing != null ? GameConstants.XpPerHexStolen : GameConstants.XpPerHexCaptured;
+        var missionType = existing != null ? MissionType.StealHex : MissionType.CaptureHexes;
+
+        // Record all mission progress (tracked in memory, saved together)
+        await _missionService.RecordProgress(userId, missionType, 1);
+        await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, 1);
+        // ~30m per hex for walk distance approximation
+        await _missionService.RecordProgress(userId, MissionType.WalkDistance, 30);
+        if (isNewExploration)
+            await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, 1);
+        if (user?.IsStreakActive == true)
+            await _missionService.RecordProgress(userId, MissionType.MaintainStreak, 1);
+
+        // Check achievements (adds XP + unlocks to change tracker, no save)
+        var newAchievements = await _achievementService.CheckAndUnlock(userId);
+
+        // Award capture XP (this calls SaveChangesAsync once for everything)
+        var xpResult = await _missionService.AwardXp(userId, xpAmount, "hex_capture");
 
         // Broadcast for real-time multiplayer (fire-and-forget)
         _ = BroadcastOwnershipChanges(userId, [hexCell],
@@ -237,6 +261,16 @@ public class TerritoryService : ITerritoryService
             Boundary = hexCell.Boundary,
             WasStolen = existing != null,
             PreviousOwnerName = previousOwnerName,
+            XpGained = xpAmount,
+            LeveledUp = xpResult.LeveledUp,
+            NewLevel = xpResult.Level,
+            AchievementsUnlocked = newAchievements.Select(a => new AchievementUnlockedDto
+            {
+                Id = a.AchievementId,
+                Name = a.Name,
+                Icon = a.Icon,
+                XpAwarded = a.XpAwarded,
+            }).ToList(),
         };
     }
 
@@ -595,11 +629,11 @@ public class TerritoryService : ITerritoryService
             user.MaxStreak = user.Streak;
     }
 
-    private async Task RecordExploration(Guid userId, long cellId)
+    private async Task<bool> RecordExploration(Guid userId, long cellId)
     {
         var exists = await _db.ExploredCells
             .AnyAsync(e => e.UserId == userId && e.CellId == cellId);
-        if (exists) return;
+        if (exists) return false;
 
         _db.ExploredCells.Add(new Entities.ExploredCell
         {
@@ -608,6 +642,7 @@ public class TerritoryService : ITerritoryService
             NeighborhoodId = _hexGrid.GetNeighborhoodId(cellId),
             FirstVisitedAt = DateTime.UtcNow,
         });
+        return true;
     }
 
     private async Task DecrementVictimHexCounts(Guid userId, List<CellTransfer> transfers)
