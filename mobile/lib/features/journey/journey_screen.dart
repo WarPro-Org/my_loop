@@ -134,11 +134,12 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         distanceKm: user.distanceKm,
         rank: updatedRank,
       );
-      // Invalidate all home page providers so they refetch fresh data
+      // Invalidate all home page providers so they refetch fresh data on next observe
       ref.invalidate(dailyMissionsProvider);
       ref.invalidate(xpInfoProvider);
       ref.invalidate(explorationProvider);
       ref.invalidate(achievementsProvider);
+      ref.invalidate(homeTabLoadedProvider);
     }
   }
 
@@ -404,6 +405,22 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     super.didUpdateWidget(old);
     _manageLocationPolling();
     _followCurrentPosition();
+    _integrateNewStepClaims(old.journey, widget.journey);
+  }
+
+  /// When new step claims arrive, integrate them into the hex territory manager
+  /// so stolen hexes disappear from the "other players" layer immediately.
+  void _integrateNewStepClaims(JourneyState prev, JourneyState next) {
+    if (next.claimedMeta.length <= prev.claimedMeta.length) return;
+    // Process only the new claims since last update
+    final newClaims = next.claimedMeta.sublist(prev.claimedMeta.length);
+    bool hadStolen = false;
+    for (final meta in newClaims) {
+      _hexManager.integrateStepClaim(meta.boundary, meta.cellId, meta.wasStolen);
+      if (meta.wasStolen) hadStolen = true;
+    }
+    // If a stolen hex was removed from others, trigger map repaint
+    if (hadStolen && mounted) setState(() {});
   }
 
   void _manageLocationPolling() {

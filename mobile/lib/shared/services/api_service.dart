@@ -7,6 +7,7 @@ library;
 
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
@@ -170,8 +171,9 @@ class ApiService {
       });
       final data = response.data as Map<String, dynamic>;
       return StepClaimResponse.fromJson(data);
-    } catch (_) {
-      return null; // Best-effort
+    } catch (e) {
+      debugPrint('[StepClaim] Failed: $e');
+      return null; // Best-effort — don't interrupt the walk
     }
   }
 

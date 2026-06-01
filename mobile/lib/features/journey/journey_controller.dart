@@ -19,6 +19,14 @@ import 'package:myloop/features/journey/loop_detector.dart';
 
 enum JourneyStatus { idle, tracking, submitting }
 
+/// Minimal metadata for each step-claimed hex during a walk.
+class StepClaimMeta {
+  final int cellId;
+  final List<List<double>> boundary;
+  final bool wasStolen;
+  const StepClaimMeta({required this.cellId, required this.boundary, required this.wasStolen});
+}
+
 class JourneyState {
   final JourneyStatus status;
   final List<List<double>> path;
@@ -40,6 +48,8 @@ class JourneyState {
   final int? levelUpTo;
   /// Last achievement unlocked (for toast notification).
   final String? achievementUnlocked;
+  /// Metadata for each step-claimed hex (for hex manager integration).
+  final List<StepClaimMeta> claimedMeta;
 
   const JourneyState({
     this.status = JourneyStatus.idle,
@@ -56,6 +66,7 @@ class JourneyState {
     this.xpGainedThisWalk = 0,
     this.levelUpTo,
     this.achievementUnlocked,
+    this.claimedMeta = const [],
   });
 
   JourneyState copyWith({
@@ -73,6 +84,7 @@ class JourneyState {
     int? xpGainedThisWalk,
     int? levelUpTo,
     String? achievementUnlocked,
+    List<StepClaimMeta>? claimedMeta,
   }) {
     return JourneyState(
       status: status ?? this.status,
@@ -89,6 +101,7 @@ class JourneyState {
       xpGainedThisWalk: xpGainedThisWalk ?? this.xpGainedThisWalk,
       levelUpTo: levelUpTo,
       achievementUnlocked: achievementUnlocked,
+      claimedMeta: claimedMeta ?? this.claimedMeta,
     );
   }
 }
@@ -151,6 +164,7 @@ class JourneyController extends Notifier<JourneyState> {
       previewBoundaries: const [],
       claimedHexBoundaries: const [],
       claimedCount: 0,
+      claimedMeta: const [],
     );
     return path;
   }
@@ -212,9 +226,14 @@ class JourneyController extends Notifier<JourneyState> {
   // ────────────────────────────────────────────────────────────────────────────
 
   bool _stepClaimInFlight = false;
+  final List<List<double>> _pendingStepClaims = [];
 
   Future<void> _claimStep(double lat, double lng) async {
-    if (_stepClaimInFlight) return; // Don't stack calls
+    if (_stepClaimInFlight) {
+      // Queue this point for retry after current call finishes
+      _pendingStepClaims.add([lat, lng]);
+      return;
+    }
     final userId = ref.read(userProfileProvider).userId;
     if (userId == null) return;
 
@@ -224,12 +243,18 @@ class JourneyController extends Notifier<JourneyState> {
       final result = await api.claimStep(userId: userId, lat: lat, lng: lng);
       if (result != null && result.claimed && state.status == JourneyStatus.tracking) {
         final updatedBoundaries = [...state.claimedHexBoundaries, result.boundary];
+        final meta = StepClaimMeta(
+          cellId: result.cellId,
+          boundary: result.boundary,
+          wasStolen: result.wasStolen,
+        );
         final achievementName = result.achievementsUnlocked.isNotEmpty
             ? '${result.achievementsUnlocked.first.icon} ${result.achievementsUnlocked.first.name}'
             : null;
         state = state.copyWith(
           claimedHexBoundaries: updatedBoundaries,
           claimedCount: state.claimedCount + 1,
+          claimedMeta: [...state.claimedMeta, meta],
           lastStolenFrom: result.wasStolen ? result.previousOwnerName : null,
           xpGainedThisWalk: state.xpGainedThisWalk + result.xpGained,
           levelUpTo: result.leveledUp ? result.newLevel : null,
@@ -240,6 +265,12 @@ class JourneyController extends Notifier<JourneyState> {
       // Best-effort — don't interrupt the walk
     } finally {
       _stepClaimInFlight = false;
+      // Process queued step claims (only the latest position matters)
+      if (_pendingStepClaims.isNotEmpty && state.status == JourneyStatus.tracking) {
+        final latest = _pendingStepClaims.last;
+        _pendingStepClaims.clear();
+        _claimStep(latest[0], latest[1]);
+      }
     }
   }
 

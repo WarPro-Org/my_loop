@@ -7,11 +7,11 @@ class AppConstants {
   AppConstants._(); // prevent instantiation
 
   // --- GPS / Location ---
-  static const double maxAccuracyMeters = 25.0;
+  static const double maxAccuracyMeters = 50.0;
   static const double stationaryNoiseFloorMin = 10.0;
   static const double stationaryNoiseFloorMax = 25.0;
-  static const double movingNoiseFloorMin = 6.0;
-  static const double movingNoiseFloorMax = 20.0;
+  static const double movingNoiseFloorMin = 5.0;
+  static const double movingNoiseFloorMax = 15.0;
   static const double stationarySpeedThreshold = 0.3; // m/s
   static const int gpsDistanceFilterMeters = 5;
   static const int gpsTimeoutSeconds = 15;
