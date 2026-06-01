@@ -84,9 +84,12 @@ public class ExplorationNeighborhood
     /// <summary>Number of unique cells the user has explored in this neighborhood.</summary>
     public int ExploredCount { get; set; }
 
-    /// <summary>Total cells possible in this neighborhood (343 for res 8→11).</summary>
+    /// <summary>Total cells in this area (all players).</summary>
     public int TotalCount { get; set; }
 
     /// <summary>Exploration percentage (0.0 to 100.0).</summary>
     public double Percent { get; set; }
+
+    /// <summary>Human-readable area/neighborhood name from reverse geocoding.</summary>
+    public string AreaName { get; set; } = "";
 }

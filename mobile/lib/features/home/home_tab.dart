@@ -892,7 +892,7 @@ class _NeighborhoodTile extends StatelessWidget {
             : const Color(0xFFF59E0B);
 
     return Container(
-      width: 140,
+      width: 150,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
@@ -903,14 +903,23 @@ class _NeighborhoodTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          Text(
+            neighborhood.areaName.isNotEmpty ? neighborhood.areaName : 'Area',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
           Row(
             children: [
-              Icon(Icons.hexagon_outlined, size: 16, color: color),
+              Icon(Icons.hexagon_outlined, size: 14, color: color),
               const SizedBox(width: 4),
               Text(
-                '${pct.toStringAsFixed(0)}%',
+                '${neighborhood.exploredCount} hexes',
                 style: TextStyle(
-                  fontSize: 18,
+                  fontSize: 13,
                   fontWeight: FontWeight.w800,
                   color: color,
                 ),
@@ -918,7 +927,7 @@ class _NeighborhoodTile extends StatelessWidget {
             ],
           ),
           Text(
-            '${neighborhood.exploredCount}/${neighborhood.totalCount} hexes',
+            '${pct.toStringAsFixed(0)}% of area',
             style: TextStyle(fontSize: 11, color: AppColors.dark.withValues(alpha: 0.6)),
           ),
           ClipRRect(

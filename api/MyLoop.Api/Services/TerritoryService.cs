@@ -15,10 +15,11 @@ public class TerritoryService : ITerritoryService
     private readonly ITerritoryNotifier _notifier;
     private readonly IPathValidationService _pathValidator;
     private readonly IPushNotificationService _pushService;
+    private readonly GeocodingService _geocoding;
 
     public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo,
         ITerritoryNotifier notifier, IPathValidationService pathValidator,
-        IPushNotificationService pushService)
+        IPushNotificationService pushService, GeocodingService geocoding)
     {
         _db = db;
         _hexGrid = hexGrid;
@@ -26,6 +27,7 @@ public class TerritoryService : ITerritoryService
         _notifier = notifier;
         _pathValidator = pathValidator;
         _pushService = pushService;
+        _geocoding = geocoding;
     }
 
     public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
@@ -418,12 +420,16 @@ public class TerritoryService : ITerritoryService
 
         var totalMap = totalCounts.ToDictionary(t => t.ParentCellId, t => t.TotalCount);
 
-        return areas.Select(a =>
+        var results = new List<ExplorationNeighborhood>();
+        foreach (var a in areas.OrderByDescending(a => a.OwnedCount))
         {
             var center = _hexGrid.GetCellCenter(a.ParentCellId);
             totalMap.TryGetValue(a.ParentCellId, out var total);
             if (total == 0) total = a.OwnedCount;
-            return new ExplorationNeighborhood
+
+            var areaName = await _geocoding.GetAreaName(center.Lat, center.Lng);
+
+            results.Add(new ExplorationNeighborhood
             {
                 NeighborhoodId = a.ParentCellId,
                 CenterLat = center.Lat,
@@ -431,10 +437,11 @@ public class TerritoryService : ITerritoryService
                 ExploredCount = a.OwnedCount,
                 TotalCount = total,
                 Percent = Math.Round(a.OwnedCount * 100.0 / total, 1),
-            };
-        })
-        .OrderByDescending(n => n.ExploredCount)
-        .ToList();
+                AreaName = areaName,
+            });
+        }
+
+        return results;
     }
 
     // ──────────────────────────────────────────────────────────────────────────

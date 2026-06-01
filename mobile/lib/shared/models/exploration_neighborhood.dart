@@ -1,4 +1,4 @@
-/// Model for exploration stats of a single neighborhood (H3 res 8).
+/// Model for exploration stats of a single area where user owns hexes.
 library;
 
 class ExplorationNeighborhood {
@@ -8,6 +8,7 @@ class ExplorationNeighborhood {
   final int exploredCount;
   final int totalCount;
   final double percent;
+  final String areaName;
 
   const ExplorationNeighborhood({
     required this.neighborhoodId,
@@ -16,6 +17,7 @@ class ExplorationNeighborhood {
     required this.exploredCount,
     required this.totalCount,
     required this.percent,
+    required this.areaName,
   });
 
   factory ExplorationNeighborhood.fromJson(Map<String, dynamic> json) {
@@ -26,6 +28,7 @@ class ExplorationNeighborhood {
       exploredCount: json['exploredCount'] as int,
       totalCount: json['totalCount'] as int,
       percent: (json['percent'] as num).toDouble(),
+      areaName: json['areaName'] as String? ?? '',
     );
   }
 }

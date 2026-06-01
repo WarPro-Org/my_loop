@@ -22,6 +22,8 @@ builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 builder.Services.AddScoped<ITerritoryNotifier, TerritoryNotifier>();
 builder.Services.AddScoped<IPathValidationService, PathValidationService>();
 builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
+builder.Services.AddSingleton<GeocodingService>();
+builder.Services.AddHttpClient<GeocodingService>();
 builder.Services.AddHostedService<DecayCleanupService>();
 
 // --- SignalR ---
