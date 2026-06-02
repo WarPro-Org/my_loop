@@ -16,6 +16,8 @@ import 'package:myloop/shared/models/trail_claim_response.dart';
 import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/models/user.dart';
+import 'package:myloop/shared/services/batch_drain_service.dart';
+import 'package:myloop/shared/services/step_claim_queue.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
 /// Defaults to ngrok tunnel for mobile testing over cellular.
@@ -174,6 +176,27 @@ class ApiService {
     } catch (e) {
       debugPrint('[StepClaim] Failed: $e');
       return null; // Best-effort — don't interrupt the walk
+    }
+  }
+
+  /// Batch step claim — sends N queued GPS points in a single transaction.
+  /// Returns the server response or null on network failure.
+  Future<BatchResult?> claimBatchStep({
+    required String userId,
+    required String localDate,
+    required List<QueuedStepPoint> points,
+  }) async {
+    try {
+      final response = await _dio.post('/api/claims/batch-step', data: {
+        'userId': userId,
+        'localDate': localDate,
+        'points': points.map((p) => p.toJson()).toList(),
+      });
+      final data = response.data as Map<String, dynamic>;
+      return BatchResult.fromJson(data);
+    } catch (e) {
+      debugPrint('[BatchStepClaim] Failed: $e');
+      return null;
     }
   }
 

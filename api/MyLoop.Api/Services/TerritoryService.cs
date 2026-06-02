@@ -400,6 +400,284 @@ public class TerritoryService : ITerritoryService
         };
     }
 
+    public async Task<BatchStepClaimResponse> ProcessBatchStepClaim(
+        Guid userId, string? clientLocalDate, List<BatchStepPoint> points)
+    {
+        if (points == null || points.Count == 0)
+            return new BatchStepClaimResponse();
+
+        // Cap batch size to prevent abuse / runaway transactions
+        if (points.Count > 200)
+            points = points.Take(200).ToList();
+
+        // 1. Resolve each point to its H3 hex (in memory, no DB)
+        var resolved = points.Select(p => new
+        {
+            Point = p,
+            Hex = _hexGrid.GetCellAtPoint(p.Lat, p.Lng),
+        }).ToList();
+
+        // 2. Pre-load ALL existing cells in a single query
+        var allCellIds = resolved.Select(r => r.Hex.CellId).Distinct().ToList();
+        var existingCells = await _db.TerritoryCells
+            .Include(t => t.Owner)
+            .Where(t => allCellIds.Contains(t.CellId))
+            .ToDictionaryAsync(t => t.CellId);
+
+        // 3. Load claiming user once
+        var user = await _db.Users.FindAsync(userId);
+        if (user == null)
+            return new BatchStepClaimResponse();
+
+        await using var transaction = await _db.Database.BeginTransactionAsync();
+        try
+        {
+            var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
+            var claimId = Guid.NewGuid();
+
+            // Aggregate state across batch
+            var results = new List<BatchStepResult>(points.Count);
+            var transfers = new List<CellTransfer>();
+            var capturedHexes = new List<HexCell>(); // for ownership broadcast
+            var processedThisBatch = new HashSet<long>(); // dedupe same hex hit twice
+            var newCellsCount = 0;
+            var stolenCellsCount = 0;
+            var newExplorations = 0;
+
+            // Build path for the synthetic Claim entity (stitches all points together)
+            var pathPoints = points.Select(p => new[] { p.Lat, p.Lng }).ToArray();
+
+            // 4. Process each point
+            foreach (var item in resolved)
+            {
+                var p = item.Point;
+                var hexCell = item.Hex;
+                var cellId = hexCell.CellId;
+
+                // Already processed earlier in this batch — skip silently
+                if (processedThisBatch.Contains(cellId))
+                {
+                    results.Add(new BatchStepResult
+                    {
+                        ClientId = p.ClientId,
+                        Claimed = false,
+                        SkipReason = "duplicate",
+                    });
+                    continue;
+                }
+
+                existingCells.TryGetValue(cellId, out var existing);
+
+                // Already ours — refresh decay timer + record exploration
+                if (existing != null && existing.OwnerId == userId)
+                {
+                    existing.LastRefreshedAt = DateTime.UtcNow;
+                    await RecordExploration(userId, cellId);
+                    processedThisBatch.Add(cellId);
+                    results.Add(new BatchStepResult
+                    {
+                        ClientId = p.ClientId,
+                        Claimed = false,
+                        CellId = cellId,
+                        SkipReason = "owned",
+                    });
+                    continue;
+                }
+
+                // On cooldown — can't steal yet
+                if (existing != null && IsOnCooldown(existing))
+                {
+                    results.Add(new BatchStepResult
+                    {
+                        ClientId = p.ClientId,
+                        Claimed = false,
+                        CellId = cellId,
+                        SkipReason = "cooldown",
+                    });
+                    continue;
+                }
+
+                var cellCenter = _hexGrid.GetCellCenter(cellId);
+                var decayDays = await CalculateDecayDays(user, cellCenter.Lat, cellCenter.Lng);
+
+                string? previousOwnerName = null;
+                bool wasStolen;
+
+                if (existing != null)
+                {
+                    previousOwnerName = existing.Owner?.DisplayName;
+                    var transfer = CreateTransfer(cellId, existing.OwnerId, userId, claimId);
+                    _db.CellTransfers.Add(transfer);
+                    transfers.Add(transfer);
+                    UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
+                    existing.DecayDays = decayDays;
+                    wasStolen = true;
+                    stolenCellsCount++;
+                }
+                else
+                {
+                    var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry, decayDays);
+                    _db.TerritoryCells.Add(newCell);
+                    var transfer = CreateTransfer(cellId, null, userId, claimId);
+                    _db.CellTransfers.Add(transfer);
+                    transfers.Add(transfer);
+                    wasStolen = false;
+                    newCellsCount++;
+                }
+
+                if (await RecordExploration(userId, cellId))
+                    newExplorations++;
+
+                processedThisBatch.Add(cellId);
+                capturedHexes.Add(hexCell);
+
+                results.Add(new BatchStepResult
+                {
+                    ClientId = p.ClientId,
+                    Claimed = true,
+                    CellId = cellId,
+                    Boundary = hexCell.Boundary,
+                    WasStolen = wasStolen,
+                    PreviousOwnerName = previousOwnerName,
+                });
+            }
+
+            var totalClaimedThisBatch = newCellsCount + stolenCellsCount;
+
+            // 5. Create a single Claim entity covering this slice (FK target for transfers)
+            if (totalClaimedThisBatch > 0)
+            {
+                var claim = new Claim
+                {
+                    Id = claimId,
+                    UserId = userId,
+                    CellCount = totalClaimedThisBatch,
+                    AreaM2 = totalClaimedThisBatch * 4234, // ~4,234 m² per H3 res-11 hex
+                };
+                claim.SetPolygon(pathPoints);
+                _db.Claims.Add(claim);
+
+                // 6. Update user stats (atomic)
+                user.HexCount += totalClaimedThisBatch;
+                user.TotalHexesCaptured += totalClaimedThisBatch;
+                user.TotalHexesStolen += stolenCellsCount;
+
+                var streakDate = ResolveStreakDate(clientLocalDate);
+                UpdateStreak(user, streakDate);
+
+                if (transfers.Count > 0)
+                    await DecrementVictimHexCounts(userId, transfers);
+            }
+
+            // 7. Mission progress (only if something happened)
+            MissionProgressResult? missionResult = null;
+            if (totalClaimedThisBatch > 0)
+            {
+                missionResult = await _missionService.RecordProgress(
+                    userId, MissionType.CaptureHexes, totalClaimedThisBatch);
+                if (stolenCellsCount > 0)
+                    await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCellsCount);
+                await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, totalClaimedThisBatch);
+                // ~30m per claimed hex approximation
+                await _missionService.RecordProgress(userId, MissionType.WalkDistance, totalClaimedThisBatch * 30);
+                if (newExplorations > 0)
+                    await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
+                if (user.IsStreakActive)
+                    await _missionService.RecordProgress(userId, MissionType.MaintainStreak, 1);
+            }
+
+            // 8. Achievements
+            var newAchievements = totalClaimedThisBatch > 0
+                ? await _achievementService.CheckAndUnlock(userId)
+                : new List<AchievementUnlock>();
+
+            // 9. XP — single award call also persists everything via SaveChangesAsync
+            var xpAmount = newCellsCount * GameConstants.XpPerHexCaptured
+                         + stolenCellsCount * GameConstants.XpPerHexStolen;
+            XpGainResult xpResult;
+            if (xpAmount > 0)
+            {
+                xpResult = await _missionService.AwardXp(userId, xpAmount, "batch_step_claim");
+            }
+            else
+            {
+                // No claims happened — still need to persist any "owned" refresh / exploration writes
+                await _db.SaveChangesAsync();
+                xpResult = new XpGainResult
+                {
+                    TotalXp = user.TotalXp,
+                    Level = user.Level,
+                    LeveledUp = false,
+                };
+            }
+
+            await transaction.CommitAsync();
+
+            // 10. ONE consolidated push per slice (after commit)
+            if (capturedHexes.Count > 0)
+            {
+                _ = BroadcastOwnershipChanges(userId, capturedHexes, transfers);
+                _ = PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
+
+                var victimIds = transfers
+                    .Where(t => t.FromUserId != null)
+                    .Select(t => t.FromUserId!.Value)
+                    .Distinct();
+                foreach (var victimId in victimIds)
+                    _ = PushVictimDelta(victimId);
+            }
+
+            // 11. Build response
+            var neededXp = GameConstants.XpForLevel(xpResult.Level + 1) - GameConstants.XpForLevel(xpResult.Level);
+            var progressXp = (int)(xpResult.TotalXp - GameConstants.XpForLevel(xpResult.Level));
+
+            return new BatchStepClaimResponse
+            {
+                Results = results,
+                Stats = new BatchStepStats
+                {
+                    HexCount = user.HexCount,
+                    TotalHexesCaptured = user.TotalHexesCaptured,
+                    TotalHexesStolen = user.TotalHexesStolen,
+                    Streak = user.Streak,
+                    IsStreakActive = user.IsStreakActive,
+                    DistanceKm = user.DistanceKm,
+                },
+                Xp = new BatchStepXp
+                {
+                    XpGained = xpAmount + (missionResult?.XpEarned ?? 0),
+                    TotalXp = xpResult.TotalXp,
+                    Level = xpResult.Level,
+                    LeveledUp = xpResult.LeveledUp,
+                    ProgressXp = progressXp,
+                    NeededXp = neededXp,
+                    ProgressPercent = neededXp > 0 ? (double)progressXp / neededXp : 0,
+                },
+                Missions = missionResult?.Missions?.Select(m => new BatchMissionUpdate
+                {
+                    MissionId = m.Id,
+                    Type = m.Type.ToString(),
+                    CurrentProgress = m.CurrentProgress,
+                    TargetValue = m.TargetValue,
+                    Completed = m.IsCompleted,
+                    XpAwarded = m.IsCompleted ? m.XpReward : 0,
+                }).ToList() ?? new List<BatchMissionUpdate>(),
+                Achievements = newAchievements.Select(a => new AchievementUnlockedDto
+                {
+                    Id = a.AchievementId,
+                    Name = a.Name,
+                    Icon = a.Icon,
+                    XpAwarded = a.XpAwarded,
+                }).ToList(),
+            };
+        }
+        catch
+        {
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+
     public async Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
         double minLat, double minLng, double maxLat, double maxLng)
     {
@@ -828,17 +1106,55 @@ public class TerritoryService : ITerritoryService
 
     private static void UpdateStreak(User user)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        UpdateStreak(user, DateOnly.FromDateTime(DateTime.UtcNow));
+    }
 
-        if (user.LastClaimDate == null || user.LastClaimDate < today.AddDays(-1))
-            user.Streak = 1;
+    /// <summary>
+    /// Updates the user's streak using the supplied date as "today".
+    /// Caller passes client's local date (clamped to UTC ±1 day) so users near
+    /// timezone boundaries don't lose streaks. First-ever claim seeds streak=1
+    /// without resetting an existing streak that was set elsewhere.
+    /// </summary>
+    private static void UpdateStreak(User user, DateOnly today)
+    {
+        if (user.LastClaimDate == null)
+        {
+            // First claim ever — start streak only if not already seeded by admin/import.
+            if (user.Streak <= 0) user.Streak = 1;
+        }
+        else if (user.LastClaimDate < today.AddDays(-1))
+        {
+            user.Streak = 1; // Gap > 1 day → reset
+        }
         else if (user.LastClaimDate == today.AddDays(-1))
-            user.Streak += 1;
+        {
+            user.Streak += 1; // Exactly yesterday → increment
+        }
+        // Same day → no change
 
         user.LastClaimDate = today;
         user.IsStreakActive = true;
         if (user.Streak > user.MaxStreak)
             user.MaxStreak = user.Streak;
+    }
+
+    /// <summary>
+    /// Parses a client-supplied "yyyy-MM-dd" date and clamps it to within ±1 day
+    /// of UTC today. Prevents clients from manipulating dates to abuse streaks
+    /// while still respecting honest timezone differences.
+    /// </summary>
+    private static DateOnly ResolveStreakDate(string? clientLocalDate)
+    {
+        var utcToday = DateOnly.FromDateTime(DateTime.UtcNow);
+        if (string.IsNullOrWhiteSpace(clientLocalDate))
+            return utcToday;
+
+        if (!DateOnly.TryParseExact(clientLocalDate, "yyyy-MM-dd", out var parsed))
+            return utcToday;
+
+        if (parsed < utcToday.AddDays(-1)) return utcToday.AddDays(-1);
+        if (parsed > utcToday.AddDays(1)) return utcToday.AddDays(1);
+        return parsed;
     }
 
     private async Task<bool> RecordExploration(Guid userId, long cellId)

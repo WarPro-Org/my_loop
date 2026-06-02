@@ -111,6 +111,44 @@ public class ClaimsController : ControllerBase
     }
 
     /// <summary>
+    /// Batch step claim. Receives N GPS points captured during a walk
+    /// (drained from the client's persistent write-ahead log) and processes
+    /// them atomically: single transaction, single SaveChanges, one consolidated
+    /// SignalR push per slice. Resilient to flaky networks — clients retry the
+    /// whole batch with exponential backoff until acknowledged.
+    /// </summary>
+    [HttpPost("batch-step")]
+    public async Task<IActionResult> ClaimBatchStep([FromBody] BatchStepClaimRequest request)
+    {
+        if (request == null || request.Points == null || request.Points.Count == 0)
+            return BadRequest("No points provided");
+
+        if (request.Points.Count > 200)
+            return BadRequest("Too many points in a single batch (max 200)");
+
+        foreach (var p in request.Points)
+        {
+            if (p.Lat < -90 || p.Lat > 90 || p.Lng < -180 || p.Lng > 180)
+                return BadRequest("Invalid coordinates in batch");
+            if (double.IsNaN(p.Lat) || double.IsNaN(p.Lng) ||
+                double.IsInfinity(p.Lat) || double.IsInfinity(p.Lng))
+                return BadRequest("Invalid coordinates in batch");
+        }
+
+        try
+        {
+            var result = await _territoryService.ProcessBatchStepClaim(
+                request.UserId, request.LocalDate, request.Points);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Batch step claim failed for user {UserId}", request.UserId);
+            return StatusCode(500, new { error = "Batch step claim failed." });
+        }
+    }
+
+    /// <summary>
     /// Preview which hexes a path would capture — no DB writes.
     /// Called by the client during a walk when a loop is detected,
     /// so the user can see hex fills appearing in real-time.
@@ -167,6 +205,28 @@ public class ClaimsController : ControllerBase
         {
             var result = await _territoryService.ProcessStepClaim(request.UserId, request.Lat, request.Lng);
             return Ok(new { success = true, result, message = "Push pipeline executed — check SignalR client" });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { success = false, error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// DEV-ONLY: Batch step claim without auth for E2E testing the write pipeline.
+    /// REMOVE BEFORE PRODUCTION.
+    /// </summary>
+    [AllowAnonymous]
+    [HttpPost("dev/test-batch")]
+    public async Task<IActionResult> DevTestBatch([FromBody] BatchStepClaimRequest request)
+    {
+        if (!_env.IsDevelopment()) return NotFound();
+
+        try
+        {
+            var result = await _territoryService.ProcessBatchStepClaim(
+                request.UserId, request.LocalDate, request.Points);
+            return Ok(result);
         }
         catch (Exception ex)
         {
