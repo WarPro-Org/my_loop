@@ -126,6 +126,7 @@ public static class TerritorySeedService
                 var parentLatRad = cellCenter.LatitudeDegrees * Math.PI / 180.0;
                 var parentLngRad = cellCenter.LongitudeDegrees * Math.PI / 180.0;
                 var parentIndex = H3Index.FromLatLng(new LatLng(parentLatRad, parentLngRad), GameConstants.H3ParentResolution);
+                var neighborhoodIndex = H3Index.FromLatLng(new LatLng(parentLatRad, parentLngRad), GameConstants.H3NeighborhoodResolution);
 
                 cells[cellId] = new TerritoryCell
                 {
@@ -137,6 +138,7 @@ public static class TerritorySeedService
                     CenterLat = cellCenter.LatitudeDegrees,
                     CenterLng = cellCenter.LongitudeDegrees,
                     ParentCellId = (long)(ulong)parentIndex,
+                    NeighborhoodId = (long)(ulong)neighborhoodIndex,
                     BoundaryJson = JsonSerializer.Serialize(boundary),
                 };
             }

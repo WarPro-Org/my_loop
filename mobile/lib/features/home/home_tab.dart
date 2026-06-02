@@ -1367,7 +1367,7 @@ class _NeighborhoodTile extends StatelessWidget {
               Icon(Icons.hexagon_outlined, size: 14, color: color),
               const SizedBox(width: 4),
               Text(
-                '${neighborhood.exploredCount} hexes',
+                '${neighborhood.ownedCount}/${neighborhood.totalCount}',
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w800,
@@ -1377,7 +1377,7 @@ class _NeighborhoodTile extends StatelessWidget {
             ],
           ),
           Text(
-            '${pct.toStringAsFixed(0)}% of area',
+            '${pct.toStringAsFixed(0)}% explored',
             style: TextStyle(fontSize: 11, color: AppColors.dark.withValues(alpha: 0.6)),
           ),
           ClipRRect(

@@ -859,6 +859,14 @@ public class TerritoryService : ITerritoryService
 
         if (areas.Count == 0) return [];
 
+        // Query owned cells per neighborhood (separate query — cells may not all be explored)
+        var ownedByNeighborhood = await _db.TerritoryCells
+            .AsNoTracking()
+            .Where(t => t.OwnerId == userId)
+            .GroupBy(t => t.NeighborhoodId)
+            .Select(g => new { NeighborhoodId = g.Key, OwnedCount = g.Count() })
+            .ToDictionaryAsync(x => x.NeighborhoodId, x => x.OwnedCount);
+
         // Geocode neighborhoods in parallel-safe manner:
         // First pass: resolve names (cached hits are instant, uncached queued)
         var results = new List<ExplorationNeighborhood>();
@@ -867,6 +875,7 @@ public class TerritoryService : ITerritoryService
         foreach (var a in areas.OrderByDescending(a => a.ExploredCount))
         {
             var percent = Math.Round(a.ExploredCount * 100.0 / GameConstants.CellsPerNeighborhood, 1);
+            ownedByNeighborhood.TryGetValue(a.NeighborhoodId, out var owned);
 
             results.Add(new ExplorationNeighborhood
             {
@@ -874,6 +883,7 @@ public class TerritoryService : ITerritoryService
                 CenterLat = a.AvgLat,
                 CenterLng = a.AvgLng,
                 ExploredCount = a.ExploredCount,
+                OwnedCount = owned,
                 TotalCount = GameConstants.CellsPerNeighborhood,
                 Percent = Math.Min(percent, 100.0),
                 AreaName = "", // Will be filled below
@@ -912,6 +922,7 @@ public class TerritoryService : ITerritoryService
                 CenterLat = g.Average(r => r.CenterLat),
                 CenterLng = g.Average(r => r.CenterLng),
                 ExploredCount = g.Sum(r => r.ExploredCount),
+                OwnedCount = g.Sum(r => r.OwnedCount),
                 TotalCount = g.Sum(r => r.TotalCount),
                 Percent = Math.Min(Math.Round(g.Sum(r => r.ExploredCount) * 100.0 / g.Sum(r => r.TotalCount), 1), 100.0),
                 AreaName = g.Key,
@@ -1031,6 +1042,7 @@ public class TerritoryService : ITerritoryService
         cell.CenterLat = center.Lat;
         cell.CenterLng = center.Lng;
         cell.ParentCellId = _hexGrid.GetParentCellId(hexCell.CellId);
+        cell.NeighborhoodId = _hexGrid.GetNeighborhoodId(hexCell.CellId);
         cell.SetBoundary(hexCell.Boundary);
     }
 
@@ -1048,6 +1060,7 @@ public class TerritoryService : ITerritoryService
             CenterLat = center.Lat,
             CenterLng = center.Lng,
             ParentCellId = _hexGrid.GetParentCellId(hexCell.CellId),
+            NeighborhoodId = _hexGrid.GetNeighborhoodId(hexCell.CellId),
             DecayDays = decayDays,
         };
         cell.SetBoundary(hexCell.Boundary);

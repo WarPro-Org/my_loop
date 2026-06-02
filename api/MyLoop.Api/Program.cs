@@ -259,6 +259,13 @@ using (var scope = app.Services.CreateScope())
             CREATE INDEX IF NOT EXISTS ""IX_UserAchievements_UserId""
             ON ""UserAchievements"" (""UserId"")");
 
+        // NeighborhoodId on TerritoryCells for per-area ownership queries
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"NeighborhoodId\" bigint NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_OwnerId_NeighborhoodId""
+            ON ""TerritoryCells"" (""OwnerId"", ""NeighborhoodId"")");
+
         // Performance: BRIN index for viewport spatial queries (much faster than B-tree for range scans)
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Geo_Brin""

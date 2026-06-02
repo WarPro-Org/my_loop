@@ -39,6 +39,12 @@ public class TerritoryCell
     public long ParentCellId { get; set; }
 
     /// <summary>
+    /// H3 parent cell ID at resolution 8 — the neighborhood bucket (~700m).
+    /// Used for per-area ownership counts in the exploration feature.
+    /// </summary>
+    public long NeighborhoodId { get; set; }
+
+    /// <summary>
     /// Last time the owner physically visited (walked through) this cell.
     /// Used for decay: cells not refreshed within DecayDays lose ownership.
     /// Set on initial claim and updated when owner walks through again.

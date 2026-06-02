@@ -84,6 +84,9 @@ public class ExplorationNeighborhood
     /// <summary>Number of unique cells the user has explored in this neighborhood.</summary>
     public int ExploredCount { get; set; }
 
+    /// <summary>Number of cells the user currently owns in this neighborhood.</summary>
+    public int OwnedCount { get; set; }
+
     /// <summary>Total cells in this area (all players).</summary>
     public int TotalCount { get; set; }
 
