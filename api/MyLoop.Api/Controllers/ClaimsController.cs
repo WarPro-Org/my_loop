@@ -1,16 +1,16 @@
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using MyLoop.Api.Constants;
+using MyLoop.Api.Interfaces;
 using MyLoop.Api.Models;
-using MyLoop.Api.Services;
 
 namespace MyLoop.Api.Controllers;
 
 /// <summary>
-/// Handles territory claim submission.
+/// Handles territory claim submission. The acting user is ALWAYS the authenticated
+/// caller (resolved from the Firebase JWT via <see cref="ICurrentUser"/>); any UserId
+/// present in a request body is ignored.
 /// </summary>
 [ApiController]
 [Route("api/claims")]
@@ -19,19 +19,19 @@ public class ClaimsController : ControllerBase
 {
     private readonly ITerritoryService _territoryService;
     private readonly IHexGridService _hexGridService;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<ClaimsController> _logger;
-    private readonly IWebHostEnvironment _env;
 
     public ClaimsController(
         ITerritoryService territoryService,
         IHexGridService hexGridService,
-        ILogger<ClaimsController> logger,
-        IWebHostEnvironment env)
+        ICurrentUser currentUser,
+        ILogger<ClaimsController> logger)
     {
         _territoryService = territoryService;
         _hexGridService = hexGridService;
+        _currentUser = currentUser;
         _logger = logger;
-        _env = env;
     }
 
     /// <summary>
@@ -41,12 +41,17 @@ public class ClaimsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> SubmitClaim([FromBody] ClaimRequest request)
     {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
+        if (request.Path.Length > GameConstants.MaxClaimPathPoints)
+            return BadRequest("Path too long");
         if (!ValidatePathCoordinates(request.Path))
             return BadRequest("Invalid GPS coordinates in path");
 
         try
         {
-            var result = await _territoryService.ProcessClaim(request.UserId, request.Path);
+            var result = await _territoryService.ProcessClaim(callerId.Value, request.Path);
 
             if (!result.Success)
                 return BadRequest(new { error = result.Error });
@@ -55,7 +60,7 @@ public class ClaimsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Claim processing failed for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Claim processing failed for user {UserId}", callerId);
             return StatusCode(500, new { error = "Claim processing failed. Please try again." });
         }
     }
@@ -63,17 +68,21 @@ public class ClaimsController : ControllerBase
     /// <summary>
     /// Real-time walk-through claim. Batches of GPS points are sent during a walk
     /// and hexes the user physically touches are claimed immediately.
-    /// Returns claimed hex boundaries for instant rendering on the map.
     /// </summary>
     [HttpPost("trail")]
     public async Task<IActionResult> ClaimTrail([FromBody] TrailClaimRequest request)
     {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
+        if (request.Points.Length > GameConstants.MaxClaimPathPoints)
+            return BadRequest("Too many points");
         if (!ValidatePathCoordinates(request.Points))
             return BadRequest("Invalid GPS coordinates");
 
         try
         {
-            var result = await _territoryService.ProcessTrailClaim(request.UserId, request.Points);
+            var result = await _territoryService.ProcessTrailClaim(callerId.Value, request.Points);
 
             if (!result.Success)
                 return BadRequest(new { error = result.Error });
@@ -82,30 +91,32 @@ public class ClaimsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Trail claim failed for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Trail claim failed for user {UserId}", callerId);
             return StatusCode(500, new { error = "Trail claim processing failed." });
         }
     }
 
     /// <summary>
     /// Single-point real-time claim. Each GPS tick sends one point —
-    /// if the user entered a new hex, it's claimed and the boundary returned
-    /// for instant rendering. ~100ms round-trip at walking speed.
+    /// if the user entered a new hex, it's claimed and the boundary returned.
     /// </summary>
     [HttpPost("step")]
     public async Task<IActionResult> ClaimStep([FromBody] StepClaimRequest request)
     {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
         if (request.Lat < -90 || request.Lat > 90 || request.Lng < -180 || request.Lng > 180)
             return BadRequest("Invalid coordinates");
 
         try
         {
-            var result = await _territoryService.ProcessStepClaim(request.UserId, request.Lat, request.Lng);
+            var result = await _territoryService.ProcessStepClaim(callerId.Value, request.Lat, request.Lng);
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Step claim failed for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Step claim failed for user {UserId}", callerId);
             return StatusCode(500, new { error = "Step claim failed." });
         }
     }
@@ -113,14 +124,15 @@ public class ClaimsController : ControllerBase
     /// <summary>
     /// Batch step claim. Receives N GPS points captured during a walk
     /// (drained from the client's persistent write-ahead log) and processes
-    /// them atomically: single transaction, single SaveChanges, one consolidated
-    /// SignalR push per slice. Resilient to flaky networks — clients retry the
-    /// whole batch with exponential backoff until acknowledged.
+    /// them atomically.
     /// </summary>
     [HttpPost("batch-step")]
     public async Task<IActionResult> ClaimBatchStep([FromBody] BatchStepClaimRequest request)
     {
-        if (request == null || request.Points == null || request.Points.Count == 0)
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
+        if (request?.Points == null || request.Points.Count == 0)
             return BadRequest("No points provided");
 
         if (request.Points.Count > 200)
@@ -138,20 +150,18 @@ public class ClaimsController : ControllerBase
         try
         {
             var result = await _territoryService.ProcessBatchStepClaim(
-                request.UserId, request.LocalDate, request.Points);
+                callerId.Value, request.LocalDate, request.Points);
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Batch step claim failed for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Batch step claim failed for user {UserId}", callerId);
             return StatusCode(500, new { error = "Batch step claim failed." });
         }
     }
 
     /// <summary>
     /// Preview which hexes a path would capture — no DB writes.
-    /// Called by the client during a walk when a loop is detected,
-    /// so the user can see hex fills appearing in real-time.
     /// </summary>
     [HttpPost("preview")]
     public IActionResult PreviewClaim([FromBody] PreviewRequest request)
@@ -188,49 +198,5 @@ public class ClaimsController : ControllerBase
             if (double.IsInfinity(point[0]) || double.IsInfinity(point[1])) return false;
         }
         return true;
-    }
-
-    /// <summary>
-    /// DEV-ONLY: Trigger a step claim without auth for E2E testing the SignalR push pipeline.
-    /// Calls ProcessStepClaim directly and returns the push result.
-    /// REMOVE BEFORE PRODUCTION.
-    /// </summary>
-    [AllowAnonymous]
-    [HttpPost("dev/test-push")]
-    public async Task<IActionResult> DevTestPush([FromBody] StepClaimRequest request)
-    {
-        if (!_env.IsDevelopment()) return NotFound();
-
-        try
-        {
-            var result = await _territoryService.ProcessStepClaim(request.UserId, request.Lat, request.Lng);
-            return Ok(new { success = true, result, message = "Push pipeline executed — check SignalR client" });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { success = false, error = ex.Message });
-        }
-    }
-
-    /// <summary>
-    /// DEV-ONLY: Batch step claim without auth for E2E testing the write pipeline.
-    /// REMOVE BEFORE PRODUCTION.
-    /// </summary>
-    [AllowAnonymous]
-    [HttpPost("dev/test-batch")]
-    public async Task<IActionResult> DevTestBatch([FromBody] BatchStepClaimRequest request)
-    {
-        if (!_env.IsDevelopment()) return NotFound();
-
-        try
-        {
-            var result = await _territoryService.ProcessBatchStepClaim(
-                request.UserId, request.LocalDate, request.Points);
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { success = false, error = ex.Message });
-        }
     }
 }
