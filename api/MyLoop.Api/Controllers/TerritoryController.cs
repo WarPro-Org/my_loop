@@ -1,11 +1,14 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using MyLoop.Api.Services;
+using MyLoop.Api.Interfaces;
 
 namespace MyLoop.Api.Controllers;
 
 /// <summary>
 /// Handles territory queries — viewport cells, stats, stolen cells, history.
+/// Endpoints that expose a player's PRIVATE data (stolen cells, walk history,
+/// exploration progress) are restricted to the authenticated owner. Public map
+/// and public-profile data remain readable by any authenticated user.
 /// </summary>
 [ApiController]
 [Route("api/territories")]
@@ -13,14 +16,16 @@ namespace MyLoop.Api.Controllers;
 public class TerritoryController : ControllerBase
 {
     private readonly ITerritoryService _territoryService;
+    private readonly ICurrentUser _currentUser;
 
-    public TerritoryController(ITerritoryService territoryService)
+    public TerritoryController(ITerritoryService territoryService, ICurrentUser currentUser)
     {
         _territoryService = territoryService;
+        _currentUser = currentUser;
     }
 
     /// <summary>
-    /// Get all territory cells within a map viewport bounding box.
+    /// Get all territory cells within a map viewport bounding box (public map data).
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetTerritoriesInViewport(
@@ -34,7 +39,7 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get a user's total territory stats (cell count + area).
+    /// Get a user's total territory stats (cell count + area). Shown on public profiles.
     /// </summary>
     [HttpGet("stats/{userId:guid}")]
     public async Task<IActionResult> GetStats([FromRoute] Guid userId)
@@ -44,20 +49,21 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get hexes that were stolen from this user within N days.
-    /// Used for the revenge recapture feature.
+    /// Get hexes that were stolen from this user within N days (private — revenge list).
     /// </summary>
     [HttpGet("stolen/{userId:guid}")]
     public async Task<IActionResult> GetStolenCells(
         [FromRoute] Guid userId,
         [FromQuery] int days = 7)
     {
+        if (await DenySelf(userId) is { } deny) return deny;
+
         var result = await _territoryService.GetStolenCells(userId, days);
         return Ok(result);
     }
 
     /// <summary>
-    /// Get the full ownership history of a specific hex cell.
+    /// Get the full ownership history of a specific hex cell (public map data).
     /// </summary>
     [HttpGet("history/{cellId:long}")]
     public async Task<IActionResult> GetCellHistory([FromRoute] long cellId)
@@ -67,8 +73,7 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get ALL territory cells owned by a specific user (no viewport limit).
-    /// Used by the mobile map to always show the user's hexes regardless of location.
+    /// Get ALL territory cells owned by a specific user (public — rendered on everyone's map).
     /// </summary>
     [HttpGet("user/{userId:guid}")]
     public async Task<IActionResult> GetUserTerritories([FromRoute] Guid userId)
@@ -78,19 +83,19 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get a user's claim history — one entry per walk submission.
-    /// Used for the "Hex History" section on the home page.
+    /// Get a user's claim history — one entry per walk submission (private).
     /// </summary>
     [HttpGet("claims/{userId:guid}")]
     public async Task<IActionResult> GetClaimHistory([FromRoute] Guid userId)
     {
+        if (await DenySelf(userId) is { } deny) return deny;
+
         var history = await _territoryService.GetClaimHistory(userId);
         return Ok(history);
     }
 
     /// <summary>
-    /// Get exploration stats for neighborhoods near a GPS point.
-    /// Returns explored % for each nearby neighborhood (H3 res 8).
+    /// Get exploration stats for neighborhoods near a GPS point (private progress).
     /// </summary>
     [HttpGet("exploration/{userId:guid}")]
     public async Task<IActionResult> GetExplorationStats(
@@ -98,7 +103,21 @@ public class TerritoryController : ControllerBase
         [FromQuery] double lat,
         [FromQuery] double lng)
     {
+        if (await DenySelf(userId) is { } deny) return deny;
+
         var stats = await _territoryService.GetExplorationStats(userId, lat, lng);
         return Ok(stats);
+    }
+
+    /// <summary>
+    /// Returns Unauthorized/Forbid if the caller is not the user named in the route;
+    /// null when the caller is the owner and the request may proceed.
+    /// </summary>
+    private async Task<IActionResult?> DenySelf(Guid routeUserId)
+    {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+        if (routeUserId != callerId) return Forbid();
+        return null;
     }
 }

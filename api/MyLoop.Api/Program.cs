@@ -1,9 +1,11 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
+using MyLoop.Api.Interfaces;
 using MyLoop.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -27,6 +29,36 @@ builder.Services.AddScoped<IAchievementService, AchievementService>();
 builder.Services.AddSingleton<GeocodingService>();
 builder.Services.AddHttpClient<GeocodingService>();
 builder.Services.AddHostedService<DecayCleanupService>();
+
+// --- Identity resolution (caller derived from the Firebase JWT, never the request body) ---
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
+// --- Rate limiting (per authenticated user, falling back to client IP) ---
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        // Long-lived SignalR connections must not be throttled per-message.
+        if (httpContext.Request.Path.StartsWithSegments("/hubs"))
+            return RateLimitPartition.GetNoLimiter("hubs");
+
+        var partitionKey =
+            httpContext.User?.FindFirst("user_id")?.Value
+            ?? httpContext.User?.FindFirst("sub")?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        });
+    });
+});
 
 // --- SignalR ---
 builder.Services.AddSignalR();
@@ -66,13 +98,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 
 // --- CORS ---
+// The mobile client is native (not browser-based) and is unaffected by CORS.
+// We therefore allow ONLY explicitly configured browser origins, and never combine
+// a wildcard/reflected origin with credentials. Configure via "Cors:AllowedOrigins".
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.SetIsOriginAllowed(_ => true)
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials());
+    {
+        if (corsOrigins.Length > 0)
+            policy.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+        else
+            policy.WithOrigins("http://localhost").AllowAnyHeader().AllowAnyMethod();
+    });
 });
 
 var app = builder.Build();
@@ -80,6 +119,7 @@ var app = builder.Build();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 app.MapHub<MyLoop.Api.Hubs.TerritoryHub>("/hubs/territory");
 
@@ -386,3 +426,6 @@ using (var startupScope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Exposed so the integration-test project (WebApplicationFactory) can boot the app.
+public partial class Program { }
