@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [develop, master]
+
+jobs:
+  backend:
+    name: Backend (.NET API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore api/MyLoop.Api/MyLoop.Api.csproj
+
+      - name: Build
+        run: dotnet build api/MyLoop.Api/MyLoop.Api.csproj --configuration Release --no-restore
+
+      # Tests are added in a later commit (xUnit + Testcontainers).
+      # Once tests/MyLoop.Api.Tests exists this step runs the suite.
+      - name: Test
+        run: |
+          if [ -d tests ]; then
+            dotnet test --configuration Release
+          else
+            echo "No test project yet — skipping."
+          fi
+
+  mobile:
+    name: Mobile (Flutter)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.0"
+          channel: stable
+
+      - name: Pub get
+        run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
