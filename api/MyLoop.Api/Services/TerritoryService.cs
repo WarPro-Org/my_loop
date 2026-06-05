@@ -1,3 +1,5 @@
+using System.Data;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using MyLoop.Api.Constants;
@@ -58,11 +60,33 @@ public class TerritoryService : ITerritoryService
         var area = _hexGrid.CalculateArea(cells.Count);
         if (area > GameConstants.MaxClaimAreaSquareMeters)
             return ClaimResult.Failure("Claim too large — max 5km² per claim");
+        if (cells.Count > GameConstants.MaxCellsPerClaim)
+            return ClaimResult.Failure("Claim too large — too many cells");
 
-        await using var transaction = await _db.Database.BeginTransactionAsync();
-        try
+        // Serializable isolation + per-user advisory lock + bounded retry. This makes two
+        // concurrent claims over the same hex deterministic (exactly one owner) and the
+        // per-day cap accurate (checked inside the transaction, not before it).
+        for (var attempt = 1; ; attempt++)
         {
-            var claim = CreateClaimEntity(userId, cells.Count, area, path);
+            _db.ChangeTracker.Clear();
+            await using var transaction =
+                await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
+
+                var todayStart = DateTime.UtcNow.Date;
+                var todayClaimCount = await _db.Claims
+                    .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart);
+                if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
+                {
+                    await transaction.RollbackAsync();
+                    return ClaimResult.Failure(
+                        $"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day");
+                }
+
+                var claim = CreateClaimEntity(userId, cells.Count, area, path);
             var (boundaries, transfers) = await AssignCells(userId, cells, claim.Id);
 
             _db.CellTransfers.AddRange(transfers);
@@ -71,13 +95,8 @@ public class TerritoryService : ITerritoryService
             var totalDistance = _geo.CalculatePathDistance(path);
             await UpdateUserStats(userId, transfers, totalDistance);
 
-            // Record exploration for all captured cells
-            var newExplorations = 0;
-            foreach (var cell in cells)
-            {
-                if (await RecordExploration(userId, cell.CellId))
-                    newExplorations++;
-            }
+            // Record exploration for all captured cells (single batched upsert)
+            var newExplorations = await RecordExplorationBatch(userId, cells.Select(c => c.CellId));
 
             // Award XP for captured hexes + distance walked
             var newCells = transfers.Count(t => t.FromUserId == null);
@@ -128,11 +147,17 @@ public class TerritoryService : ITerritoryService
                 StolenFromOthers = transfers.Count(t => t.FromUserId != null),
                 Boundaries = boundaries,
             });
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
+            }
+            catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
+            {
+                await transaction.RollbackAsync();
+                _logger.LogWarning("Claim retry {Attempt} for user {UserId} after a write conflict", attempt, userId);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
     }
 
@@ -946,14 +971,55 @@ public class TerritoryService : ITerritoryService
         if (totalDistance < GameConstants.MinWalkDistanceMeters)
             return "Walk at least 200 meters before claiming";
 
-        var todayStart = DateTime.UtcNow.Date;
-        var todayClaimCount = await _db.Claims
-            .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart);
-
-        if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
-            return $"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day";
-
+        // The per-day cap is enforced INSIDE the claim transaction (under a per-user advisory
+        // lock) so concurrent submissions can't slip past it via a check-then-act race.
+        await Task.CompletedTask;
         return null;
+    }
+
+    private const int MaxClaimRetries = 3;
+
+    /// <summary>
+    /// True when an exception represents a write conflict worth retrying — a serialization
+    /// failure (40001), deadlock (40P01), unique-violation from a concurrent insert (23505),
+    /// or an EF optimistic-concurrency miss.
+    /// </summary>
+    private static bool IsTransientConflict(Exception ex)
+    {
+        for (Exception? e = ex; e != null; e = e.InnerException)
+        {
+            if (e is DbUpdateConcurrencyException) return true;
+            if (e is Npgsql.PostgresException pg && pg.SqlState is "40001" or "40P01" or "23505")
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Records exploration for many cells in a single round-trip (replaces the per-cell N+1).
+    /// Returns the number of genuinely new explorations.
+    /// </summary>
+    private async Task<int> RecordExplorationBatch(Guid userId, IEnumerable<long> cellIds)
+    {
+        var ids = cellIds.Distinct().ToList();
+        if (ids.Count == 0) return 0;
+
+        var now = DateTime.UtcNow;
+        var sql = new StringBuilder(
+            "INSERT INTO \"ExploredCells\" (\"UserId\", \"CellId\", \"NeighborhoodId\", \"FirstVisitedAt\") VALUES ");
+        var args = new List<object>(ids.Count * 4);
+        for (var i = 0; i < ids.Count; i++)
+        {
+            var b = i * 4;
+            if (i > 0) sql.Append(',');
+            sql.Append($"({{{b}}}, {{{b + 1}}}, {{{b + 2}}}, {{{b + 3}}})");
+            args.Add(userId);
+            args.Add(ids[i]);
+            args.Add(_hexGrid.GetNeighborhoodId(ids[i]));
+            args.Add(now);
+        }
+        sql.Append(" ON CONFLICT (\"UserId\", \"CellId\") DO NOTHING");
+        return await _db.Database.ExecuteSqlRawAsync(sql.ToString(), args.ToArray());
     }
 
     private static Claim CreateClaimEntity(Guid userId, int cellCount, double area, double[][] path)
