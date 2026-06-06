@@ -173,17 +173,29 @@ public class TerritoryService : ITerritoryService
         if (cells.Count == 0)
             return TrailClaimResult.Failure("No hexes in batch");
 
-        var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
         var cellIds = cells.Select(c => c.CellId).ToList();
 
-        var existingCells = await _db.TerritoryCells
-            .Include(t => t.Owner)
-            .Where(t => cellIds.Contains(t.CellId))
-            .ToDictionaryAsync(t => t.CellId);
+        // Serializable + per-user advisory lock + bounded retry (see ProcessClaim).
+        for (var attempt = 1; ; attempt++)
+        {
+            _db.ChangeTracker.Clear();
+            await using var transaction =
+                await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
 
-        var claimed = new List<TrailHexResponse>();
-        var transfers = new List<CellTransfer>();
-        var claimId = Guid.NewGuid();
+                var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
+
+                var existingCells = await _db.TerritoryCells
+                    .Include(t => t.Owner)
+                    .Where(t => cellIds.Contains(t.CellId))
+                    .ToDictionaryAsync(t => t.CellId);
+
+                var claimed = new List<TrailHexResponse>();
+                var transfers = new List<CellTransfer>();
+                var claimId = Guid.NewGuid();
 
         // Create Claim entity for FK integrity (trail claims)
         var trailClaim = new Claim
@@ -238,7 +250,10 @@ public class TerritoryService : ITerritoryService
         }
 
         if (claimed.Count == 0)
+        {
+            await transaction.RollbackAsync();
             return TrailClaimResult.Succeeded(new TrailClaimResponse());
+        }
 
         _db.CellTransfers.AddRange(transfers);
 
@@ -277,6 +292,7 @@ public class TerritoryService : ITerritoryService
         var xpResult = await _missionService.AwardXp(userId, xpAmount, "trail_claim");
 
         await _db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         // Broadcast changes for real-time multiplayer
         await BroadcastOwnershipChanges(userId, cells.Where(c =>
@@ -298,27 +314,54 @@ public class TerritoryService : ITerritoryService
             NewCellCount = claimed.Count,
             StolenCount = stolenCount,
         });
+            }
+            catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
+            {
+                await transaction.RollbackAsync();
+                _logger.LogWarning("Trail retry {Attempt} for user {UserId} after a write conflict", attempt, userId);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
     }
 
     public async Task<StepClaimResponse> ProcessStepClaim(Guid userId, double lat, double lng)
     {
         var hexCell = _hexGrid.GetCellAtPoint(lat, lng);
 
-        var existing = await _db.TerritoryCells.Include(t => t.Owner)
-            .FirstOrDefaultAsync(t => t.CellId == hexCell.CellId);
-
-        // Already ours — refresh decay timer and record exploration, but no new claim
-        if (existing != null && existing.OwnerId == userId)
+        // Serializable + per-user advisory lock + bounded retry (see ProcessClaim).
+        for (var attempt = 1; ; attempt++)
         {
-            existing.LastRefreshedAt = DateTime.UtcNow;
-            await RecordExploration(userId, hexCell.CellId);
-            await _db.SaveChangesAsync();
-            return new StepClaimResponse { Claimed = false };
-        }
+            _db.ChangeTracker.Clear();
+            await using var transaction =
+                await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
 
-        // On cooldown — can't steal
-        if (existing != null && IsOnCooldown(existing))
-            return new StepClaimResponse { Claimed = false };
+                var existing = await _db.TerritoryCells.Include(t => t.Owner)
+                    .FirstOrDefaultAsync(t => t.CellId == hexCell.CellId);
+
+                // Already ours — refresh decay timer and record exploration, but no new claim
+                if (existing != null && existing.OwnerId == userId)
+                {
+                    existing.LastRefreshedAt = DateTime.UtcNow;
+                    await RecordExploration(userId, hexCell.CellId);
+                    await _db.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return new StepClaimResponse { Claimed = false };
+                }
+
+                // On cooldown — can't steal
+                if (existing != null && IsOnCooldown(existing))
+                {
+                    await transaction.RollbackAsync();
+                    return new StepClaimResponse { Claimed = false };
+                }
 
         var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
         var claimId = Guid.NewGuid();
@@ -392,7 +435,9 @@ public class TerritoryService : ITerritoryService
         // Award capture XP (this calls SaveChangesAsync once for everything)
         var xpResult = await _missionService.AwardXp(userId, xpAmount, "hex_capture");
 
-        // ── Real-time push notifications (fire-and-forget, AFTER save) ──
+        await transaction.CommitAsync();
+
+        // ── Real-time push notifications (fire-and-forget, AFTER commit) ──
 
         // Public: hex ownership broadcast to region
         _ = BroadcastOwnershipChanges(userId, [hexCell],
@@ -423,6 +468,18 @@ public class TerritoryService : ITerritoryService
                 XpAwarded = a.XpAwarded,
             }).ToList(),
         };
+            }
+            catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
+            {
+                await transaction.RollbackAsync();
+                _logger.LogWarning("Step retry {Attempt} for user {UserId} after a write conflict", attempt, userId);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
     }
 
     public async Task<BatchStepClaimResponse> ProcessBatchStepClaim(
@@ -442,21 +499,32 @@ public class TerritoryService : ITerritoryService
             Hex = _hexGrid.GetCellAtPoint(p.Lat, p.Lng),
         }).ToList();
 
-        // 2. Pre-load ALL existing cells in a single query
         var allCellIds = resolved.Select(r => r.Hex.CellId).Distinct().ToList();
-        var existingCells = await _db.TerritoryCells
-            .Include(t => t.Owner)
-            .Where(t => allCellIds.Contains(t.CellId))
-            .ToDictionaryAsync(t => t.CellId);
 
-        // 3. Load claiming user once
-        var user = await _db.Users.FindAsync(userId);
-        if (user == null)
-            return new BatchStepClaimResponse();
-
-        await using var transaction = await _db.Database.BeginTransactionAsync();
-        try
+        // Serializable + per-user advisory lock + bounded retry (see ProcessClaim).
+        for (var attempt = 1; ; attempt++)
         {
+            _db.ChangeTracker.Clear();
+            await using var transaction =
+                await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+            try
+            {
+                await _db.Database.ExecuteSqlRawAsync(
+                    "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
+
+                // Re-read inside the transaction so retries observe fresh ownership state.
+                var existingCells = await _db.TerritoryCells
+                    .Include(t => t.Owner)
+                    .Where(t => allCellIds.Contains(t.CellId))
+                    .ToDictionaryAsync(t => t.CellId);
+
+                var user = await _db.Users.FindAsync(userId);
+                if (user == null)
+                {
+                    await transaction.RollbackAsync();
+                    return new BatchStepClaimResponse();
+                }
+
             var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
             var claimId = Guid.NewGuid();
 
@@ -695,11 +763,17 @@ public class TerritoryService : ITerritoryService
                     XpAwarded = a.XpAwarded,
                 }).ToList(),
             };
-        }
-        catch
-        {
-            await transaction.RollbackAsync();
-            throw;
+            }
+            catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
+            {
+                await transaction.RollbackAsync();
+                _logger.LogWarning("Batch-step retry {Attempt} for user {UserId} after a write conflict", attempt, userId);
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
     }
 
