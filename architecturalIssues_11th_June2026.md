@@ -661,3 +661,139 @@ Phase 4: Polish (P3)
  M9: Gate GetByFirebaseUid behind auth
  M11: Fix CaptureInOneWalk mission semantics
  M12: Fix leaderboard to not load all users into memory
+
+
+
+ 
+
+
+
+
+
+ ------ All issues before this are fixed(New Issues as of 11thJune 2026 10 pm)---
+
+
+PART 2: COMPREHENSIVE REPOSITORY ISSUES LOG & TAXONOMY
+
+Issue ID: CRIT-1
+Subsystem Component: Riverpod SSOT (B↔H)
+File & Line Trace Context: profile_slice.dart:58, hydration.dart:28,46, home_tab.dart:140,833, journey_screen.dart:118,130
+Root Cause Analysis (End-to-End Mechanics): Stats duplicated across userProfileProvider + profileSliceProvider. SignalR UserStatsDelta & hydration write the
+  slice; Home/profile/leaderboard/history read the profile. Only a post-loop-claim manual copy reconciles them → passive/victim/cross-device pushes never reach
+  Home. This is the Hex discrepancy bug.
+Structural Impact: Stats divergence across tabs; victim hex losses invisible until manual refresh
+Verified Cross-Stack Resolution Plan (Production Fix): Strip nummake profileSlice the sole store fed by all channels; Home reads
+  hexCountProvider derived view (Part 1 §1)
+────────────────────────────────────────
+Issue ID: CRIT-2
+Subsystem Component: SignalR auth / IDOR (D↔H)
+File & Line Trace Context: TerritoryHub.cs:36-44 (JoinUserGroup)
+Root Cause Analysis (End-to-End Mechanics): Checks IsAuthenticatr maps to the requested userId. App-Guid OwnerId leaks via
+  TerritoryCellResponse/leaderboard, so an attacker can subscribe to any victim's user_{guid} group and receive their stats/XP/mission/achievement deltas.
+Structural Impact: Cross-account personal-data leak (authz/IDOR)
+Verified Cross-Stack Resolution Plan (Production Fix): Resolve caller via ICurrentUser from Context.User; reject if caller != userId; ignore the
+client-supplied
+  id entirely
+────────────────────────────────────────
+Issue ID: CRIT-3
+Subsystem Component: EF model / Missions (G)
+File & Line Trace Context: AppDbContext.cs:94, Program.cs:284-286, MissionService.cs:57-74
+Root Cause Analysis (End-to-End Mechanics): DailyMission has onlindex → the catch(DbUpdateException) recovery is dead code.
+  GetMissions runs outside the advisory lock; two first-of-day requests both insert 3 rows.
+Structural Impact: Duplicate daily missions (6+/day), double all
+Verified Cross-Stack Resolution Plan (Production Fix): Add UNIQUE(UserId,Date,Type); idempotent generate-or-reload (Part 1 §2b)
+────────────────────────────────────────
+Issue ID: HIGH-1
+Subsystem Component: Serialization / 64-bit keys (C↔E)
+File & Line Trace Context: territory_cell.dart:52,62; REST TerritoryCellResponse; vs SignalR TerritoryService.cs:1376
+Root Cause Analysis (End-to-End Mechanics): REST emits cellId/paDart as int; SignalR emits h3Index as string. Res-11 ids > 2⁵³ →
+  silent truncation on Flutter web (mobile/web/ present) during JSON decode; brittle number/string split across channels.
+Structural Impact: Wrong-cell ownership / map corruption on web;
+Verified Cross-Stack Resolution Plan (Production Fix): Emit H3 ids as strings on REST via JsonConverter; Dart parse string|num (Part 1 §3a)
+────────────────────────────────────────
+Issue ID: HIGH-2
+Subsystem Component: Realtime lifecycle (A)
+File & Line Trace Context: journey_screen.dart _connectRealtime/dispose; doc territory_realtime_service.dart:7
+Root Cause Analysis (End-to-End Mechanics): SignalR connect/disccreen, not auth. Leaving the screen tears down the connection → no
+  personal deltas anywhere else, amplifying CRIT-1.
+Structural Impact: No live updates on Home/leaderboard; stale UI
+Verified Cross-Stack Resolution Plan (Production Fix): Own the ctimeConnectionProvider); remove per-screen disconnect (Part 1 §1)
+────────────────────────────────────────
+Issue ID: HIGH-3
+Subsystem Component: Map state apply (B↔H)
+File & Line Trace Context: hex_territory_manager.dart:168-175
+Root Cause Analysis (End-to-End Mechanics): On another player's capture, the hex is removed from the previous owner's color group but never added to the new
+  owner's group; relies on a future viewport reload.
+Structural Impact: Contested hexes blank out on the map until reload
+Verified Cross-Stack Resolution Plan (Production Fix): Render imColor+center; id-based match (Part 1 §3b)
+────────────────────────────────────────
+Issue ID: HIGH-4
+Subsystem Component: Mission progress drift (F)
+File & Line Trace Context: TerritoryService.cs:110-118 (loop) vsrail)
+Root Cause Analysis (End-to-End Mechanics): MaintainStreak recorded on step/batch but not on loop ProcessClaim; trail path omits
+  WalkDistance/CaptureInOneWalk/MaintainStreak and never increme
+Structural Impact: Mission completion & leaderboard distance depend on which claim path the player used
+Verified Cross-Stack Resolution Plan (Production Fix): Extract os(...) helper called by all four paths
+────────────────────────────────────────
+Issue ID: MED-1
+Subsystem Component: Resource teardown (A)
+File & Line Trace Context: home_tab.dart:447-458 _MissionCountdo
+Root Cause Analysis (End-to-End Mechanics): Stream.periodic subscription created in initState, never cancelled.
+Structural Impact: Leaked timer per Home-tab mount
+Verified Cross-Stack Resolution Plan (Production Fix): Store subscription; cancel in dispose()
+────────────────────────────────────────
+Issue ID: MED-2
+Subsystem Component: Claim idempotency (C↔G)
+File & Line Trace Context: step_claim_queue.dart, batch_drain_service.dart, TerritoryService.ProcessBatchStepClaim
+Root Cause Analysis (End-to-End Mechanics): WAL re-drain after re; idempotency is only accidental (already-owned skip) and breaks
+  on steal→re-steal interleave.
+Structural Impact: Possible duplicate transfers/XP on retry
+Verified Cross-Stack Resolution Plan (Production Fix): Client Idempotency-Key/clientId; UNIQUE(UserId,IdempotencyKey) on Claims, replay stored response (Part 1
+
+  §2c)
+────────────────────────────────────────
+Issue ID: MED-3
+Subsystem Component: Secret in logs (D)
+File & Line Trace Context: territory_realtime_service.dart:211
+Root Cause Analysis (End-to-End Mechanics): debugPrint('Connectess_token=<JWT>.
+Structural Impact: Firebase JWT in device logs
+Verified Cross-Stack Resolution Plan (Production Fix): Redact qu
+────────────────────────────────────────
+Issue ID: MED-4
+Subsystem Component: Schema management (G)
+File & Line Trace Context: Program.cs:190-323
+Root Cause Analysis (End-to-End Mechanics): Schema bootstrapped via EnsureCreated() + idempotent raw ALTER/CREATE; EF migration files exist but are never
+  applied. catch {} swallows all DDL errors.
+Structural Impact: Snapshot vs live-DB drift; silent migration failures
+Verified Cross-Stack Resolution Plan (Production Fix): Adopt db. on DDL errors; keep migrations authoritative
+────────────────────────────────────────
+Issue ID: MED-5
+Subsystem Component: Streak date trust (E↔F)
+File & Line Trace Context: TerritoryService.cs:1311-1323 Resolve
+Root Cause Analysis (End-to-End Mechanics): Client LocalDate clamped to UTC ±1 day — reasonable, but a client toggling between +1/-1 across requests can nudge
+  streak windows.
+Structural Impact: Minor streak manipulation surface
+Verified Cross-Stack Resolution Plan (Production Fix): Derive frtimezone offset rather than per-request client date
+────────────────────────────────────────
+Issue ID: LOW-1
+Subsystem Component: Advisory-lock key (G)
+File & Line Trace Context: TerritoryService.cs:77 etc.
+Root Cause Analysis (End-to-End Mechanics): Lock key = BitConverter.ToInt64(userId.ToByteArray(),0) (first 8 GUID bytes); two distinct users could collide
+  (~2⁻⁶⁴).
+Structural Impact: Negligible false serialization between unrelated users
+Verified Cross-Stack Resolution Plan (Production Fix): Hash fulle.g. Xor both halves)
+────────────────────────────────────────
+Issue ID: LOW-2
+Subsystem Component: XP rounding (F)
+File & Line Trace Context: TerritoryService.cs:107
+Root Cause Analysis (End-to-End Mechanics): (int)(distanceKm * XpPerKmWalked) truncates fractional-km XP each claim.
+Structural Impact: Slow XP under-award for short walks
+Verified Cross-Stack Resolution Plan (Production Fix): Accumulate fractional XP remainder on User, or round
+────────────────────────────────────────
+Issue ID: LOW-3
+Subsystem Component: Geocoding fan-out (F)
+File & Line Trace Context: TerritoryService.cs:1008-1025
+Root Cause Analysis (End-to-End Mechanics): GetExplorationStats  a 5 s wall-clock cap; read path, no txn, but unbounded N per
+  request.
+Structural Impact: Latency spikes on large explorers
+Verified Cross-Stack Resolution Plan (Production Fix): Cap neighborhoods per request; precompute area names on write    
