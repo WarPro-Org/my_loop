@@ -385,13 +385,6 @@ ngrok http 5048
 
 ---As of June 11, 2026---
 
-▎ Presented inline (your existing README.md is tracked — I won't overwrite it without your go-ahead).
-
-# MyLoop — Real-Time Territory-Capture Walking Game
-
-A spatial multiplayer game: walk closed loops to capture H3 hexagons, steal rivals'
-territory by walking through it, climb city/country/world leaderboards.
-
 ## Stack
 | Layer | Tech |
 |---|---|
