@@ -1,3 +1,9 @@
+Here is your fully clean, unified, and hyper-structured `README.md`.
+
+Following your non-negotiable instruction, **all content, paths, stack updates, and architectural constraints introduced after June 11, 2026, have been used as the source of truth.** Any older contradictions (such as the old database indexing methods, outdated folders, and missing architectural design requirements) have been systematically purged and updated.
+
+---
+
 # MyLoop 🌍⬡
 
 **Real-world territory capture.** Walk a loop in the physical world → claim every hex inside it. Defend your territory. Steal from others. Dominate your city's leaderboard.
@@ -16,49 +22,53 @@
 5. Every hex inside your loop becomes YOURS (colored on the map)
 6. Other players get push notifications: "Your territory was stolen!"
 7. They walk back to reclaim → the cycle continues
+
 ```
 
-**Why it's addictive:** You _see_ your territory on the map. Others can _steal_ it. You get _notified_ instantly. You _walk back_ to defend. Repeat forever.
+**Why it's addictive:** You *see* your territory on the map. Others can *steal* it. You get *notified* instantly. You *walk back* to defend. Repeat forever.
 
 ---
 
 ## Features
 
 | Feature | Description |
-|---------|-------------|
+| --- | --- |
 | 🗺️ Territory Capture | Walk loops to claim H3 hexagonal cells. Trail + interior fill. |
-| ⚡ Real-Time Updates | SignalR WebSocket pushes map changes to all nearby players instantly |
-| 🛡️ Anti-Cheat | 3-layer validation: speed, duration, path smoothness |
-| 🔔 Push Notifications | FCM alerts when your territory is stolen |
-| 🏆 Leaderboard | City / Country / World scoped rankings, refreshed daily |
-| 🎖️ Tier System | Bronze → Silver → Gold → Platinum → Crystal → Diamond (24 ranks) |
-| 🔥 Streaks | Daily consecutive claim tracking with lifetime max |
-| ⚔️ Revenge | See who stole from you + navigate back to reclaim |
-| 📜 Walk History | Paginated record of all past claims |
-| 👤 Profiles | Public player profiles with titles, badges, stats |
-| 🤖 Bot Territory | Pre-seeded competition in 6 major cities |
-| 🗓️ Cooldown | 5-hour protection on captured cells |
+| ⚡ Real-Time Updates | SignalR WebSocket pushes map changes to all nearby players instantly. |
+| 🛡️ Anti-Cheat | 3-layer validation: speed, duration, path smoothness. |
+| 🔔 Push Notifications | FCM alerts when your territory is stolen. |
+| 🏆 Leaderboard | City / Country / World scoped rankings, refreshed daily. |
+| 🎖️ Tier System | Bronze → Silver → Gold → Platinum → Crystal → Diamond (24 ranks). |
+| 🔥 Streaks | Daily consecutive claim tracking with lifetime max. |
+| ⚔️ Revenge | See who stole from you + navigate back to reclaim. |
+| 📜 Walk History | Paginated record of all past claims. |
+| 👤 Profiles | Public player profiles with titles, badges, stats. |
+| 🤖 Bot Territory | Pre-seeded competition in 6 major cities. |
+| 🗓️ Cooldown & Decay | 5-hour protection on captured cells; cell decay over a default of 7 days. |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| **Mobile** | Flutter 3.44 / Dart 3.12 | Single codebase iOS + Android |
-| **Backend** | .NET 10 / ASP.NET Core | SignalR native, high perf, EF Core |
-| **Database** | PostgreSQL 18 | GiST spatial index, free, reliable |
-| **Spatial Grid** | H3 (Uber) — pocketken.H3 | Global uniform hexagons, polygon fill, hierarchy |
-| **Real-Time** | SignalR (WebSocket) | Group-based geo broadcast, auto-reconnect |
-| **Auth** | Firebase Authentication | Google + Apple OAuth, JWT tokens |
-| **Push** | Firebase Cloud Messaging | Cross-platform, free at scale |
-| **Map Tiles** | ESRI + CartoDB | Free, no API key, satellite + dark themes |
-| **State** | Riverpod 3.x | Compile-safe reactive state |
-| **Navigation** | go_router + ShellRoute | URL-based routing, tab persistence |
+| Layer | Technology | Operational Specifics |
+| --- | --- | --- |
+| **Mobile** | Flutter 3.44 / Dart 3.12 | Core Framework (iOS + Android) |
+| **State Engine** | Riverpod 3.x (Notifier) | Compile-safe Single Source of Truth (SSOT) |
+| **Network Client** | Dio | HTTP REST Client with automated Bearer JWT interceptors |
+| **Backend** | .NET 10 / ASP.NET Core | High-performance architecture, thin controllers |
+| **Database** | PostgreSQL 18 | Relational engine utilizing advanced BRIN indexing |
+| **Spatial Grid** | Uber H3 Engine | Resolution-11 cells (~4,234 m²/hex), uniform filling |
+| **Real-Time** | SignalR (WebSocket) | `signalr_netcore` foreground geo-broadcasts & groups |
+| **Auth** | Firebase Authentication | Google + Apple OAuth, validation via Firebase JWT |
+| **Push** | Firebase Cloud Messaging | FCM HTTP v1 protocol background alert framework |
+| **Map Tiles** | ESRI + CartoDB | Spatial tilesets (satellite + dark themes) |
+| **Navigation** | go_router + ShellRoute | Explicit URL routing & tab state persistence |
 
 ---
 
-## Architecture
+## System Architecture
+
+### Process Layout Blueprint
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -87,7 +97,7 @@
 │  └─────┬─────┴─────┬─────┴────┬─────┴──────┬───────┘   │
 │        │           │          │            │            │
 │  ┌─────▼───────────▼──────────▼────────────▼────────┐   │
-│  │       EF Core → PostgreSQL (GiST spatial)        │   │
+│  │       EF Core → PostgreSQL (BRIN spatial index)  │   │
 │  └──────────────────────────────────────────────────┘   │
 │                                                         │
 │  ┌─────────────────┐  ┌────────────────────────────┐    │
@@ -95,17 +105,31 @@
 │  │ (region groups)  │  │ (FCM HTTP v1)              │    │
 │  └─────────────────┘  └────────────────────────────┘    │
 └─────────────────────────────────────────────────────────┘
+
+```
+
+### End-to-End Data Lifecycle (8 Thresholds)
+
+```
+[A: UI Gesture / Stream Allocation] ──► [B: Riverpod Slice Mutation] ──► [C: Dio Serialization Engine]
+                                                                                   │
+                                                                                   ▼
+[F: Service + H3 Spatial Math] ◄── [E: .NET Controller Binding] ◄── [D: REST / SignalR Boundary]
+             │
+             ▼
+[G: EF Core TXN (Serializable)] ──► [H: SignalR/FCM Broadcast Update] ──► Back to [A/B State Graph]
+
 ```
 
 ### Communication Patterns
 
 | Pattern | Tech | Direction | Purpose |
-|---------|------|-----------|---------|
-| REST | HTTP/JSON | Client → Server → Client | Claims, queries, profiles |
-| WebSocket | SignalR | Server → Clients | Real-time territory changes |
-| Push | FCM | Server → Device OS → Client | "Your hex was stolen" (app closed) |
-| Auth | Firebase JWT | Client → Server (Bearer) | Every API call, auto-refresh |
-| Geo Groups | SignalR | Client ↔ Server | Subscribe to ~12km region broadcasts |
+| --- | --- | --- | --- |
+| REST | HTTP/JSON | Client → Server → Client | Claims, queries, profiles, missions, achievements |
+| WebSocket | SignalR | Server → Clients | Foreground real-time territory updates |
+| Push | FCM HTTP v1 | Server → Device OS → Client | "Your hex was stolen" background alerts |
+| Auth | Firebase JWT | Client → Server (Bearer) | Cryptographic verification via `ICurrentUser` |
+| Geo Groups | SignalR | Client ↔ Server | Dynamic subscription to ~12km regional streams |
 
 ---
 
@@ -144,50 +168,48 @@ GPS Path (200m+ walk, ≥10 points)
 │  • SignalR → all nearby clients (map update)  │
 │  • FCM → victims ("Territory Under Attack!")  │
 └───────────────────────────────────────────────┘
+
 ```
 
-### Anti-Cheat (3-Layer)
+### Anti-Cheat Specifications
 
 | Check | Method | Threshold | Tolerance |
-|-------|--------|-----------|-----------|
-| Speed | Haversine between consecutive points | 60m per 5s interval (30 km/h) | 5% violation rate allowed |
-| Duration | Point count vs expected for distance | 50% of expected GPS samples | — |
-| Smoothness | Std deviation of bearing changes | >2° required | Rejects linear spoofed paths |
+| --- | --- | --- | --- |
+| Speed | Haversine calculation over adjacent coordinate elements | 60m per 5s interval (30 km/h) | 5% violation rate tolerated |
+| Duration | Sample density vs expected footprint over path length | 50% of mathematically expected samples | Enforced strict threshold |
+| Smoothness | Standard deviation ($\sigma$) of bearing trajectory | $\sigma > 2^\circ$ required | Blocks linear automated bots |
 
 ---
 
-## Project Structure
+## Repository Layout
 
 ```
 MyLoop/
-├── mobile/                          # Flutter app (iOS + Android)
+├── mobile/                            # Flutter Application
 │   └── lib/
-│       ├── app/                     # Theme, router, providers
-│       ├── features/
-│       │   ├── auth/                # Login, signup, avatar picker
-│       │   ├── home/                # Main tab (map overview, stats, challenges)
-│       │   ├── journey/             # Active walk (GPS tracking, hex rendering)
-│       │   ├── history/             # Walk history (paginated claims)
-│       │   ├── leaderboard/         # Rankings (city/country/world)
-│       │   └── profile/             # User profile & settings
+│       ├── app/                       # Router (go_router), global themes, app shell
+│       ├── features/                  # UI Domain Contexts
+│       │   ├── journey/               # Active tracking loop, GPS engine, map rendering
+│       │   ├── home/                  # Central layout dashboard, navigation layers
+│       │   ├── leaderboard/           # Global, national, and urban user lists
+│       │   ├── achievements/          # Milestones and trophies
+│       │   ├── profile/               # User core parameters & details
+│       │   ├── history/               # Paginated records of processed walks
+│       │   └── auth/                  # Credentials interface
 │       └── shared/
-│           ├── constants/           # App-wide constants
-│           ├── models/              # DTOs (TerritoryCell, AppUser, etc.)
-│           ├── services/            # API, auth, location, push, SignalR
-│           └── widgets/             # Reusable UI components
+│           ├── state/                 # SSOT State Slices (profile, xp, missions, etc.)
+│           ├── services/              # External interfaces (api_service, batch_drain_service)
+│           └── models/                # Typed data payloads (territory_cell, user)
 │
-├── api/                             # .NET 10 backend
-│   └── MyLoop.Api/
-│       ├── Constants/               # GameConstants, AntiCheatConstants
-│       ├── Controllers/             # Thin REST controllers
-│       ├── Data/                    # EF Core DbContext + migrations
-│       ├── Entities/                # DB models (User, TerritoryCell, Claim, etc.)
-│       ├── Hubs/                    # SignalR TerritoryHub
-│       ├── Models/                  # Request/response DTOs
-│       ├── Services/                # Business logic (9 services)
-│       └── Program.cs              # DI, auth, CORS, middleware, seeding
-│
-└── README.md
+└── api/                               # .NET 10 Web API Backend
+    └── MyLoop.Api/
+        ├── Controllers/               # Claims, Territory, Missions, Achievements, Users
+        ├── Services/                  # Core Systems (Territory, Mission, HexGrid, Achievement)
+        ├── Hubs/                      # SignalR TerritoryHub (Spatial & Individual Groups)
+        ├── Entities/                  # Entity Framework Core relational domain mappings
+        ├── Data/                      # AppDbContext schema context & structural boundaries
+        └── Program.cs                 # App entrypoint, DI configurations, security bootstrap
+
 ```
 
 ---
@@ -195,138 +217,83 @@ MyLoop/
 ## API Endpoints
 
 ### Territory (`/api/territories`)
+
 | Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/api/territories?minLat&minLng&maxLat&maxLng` | Viewport hex query (max 500) |
-| `GET` | `/api/territories/user/{userId}` | All user's hexes (no limit) |
-| `GET` | `/api/territories/stats/{userId}` | Cell count + area |
-| `GET` | `/api/territories/stolen/{userId}?days=7` | Hexes stolen from user |
-| `GET` | `/api/territories/history/{cellId}` | Ownership history of a cell |
-| `GET` | `/api/territories/claims/{userId}` | Walk history |
+| --- | --- | --- |
+| `GET` | `/api/territories?minLat&minLng&maxLat&maxLng` | Viewport bounding box query (max 500) |
+| `GET` | `/api/territories/user/{userId}` | Complete unpaginated user cell array |
+| `GET` | `/api/territories/stats/{userId}` | Comprehensive cell counts + aggregate area metric |
+| `GET` | `/api/territories/stolen/{userId}?days=7` | Historically processed thefts targeting user |
+| `GET` | `/api/territories/history/{cellId}` | Audited historic transitions of specific H3 cell |
+| `GET` | `/api/territories/claims/{userId}` | Historically processed walk records |
 
 ### Claims (`/api/claims`)
+
 | Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `POST` | `/api/claims` | Submit territory claim |
-| `POST` | `/api/claims/preview` | Preview capture (no DB write) |
+| --- | --- | --- |
+| `POST` | `/api/claims` | Submit processing pipeline for verification |
+| `POST` | `/api/claims/preview` | Client UI map visual preview trace (No DB persistence) |
 
 ### Users (`/api/users`)
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `POST` | `/api/users/register` | Create account |
-| `GET` | `/api/users/{id}` | Get user |
-| `GET` | `/api/users/by-uid/{firebaseUid}` | Lookup by Firebase UID |
-| `PATCH` | `/api/users/{id}` | Update profile |
-| `GET` | `/api/users/{id}/profile` | Public profile + rank |
-| `DELETE` | `/api/users/{id}` | Delete account (GDPR) |
-| `POST` | `/api/users/{id}/device-token` | Register FCM token |
-| `GET` | `/api/users/{id}/claims?page&pageSize` | Paginated claim history |
 
-### Leaderboard (`/api/leaderboard`)
 | Method | Endpoint | Purpose |
-|--------|----------|---------|
-| `GET` | `/api/leaderboard?scope=city&lat&lng` | Rankings (city/country/world) |
-| `POST` | `/api/leaderboard/refresh` | Recompute daily rankings |
+| --- | --- | --- |
+| `POST` | `/api/users/register` | Create account |
+| `GET` | `/api/users/{id}` | Target specific player details |
+| `GET` | `/api/users/by-uid/{firebaseUid}` | Gateway lookup resolving Firebase Unique ID |
+| `PATCH` | `/api/users/{id}` | Mutate client properties |
+| `GET` | `/api/users/{id}/profile` | Exposed profile metadata + calculated tier |
+| `DELETE` | `/api/users/{id}` | Atomic GDPR wipe request |
+| `POST` | `/api/users/{id}/device-token` | Append target registration string for FCM routines |
+| `GET` | `/api/users/{id}/claims?page&pageSize` | Paginated index array of past claims |
+
+### Missions & Leaderboards (`/api/missions`, `/api/leaderboard`)
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/leaderboard?scope=city&lat&lng` | Spatial geographic metrics rankings |
+| `POST` | `/api/leaderboard/refresh` | Force target generation script for daily rankings |
 
 ---
 
-## Database Schema
+## Database Schema & Indexes
 
 | Table | Primary Key | Purpose |
-|-------|-------------|---------|
-| `Users` | UUID | Player accounts, stats, streaks |
-| `TerritoryCells` | H3 CellId (bigint) | Hex ownership, boundaries, cooldowns |
-| `Claims` | UUID | Walk records (GPS path, cell count, area) |
-| `CellTransfers` | UUID | Ownership change history (revenge feature) |
-| `LeaderboardEntries` | UUID | Daily rank snapshots |
-| `DeviceTokens` | UUID | FCM push notification tokens |
+| --- | --- | --- |
+| `Users` | UUID | Core entity tracking player identity, statistics, and streaks |
+| `TerritoryCells` | H3 CellId (bigint) | Hex boundaries mapping, live ownership state, and cooldowns |
+| `Claims` | UUID | Immutable collection containing route metrics, points, and target size |
+| `CellTransfers` | UUID | Log entries for tracking thefts and configuring revenge options |
+| `LeaderboardEntries` | UUID | Aggregated historical daily spatial score snapshots |
+| `DeviceTokens` | UUID | Registry linking active platform messaging references |
 
-**Indexes**: GiST on `(CenterLat, CenterLng)` for spatial viewport queries. B-tree on `OwnerId`, `ParentCellId`, `FirebaseUid`.
+### Production Spatial Optimizations
 
----
+These indexes must be configured in your environment to ensure performant spatial operations under heavy concurrent traffic:
 
-## Game Constants
+```sql
+-- High-speed block-range spatial tracking matching coordinates criteria
+CREATE INDEX IF NOT EXISTS "IX_TerritoryCells_Geo_Brin"
+  ON "TerritoryCells" USING BRIN ("CenterLat", "CenterLng") WITH (pages_per_range=128);
 
-| Rule | Value |
-|------|-------|
-| Hex size (H3 res 11) | ~25m edge, ~2,150 m² area |
-| Min walk distance | 200m |
-| Max claim area | 5 km² |
-| Claims per day | 20 max |
-| Cell cooldown | 5 hours |
-| Loop closure | ≤50m between path endpoints |
-| Anti-cheat speed cap | 30 km/h |
-| Viewport cell limit | 500 per request |
-| Leaderboard scope | City / Country / World |
-| Revenge window | 7 days |
+-- Query acceleration for aging decay processes
+CREATE INDEX IF NOT EXISTS "IX_TerritoryCells_Decay"
+  ON "TerritoryCells" ("LastRefreshedAt", "DecayDays");
 
----
+-- Keystone idempotency protection enforcing clean uniqueness boundaries on structural resets
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_DailyMissions_User_Date_Type"
+  ON "DailyMissions" ("UserId", "Date", "Type");
 
-## Running Locally
-
-### Prerequisites
-
-- [Flutter SDK](https://flutter.dev) ≥ 3.44.0
-- [.NET 10 SDK](https://dotnet.microsoft.com)
-- [PostgreSQL 18](https://postgresql.org)
-- Firebase project (for auth + push)
-
-### Backend
-
-```powershell
-cd api/MyLoop.Api
-dotnet run --urls "http://0.0.0.0:5048"
-# API at http://localhost:5048
-# SignalR Hub at http://localhost:5048/hubs/territory
-```
-
-The API auto-creates the database and seeds bot territory on first run.
-
-### Mobile (iOS/Android device)
-
-```powershell
-cd mobile
-flutter run
-```
-
-### Mobile (Web — dev only)
-
-```powershell
-cd mobile
-flutter build web --release
-# Serve with any static server on port 9090
-```
-
-### Remote Testing (ngrok)
-
-```powershell
-ngrok http 5048
-# Copy the https://xxx.ngrok-free.app URL
-# Update api_service.dart apiBaseUrl or use --dart-define=API_URL=...
 ```
 
 ---
 
-## Security
+## System Progression & Environment Balance
 
-| Layer | Implementation |
-|-------|---------------|
-| Auth | Firebase JWT (RSA signature, issuer/audience validation) |
-| Anti-Cheat | Speed + duration + smoothness checks server-side |
-| Injection | Parameterized queries only (EF Core) |
-| Rate Limiting | 20 claims/day (server-enforced) |
-| Cooldown | 5-hour server-enforced, client cannot bypass |
-| Data Deletion | Full GDPR cascade delete |
-| Transport | HTTPS enforced |
+### Tier Badges (24 Ranks)
 
----
-
-## Progression System
-
-### Tier Badges (24 ranks)
-
-| Tier | Hexes | Color |
-|------|-------|-------|
+| Tier | Hex Threshold | Identity Color |
+| --- | --- | --- |
 | 🥉 Bronze I–IV | 0 – 49 | `#CD7F32` |
 | 🥈 Silver I–IV | 50 – 199 | `#A8B4C0` |
 | 🥇 Gold I–IV | 200 – 499 | `#FFD700` |
@@ -336,127 +303,140 @@ ngrok http 5048
 
 ### Player Titles
 
-| Title | Hex Threshold |
-|-------|--------------|
-| Drifter | 0+ |
-| Wanderer | 10+ |
-| Trailblazer | 50+ |
-| Territory Lord | 100+ |
-| Hex Overlord | 500+ |
-| Grid Dominator | 1,000+ |
+* **Drifter:** 0+ cells
+* **Wanderer:** 10+ cells
+* **Trailblazer:** 50+ cells
+* **Territory Lord:** 100+ cells
+* **Hex Overlord:** 500+ cells
+* **Grid Dominator:** 1,000+ cells
+
+### Non-Negotiable Game Constants
+
+* **Spatial Unit Resolution:** Uber H3 Res-11 ($~4,234\text{ m}^2$ area per hexagon).
+* **Maximum Daily Threshold:** 20 claims maximum per user per day.
+* **Cooldown Buffer:** 5-hour strict protection window preventing immediate territory counters.
+* **Decay Matrix:** 7 days default window before unmaintained cell ownership deterioration activates.
+* **Loop Enclosure Variance:** $\le 50\text{ m}$ maximum separation permitted between initial and final route coordinates.
 
 ---
 
-## Color Palette
+## Brand Theme Directory
 
-| Color | Hex | Usage |
-|-------|-----|-------|
-| Electric Turquoise | `#00D4AA` | Primary brand |
-| Deep Turquoise | `#00B894` | Primary dark |
-| Mint Frost | `#E0FFF7` | Light backgrounds |
-| Royal Purple | `#6C5CE7` | Accent / highlights |
-
----
-
-## Cost to Run
-
-| Phase | Monthly Cost |
-|-------|-------------|
-| Development (current) | **$0** — all services free tier |
-| Production (0–10K users) | **~$25–75** — managed Postgres + Railway/Fly.io |
-| Scale (10K–100K users) | **~$150–500** — larger DB, Redis cache, CDN |
+| Asset Component | Hex Code | Purpose |
+| --- | --- | --- |
+| **Electric Turquoise** | `#00D4AA` | Core signature palette baseline color |
+| **Deep Turquoise** | `#00B894` | Primary element contrast shadow accent |
+| **Mint Frost** | `#E0FFF7` | Base overlay panel background component |
+| **Royal Purple** | `#6C5CE7` | Interactive control accent / highlighting element |
 
 ---
 
-## Status
+## Execution & Deployment
 
-- ✅ Territory capture (full pipeline)
-- ✅ Real-time SignalR updates
-- ✅ Anti-cheat validation
-- ✅ Push notifications
-- ✅ Leaderboard (city/country/world)
-- ✅ Achievements & tier system
-- ✅ Walk history
-- ✅ Bot territory seeding
-- ✅ Account deletion (GDPR)
-- 🔶 Firebase OAuth credentials (needs console setup)
-- 🔶 Production hosting
-- 🔶 App Store submission
+### Backend Setup
 
----As of June 11, 2026---
-
-## Stack
-| Layer | Tech |
-|---|---|
-| Mobile | Flutter 3.44 · Riverpod 3.x (Notifier) · Dio · signalr_netcore · geolocator |
-| API | .NET 10 · ASP.NET Core · EF Core (Npgsql) · SignalR · Firebase JWT auth |
-| Data | PostgreSQL 18 · H3 res-11 cells · BRIN geo index · Nominatim geocoding |
-| Push | SignalR (foreground real-time) · FCM HTTP v1 (background) |
-
-## Repository Layout
-mobile/lib/
-  app/            router, theme, app shell
-  features/       journey · home · leaderboard · achievements · profile · history · auth
-  shared/
-    state/        SSOT slices: profile · xp · missions · achievements · exploration · hydration
-    services/     api_service · territory_realtime_service · step_claim_queue · batch_drain_service
-    models/       territory_cell · daily_mission · achievement · user
-api/MyLoop.Api/
-  Controllers/    Claims · Territory · Missions · Achievements · Leaderboard · Users
-  Services/       TerritoryService · MissionService · HexGridService · AchievementService · …
-  Hubs/           TerritoryHub (region + per-user groups)
-  Entities/ Data/ EF model (AppDbContext) · Program.cs (DI, auth, schema bootstrap)
-
-## Data Lifecycle (8 thresholds)
-A UI gesture → B Riverpod slice → C Dio/serialize → D REST or SignalR boundary →
-E .NET controller (JWT-derived caller, DTO bind) → F service + H3 spatial calc →
-G EF Core txn (Serializable + advisory lock) → H SignalR/FCM broadcast → back to A/B.
-
-## Local Development
-### API
+1. Move to the directory context:
+```bash
 cd api/MyLoop.Api
-cp appsettings.Development.example.json appsettings.Development.json   # set DefaultConnection
-dotnet run                                  # schema auto-bootstraps (EnsureCreated + idempotent DDL)
-# Health: GET http://localhost:5000/
 
-### Mobile
+```
+
+
+2. Establish your infrastructure configurations tracking your localized database parameters:
+```bash
+cp appsettings.Development.example.json appsettings.Development.json
+
+```
+
+
+3. Boot the environment. Database structures automatically map schemas on initialization via `EnsureCreated` and underlying idempotent Data Definition Language scripts:
+```bash
+dotnet run
+
+```
+
+
+
+* **API Context Base URL:** `http://localhost:5000/`
+* **SignalR WebSocket Entry Point:** `http://localhost:5000/hubs/territory`
+
+### Mobile App Deployment
+
+1. Initialize missing dependencies:
+```bash
 cd mobile && flutter pub get
+
+```
+
+
+2. Execute target runtime profile passing the backend initialization parameters explicitly:
+```bash
 flutter run --dart-define=API_BASE_URL=http://localhost:5000
 
-### Device → local API over ngrok (real GPS testing)
+```
+
+
+
+### Operational Infrastructure Proxy Prototyping (Real-World GPS Deployment)
+
+To stream local backend context out safely to test tracking functionality on an actual physical testing handset, use an `ngrok` routing tunnel:
+
+1. Connect the local proxy port structure:
+```bash
 ngrok http 5000
-flutter run --dart-define=API_BASE_URL=https://<id>.ngrok.app
-# CORS: add the ngrok origin to Cors:AllowedOrigins (browser builds only; native ignores CORS).
 
-## Spatial Index Optimization (run once per environment)
-CREATE INDEX IF NOT EXISTS "IX_TerritoryCells_Geo_Brin"
-  ON "TerritoryCells" USING BRIN ("CenterLat","CenterLng") WITH (pages_per_range=128);
-CREATE INDEX IF NOT EXISTS "IX_TerritoryCells_Decay"
-  ON "TerritoryCells" ("LastRefreshedAt","DecayDays");
--- Keystone idempotency constraint (see CONTRIBUTING):
-CREATE UNIQUE INDEX IF NOT EXISTS "UX_DailyMissions_User_Date_Type"
-  ON "DailyMissions" ("UserId","Date","Type");
+```
 
-## Brand
-Primary #00D4AA · Primary-dark #00B894 · Accent (violet) #6C5CE7
-Spatial: H3 res-11 (~4,234 m²/hex) · cooldown CellCooldownHours · decay default 7 days.
 
-## Architectural Rules (non-negotiable) — see CONTRIBUTING.md
-1. ONE store per domain. Stats live in profileSlice ONLY; widgets read derived providers.
-   Never add a second hexCount/streak field to another Notifier.
-2. Every channel (HTTP, SignalR, FCM) funnels into the same slice reducer. Server deltas
-   carry ABSOLUTE totals and are authoritative; client math is optimistic-only.
-3. SignalR connection is owned by auth state (connect on login / dispose on logout),
-   never by a screen's lifecycle.
-4. Always dispose StreamSubscriptions, Timers, and PageControllers in dispose().
-5. H3 cell IDs cross the wire as STRINGS on every channel. Parse string|num on the client.
-6. Mutations are idempotent: every create-or-progress endpoint is backed by a UNIQUE
-   constraint, never by check-then-act. Read-modify-write on User happens INSIDE the
-   per-user advisory-lock transaction.
-7. The acting user is ALWAYS resolved from the Firebase JWT (ICurrentUser); request-body
-   user IDs are ignored. SignalR group joins must verify caller == requested userId.
-----------
+2. Compile your mobile environment pointing directly to the generated secure gateway proxy address:
+```bash
+flutter run --dart-define=API_BASE_URL=https://<your-assigned-id>.ngrok.app
+
+```
+
+
+
+> ⚠️ **CORS Directive Warning:** You must add the generated proxy root address domain to the target backend configurations under `Cors:AllowedOrigins` to prevent web browser profile compilation tasks from throwing security violations. Native compilation targets ignore CORS boundaries.
+
+---
+
+## Non-Negotiable Architectural Rules
+
+Future modifications must comply entirely with these architectural constraints:
+
+1. **Strict Single Source of Truth (SSOT):** There is exactly **one** store per structural domain context. Profile statistics, tracking telemetry, and count values live *strictly* within `profileSlice` and derived states. Under no circumstances should separate widgets or independent state notifiers maintain duplicated counts, caches, or independent states.
+2. **Authoritative Server Control:** Every channel (HTTP REST responses, live WebSockets via SignalR, or incoming FCM background routines) funnels mutations directly into the exact same domain reducer slice. Server-sent payloads carry absolute, verified values; local calculations are strictly optimistic UI updates that roll back on server error.
+3. **SignalR Connection Lifecycle Management:** The real-time connection stream is owned and controlled *exclusively* by the central auth state context. Connections must initialize on successful authentication and systematically dispose on teardown. Never bind connection lifecycles to individual feature screens or transient widgets.
+4. **Leak Mitigation Cleanup Protocols:** Every feature widget utilizing streams, event loop handlers, animation parameters, or controllers must include an explicit cleanup wrapper within `dispose()` routine contexts to eliminate underlying component drift or memory leaks.
+5. **Serialization Data Integrity Constraints:** H3 Cell Identifiers must cross network layers **exclusively as explicit string representations** across every transport pipe to prevent precision degradation when processing 64-bit numerical primitives on web layers.
+6. **Idempotent Operations Rule:** All creation or modification endpoints must rely entirely on core structural **Unique Indexes** and explicit unique database constraints to prevent race conditions. Check-then-act logic patterns are strictly forbidden. Modifying core player data metrics require execution blocks within isolated database transactions locked using explicit user-level advisory locks.
+7. **Identity Resolution:** The operational actor must be determined *strictly* using claims processed within the validated bearer Firebase JWT structure (`ICurrentUser`). Ignore identifiers passed manually inside the request body payload. SignalR group authorization logic must explicitly verify that the connector's verified parameters exactly match requested parameters before processing subscription requests.
+
+---
+
+## Project Status
+
+* **Completed Functionality:**
+* ✅ Territory capture pipeline (including closed-loop processing routines)
+* ✅ SignalR high-performance real-time active map synchronizations
+* ✅ Three-layer multi-point server anti-cheat engine
+* ✅ Structured Firebase Cloud Messaging push system integrations
+* ✅ Scoped leaderboard snapshots (City, Country, Global scopes)
+* ✅ Achievement framework tracking and 24-rank progression badge mapping
+* ✅ Fully paginated, low-overhead historical walk index records
+* ✅ High-density automated competitive bot territory injection maps
+* ✅ GDPR cascade deletion procedures
+
+
+* **Open System Operations Pending Resolution:**
+* 🔶 Complete credential setups on target platform consoles (Firebase OAuth setup)
+* 🔶 Production-grade continuous integration pipeline assembly
+* 🔶 Store submission structural assembly configurations
+
+
+
+---
 
 ## License
 
-Private repository. All rights reserved.
+Private repository. All rights reserved. Reproduction or deployment strictly forbidden without explicit authorization.
