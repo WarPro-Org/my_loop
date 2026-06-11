@@ -4,7 +4,8 @@ on:
   push:
     branches: ["**"]
   pull_request:
-    branches: [develop, master]
+    branches: [develop, main, master]
+  workflow_dispatch: # It unlocks manual terminal and UI execution.
 
 jobs:
   backend:
@@ -45,14 +46,41 @@ jobs:
       - name: Pub get
         run: flutter pub get
 
-      # Errors block the build; pre-existing lints (infos/warnings) stay advisory
-      # and will be cleaned up in a dedicated mobile PR.
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # NOTE: some pre-existing widget tests are broken (pending timers; tests that hit a
-      # live network). They are non-blocking until fixed in a dedicated mobile cleanup PR,
-      # so they don't gate unrelated backend changes. Build + analyze remain hard gates.
       - name: Test
         continue-on-error: true
         run: flutter test
+
+  # ADD THIS NEW JOB TO UNBLOCK YOUR GITHUB PRs
+  security-scan:
+    name: Security Code Scanning
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write # Required to upload results to the Security tab
+      actions: read
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: 'csharp' # Scan your .NET 10 API code for vulnerabilities
+
+      # CodeQL needs to see a build happen for compiled languages like C#
+      - name: Setup .NET 10 for Scan
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build API for Scan
+        run: |
+          dotnet restore api/MyLoop.Api/MyLoop.Api.csproj
+          dotnet build api/MyLoop.Api/MyLoop.Api.csproj --configuration Release
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
