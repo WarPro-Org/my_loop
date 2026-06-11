@@ -383,7 +383,86 @@ ngrok http 5048
 - 🔶 Production hosting
 - 🔶 App Store submission
 
----
+---As of June 11, 2026---
+
+▎ Presented inline (your existing README.md is tracked — I won't overwrite it without your go-ahead).
+
+# MyLoop — Real-Time Territory-Capture Walking Game
+
+A spatial multiplayer game: walk closed loops to capture H3 hexagons, steal rivals'
+territory by walking through it, climb city/country/world leaderboards.
+
+## Stack
+| Layer | Tech |
+|---|---|
+| Mobile | Flutter 3.44 · Riverpod 3.x (Notifier) · Dio · signalr_netcore · geolocator |
+| API | .NET 10 · ASP.NET Core · EF Core (Npgsql) · SignalR · Firebase JWT auth |
+| Data | PostgreSQL 18 · H3 res-11 cells · BRIN geo index · Nominatim geocoding |
+| Push | SignalR (foreground real-time) · FCM HTTP v1 (background) |
+
+## Repository Layout
+mobile/lib/
+  app/            router, theme, app shell
+  features/       journey · home · leaderboard · achievements · profile · history · auth
+  shared/
+    state/        SSOT slices: profile · xp · missions · achievements · exploration · hydration
+    services/     api_service · territory_realtime_service · step_claim_queue · batch_drain_service
+    models/       territory_cell · daily_mission · achievement · user
+api/MyLoop.Api/
+  Controllers/    Claims · Territory · Missions · Achievements · Leaderboard · Users
+  Services/       TerritoryService · MissionService · HexGridService · AchievementService · …
+  Hubs/           TerritoryHub (region + per-user groups)
+  Entities/ Data/ EF model (AppDbContext) · Program.cs (DI, auth, schema bootstrap)
+
+## Data Lifecycle (8 thresholds)
+A UI gesture → B Riverpod slice → C Dio/serialize → D REST or SignalR boundary →
+E .NET controller (JWT-derived caller, DTO bind) → F service + H3 spatial calc →
+G EF Core txn (Serializable + advisory lock) → H SignalR/FCM broadcast → back to A/B.
+
+## Local Development
+### API
+cd api/MyLoop.Api
+cp appsettings.Development.example.json appsettings.Development.json   # set DefaultConnection
+dotnet run                                  # schema auto-bootstraps (EnsureCreated + idempotent DDL)
+# Health: GET http://localhost:5000/
+
+### Mobile
+cd mobile && flutter pub get
+flutter run --dart-define=API_BASE_URL=http://localhost:5000
+
+### Device → local API over ngrok (real GPS testing)
+ngrok http 5000
+flutter run --dart-define=API_BASE_URL=https://<id>.ngrok.app
+# CORS: add the ngrok origin to Cors:AllowedOrigins (browser builds only; native ignores CORS).
+
+## Spatial Index Optimization (run once per environment)
+CREATE INDEX IF NOT EXISTS "IX_TerritoryCells_Geo_Brin"
+  ON "TerritoryCells" USING BRIN ("CenterLat","CenterLng") WITH (pages_per_range=128);
+CREATE INDEX IF NOT EXISTS "IX_TerritoryCells_Decay"
+  ON "TerritoryCells" ("LastRefreshedAt","DecayDays");
+-- Keystone idempotency constraint (see CONTRIBUTING):
+CREATE UNIQUE INDEX IF NOT EXISTS "UX_DailyMissions_User_Date_Type"
+  ON "DailyMissions" ("UserId","Date","Type");
+
+## Brand
+Primary #00D4AA · Primary-dark #00B894 · Accent (violet) #6C5CE7
+Spatial: H3 res-11 (~4,234 m²/hex) · cooldown CellCooldownHours · decay default 7 days.
+
+## Architectural Rules (non-negotiable) — see CONTRIBUTING.md
+1. ONE store per domain. Stats live in profileSlice ONLY; widgets read derived providers.
+   Never add a second hexCount/streak field to another Notifier.
+2. Every channel (HTTP, SignalR, FCM) funnels into the same slice reducer. Server deltas
+   carry ABSOLUTE totals and are authoritative; client math is optimistic-only.
+3. SignalR connection is owned by auth state (connect on login / dispose on logout),
+   never by a screen's lifecycle.
+4. Always dispose StreamSubscriptions, Timers, and PageControllers in dispose().
+5. H3 cell IDs cross the wire as STRINGS on every channel. Parse string|num on the client.
+6. Mutations are idempotent: every create-or-progress endpoint is backed by a UNIQUE
+   constraint, never by check-then-act. Read-modify-write on User happens INSIDE the
+   per-user advisory-lock transaction.
+7. The acting user is ALWAYS resolved from the Firebase JWT (ICurrentUser); request-body
+   user IDs are ignored. SignalR group joins must verify caller == requested userId.
+----------
 
 ## License
 
