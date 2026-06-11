@@ -25,7 +25,7 @@ public class ClaimsControllerAuthTests
     private static ClaimsController Build(
         Mock<ITerritoryService> territory, Mock<ICurrentUser> currentUser) =>
         new(territory.Object, Mock.Of<IHexGridService>(), currentUser.Object,
-            NullLogger<ClaimsController>.Instance);
+            Mock.Of<IPathValidationService>(), NullLogger<ClaimsController>.Instance);
 
     [Fact]
     public async Task SubmitClaim_uses_authenticated_caller_and_ignores_body_userId()

@@ -176,11 +176,23 @@ public class UserService : IUserService
         };
     }
 
+    /// <summary>
+    /// Removes ALL data belonging to a user prior to deleting the account row.
+    /// There are no DB-level FK cascades configured (see <see cref="AppDbContext"/>),
+    /// so every child table that carries a UserId MUST be purged explicitly here —
+    /// otherwise account deletion silently orphans the user's rows (a privacy
+    /// violation given the App Store "delete my data" guarantee in the privacy policy).
+    /// </summary>
     private async Task DeleteUserData(Guid userId)
     {
         await _db.TerritoryCells.Where(c => c.OwnerId == userId).ExecuteDeleteAsync();
         await _db.Set<CellTransfer>().Where(t => t.FromUserId == userId || t.ToUserId == userId).ExecuteDeleteAsync();
         await _db.Claims.Where(c => c.UserId == userId).ExecuteDeleteAsync();
         await _db.LeaderboardEntries.Where(l => l.UserId == userId).ExecuteDeleteAsync();
+        // Previously orphaned — these carry per-user (and PII-adjacent) data:
+        await _db.ExploredCells.Where(e => e.UserId == userId).ExecuteDeleteAsync();
+        await _db.DailyMissions.Where(m => m.UserId == userId).ExecuteDeleteAsync();
+        await _db.UserAchievements.Where(a => a.UserId == userId).ExecuteDeleteAsync();
+        await _db.DeviceTokens.Where(d => d.UserId == userId).ExecuteDeleteAsync();
     }
 }

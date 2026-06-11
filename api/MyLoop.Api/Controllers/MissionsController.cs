@@ -1,26 +1,50 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using MyLoop.Api.Data;
+using MyLoop.Api.Interfaces;
 using MyLoop.Api.Services;
 
 namespace MyLoop.Api.Controllers;
 
+/// <summary>
+/// Daily-mission and XP read endpoints. A caller may only read their OWN
+/// missions/XP — the acting user is resolved from the Firebase JWT via
+/// <see cref="ICurrentUser"/>, and any mismatch with the route id is rejected.
+/// </summary>
 [ApiController]
 [Route("api/missions")]
+[Authorize]
 public class MissionsController : ControllerBase
 {
     private readonly IMissionService _missionService;
     private readonly AppDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
-    public MissionsController(IMissionService missionService, AppDbContext db)
+    public MissionsController(IMissionService missionService, AppDbContext db, ICurrentUser currentUser)
     {
         _missionService = missionService;
         _db = db;
+        _currentUser = currentUser;
+    }
+
+    /// <summary>
+    /// Returns Unauthorized/Forbid when the caller is not the user named in the route;
+    /// null when the caller owns the resource and the request may proceed.
+    /// </summary>
+    private async Task<IActionResult?> DenySelf(Guid routeUserId)
+    {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+        if (routeUserId != callerId) return Forbid();
+        return null;
     }
 
     /// <summary>Get today's daily missions for a user (generates them if not yet created).</summary>
     [HttpGet("{userId:guid}")]
     public async Task<IActionResult> GetMissions([FromRoute] Guid userId)
     {
+        if (await DenySelf(userId) is { } deny) return deny;
+
         var missions = await _missionService.GetTodaysMissions(userId);
         return Ok(missions.Select(m => new
         {
@@ -39,6 +63,8 @@ public class MissionsController : ControllerBase
     [HttpGet("xp/{userId:guid}")]
     public async Task<IActionResult> GetXpInfo([FromRoute] Guid userId)
     {
+        if (await DenySelf(userId) is { } deny) return deny;
+
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return NotFound();
 

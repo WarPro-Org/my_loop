@@ -232,6 +232,7 @@ class JourneyController extends Notifier<JourneyState> {
   StepClaimQueue? _queue;
   BatchDrainService? _drainService;
   StreamSubscription<BatchResult>? _drainSub;
+  StreamSubscription<String>? _rejectionSub;
 
   /// Initialize the persistent queue and drain service for this walk.
   Future<void> _initWriteLayer() async {
@@ -250,6 +251,11 @@ class JourneyController extends Notifier<JourneyState> {
 
     // Listen for batch results to update UI in real-time
     _drainSub = _drainService!.onBatchResult.listen(_onBatchResult);
+    // Surface permanent rejections (e.g. anti-cheat speed violation) to the user
+    // instead of silently dropping the batch (MEDIUM-5).
+    _rejectionSub = _drainService!.onRejection.listen((message) {
+      state = state.copyWith(error: message);
+    });
     _drainService!.start();
   }
 
@@ -317,9 +323,11 @@ class JourneyController extends Notifier<JourneyState> {
 
   void _disposeWriteLayer() {
     _drainSub?.cancel();
+    _rejectionSub?.cancel();
     _drainService?.dispose();
     _drainService = null;
     _drainSub = null;
+    _rejectionSub = null;
     // Keep _queue alive — points persist on disk for next app launch
   }
 

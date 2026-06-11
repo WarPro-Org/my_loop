@@ -26,6 +26,7 @@ public class TerritoryNotifier : ITerritoryNotifier
         // Group changes by parent cell (region) for targeted broadcast
         var byRegion = changes.GroupBy(c => c.ParentCellId.ToString());
 
+        var regionCount = 0;
         foreach (var regionGroup in byRegion)
         {
             var payload = regionGroup.Select(c => new
@@ -39,56 +40,58 @@ public class TerritoryNotifier : ITerritoryNotifier
                 c.PreviousOwnerId,
             }).ToList();
 
-            await _hubContext.Clients
-                .Group(regionGroup.Key)
-                .SendAsync("HexOwnershipChanged", payload);
+            // Isolate each region: a transient transport failure on one group
+            // must not abort delivery to the others (HIGH-10). These broadcasts
+            // are fire-and-forget, so a thrown exception would also go unobserved.
+            try
+            {
+                await _hubContext.Clients
+                    .Group(regionGroup.Key)
+                    .SendAsync("HexOwnershipChanged", payload);
+                regionCount++;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to broadcast HexOwnershipChanged to region {Region}", regionGroup.Key);
+            }
         }
 
         _logger.LogDebug("Broadcast {Count} hex changes to {RegionCount} regions",
-            changes.Count, changes.Select(c => c.ParentCellId).Distinct().Count());
+            changes.Count, regionCount);
     }
 
-    public async Task NotifyUserStatsAsync(Guid userId, UserStatsDelta delta)
+    public Task NotifyUserStatsAsync(Guid userId, UserStatsDelta delta) =>
+        SafeSendToUser(userId, "UserStatsDelta", delta, "UserStatsDelta");
+
+    public Task NotifyXpAsync(Guid userId, XpDelta delta) =>
+        SafeSendToUser(userId, "XpDelta", delta, "XpDelta");
+
+    public Task NotifyMissionAsync(Guid userId, MissionDelta delta) =>
+        delta.Updates.Count == 0
+            ? Task.CompletedTask
+            : SafeSendToUser(userId, "MissionDelta", delta, "MissionDelta");
+
+    public Task NotifyAchievementAsync(Guid userId, AchievementDelta delta) =>
+        delta.Unlocks.Count == 0
+            ? Task.CompletedTask
+            : SafeSendToUser(userId, "AchievementUnlocked", delta, "AchievementUnlocked");
+
+    /// <summary>
+    /// Sends a personal delta to the user's group, swallowing (but logging) transport
+    /// failures so a dropped connection never surfaces as an unobserved task exception
+    /// in the fire-and-forget push path (HIGH-10).
+    /// </summary>
+    private async Task SafeSendToUser<T>(Guid userId, string method, T payload, string label)
     {
-        await _hubContext.Clients
-            .Group($"user_{userId}")
-            .SendAsync("UserStatsDelta", delta);
-
-        _logger.LogDebug("Pushed UserStatsDelta to user {UserId}: HexCount={HexCount}",
-            userId, delta.HexCount);
-    }
-
-    public async Task NotifyXpAsync(Guid userId, XpDelta delta)
-    {
-        await _hubContext.Clients
-            .Group($"user_{userId}")
-            .SendAsync("XpDelta", delta);
-
-        _logger.LogDebug("Pushed XpDelta to user {UserId}: +{XpGained} XP, Level={Level}",
-            userId, delta.XpGained, delta.Level);
-    }
-
-    public async Task NotifyMissionAsync(Guid userId, MissionDelta delta)
-    {
-        if (delta.Updates.Count == 0) return;
-
-        await _hubContext.Clients
-            .Group($"user_{userId}")
-            .SendAsync("MissionDelta", delta);
-
-        _logger.LogDebug("Pushed MissionDelta to user {UserId}: {Count} mission updates",
-            userId, delta.Updates.Count);
-    }
-
-    public async Task NotifyAchievementAsync(Guid userId, AchievementDelta delta)
-    {
-        if (delta.Unlocks.Count == 0) return;
-
-        await _hubContext.Clients
-            .Group($"user_{userId}")
-            .SendAsync("AchievementUnlocked", delta);
-
-        _logger.LogDebug("Pushed AchievementUnlocked to user {UserId}: {Count} unlocks",
-            userId, delta.Unlocks.Count);
+        try
+        {
+            await _hubContext.Clients.Group($"user_{userId}").SendAsync(method, payload);
+            _logger.LogDebug("Pushed {Label} to user {UserId}", label, userId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to push {Label} to user {UserId}", label, userId);
+        }
     }
 }

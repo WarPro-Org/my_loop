@@ -194,10 +194,34 @@ class ApiService {
       });
       final data = response.data as Map<String, dynamic>;
       return BatchResult.fromJson(data);
+    } on DioException catch (e) {
+      // A 4xx is a PERMANENT rejection (bad coordinates, anti-cheat speed
+      // violation, etc.) — retrying the identical batch will always fail, so
+      // signal the caller to drop these points and surface the reason rather
+      // than backing off forever. Everything else (5xx / timeout / offline) is
+      // transient and returns null so the drainer retries with backoff.
+      final status = e.response?.statusCode;
+      if (status != null && status >= 400 && status < 500) {
+        throw BatchRejectedException(extractApiError(e) ?? 'Batch rejected by server');
+      }
+      debugPrint('[BatchStepClaim] Transient failure: ${e.message}');
+      return null;
     } catch (e) {
       debugPrint('[BatchStepClaim] Failed: $e');
       return null;
     }
+  }
+
+  /// Extracts the server's `{ "error": "..." }` message from a failed response,
+  /// or null if none is present (MEDIUM-5: surface real API errors to the user
+  /// instead of a generic failure).
+  static String? extractApiError(Object error) {
+    if (error is DioException) {
+      final data = error.response?.data;
+      if (data is Map && data['error'] is String) return data['error'] as String;
+      if (data is String && data.isNotEmpty) return data;
+    }
+    return null;
   }
 
   /// Retrieves the leaderboard for players near the given coordinates.
@@ -372,3 +396,15 @@ class ApiService {
 final apiServiceProvider = Provider<ApiService>((ref) {
   return ApiService();
 });
+
+/// Thrown when the server permanently rejects a batch (HTTP 4xx) — e.g. an
+/// anti-cheat speed violation. The contained [message] is the server-supplied
+/// reason, suitable for display. The drainer drops the offending points rather
+/// than retrying a batch that can never succeed.
+class BatchRejectedException implements Exception {
+  final String message;
+  BatchRejectedException(this.message);
+
+  @override
+  String toString() => 'BatchRejectedException: $message';
+}

@@ -52,3 +52,7 @@ google-services.json
 
 # Docs (generated)
 docs/architecture.md
+
+# Test build output
+tests/**/bin/
+tests/**/obj/

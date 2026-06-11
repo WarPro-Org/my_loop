@@ -60,9 +60,7 @@ class StepClaimQueue {
   /// Clear all entries (e.g., on logout).
   Future<void> clear() async {
     _cache?.clear();
-    if (_file != null && await _file!.exists()) {
-      await _file!.writeAsString('');
-    }
+    await _atomicWrite('');
   }
 
   /// Read all entries from disk (used on init and after crash recovery).
@@ -86,12 +84,23 @@ class StepClaimQueue {
 
   /// Rewrite entire file from cache (after removals).
   Future<void> _rewriteFile() async {
-    if (_file == null) return;
     final sb = StringBuffer();
     for (final point in _cache ?? <QueuedStepPoint>[]) {
       sb.writeln(jsonEncode(point.toJson()));
     }
-    await _file!.writeAsString(sb.toString(), flush: true);
+    await _atomicWrite(sb.toString());
+  }
+
+  /// Crash-safe full-file write (CRITICAL-8): write to a sibling temp file,
+  /// flush it, then atomically rename it over the target. A crash/power-loss
+  /// mid-write can only leave the (ignored) temp file behind — the real WAL is
+  /// never observed in a half-written/truncated state, so queued GPS points
+  /// can't be silently lost by an interrupted rewrite.
+  Future<void> _atomicWrite(String contents) async {
+    if (_file == null) return;
+    final tmp = File('${_file!.path}.tmp');
+    await tmp.writeAsString(contents, flush: true);
+    await tmp.rename(_file!.path);
   }
 }
 

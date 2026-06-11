@@ -119,6 +119,55 @@ public class PathValidationService : IPathValidationService
         return null;
     }
 
+    /// <summary>
+    /// Speed gate for real-time batch-step points. Unlike <see cref="Validate"/>, these
+    /// points carry real capture timestamps, so we bound each hop by the time actually
+    /// elapsed (plus a GPS-uncertainty margin) instead of assuming a fixed 5s cadence.
+    /// A hop is implausible only if the straight-line distance exceeds what max walking
+    /// speed could cover in the elapsed time — this rejects teleport/spoof jumps between
+    /// rapid samples while tolerating legitimately long gaps in the write-ahead-log drain.
+    /// </summary>
+    public string? ValidateConsecutivePoints(IReadOnlyList<(double Lat, double Lng, DateTime CapturedAt)> points)
+    {
+        if (points.Count < 2) return null;
+
+        // GPS horizontal uncertainty: even a stationary device drifts ~30m between fixes.
+        const double gpsDriftMarginMeters = 30.0;
+
+        var violations = 0;
+        for (var i = 1; i < points.Count; i++)
+        {
+            var prev = points[i - 1];
+            var curr = points[i];
+
+            var distanceMeters = HaversineDistance(
+                [prev.Lat, prev.Lng], [curr.Lat, curr.Lng]);
+
+            var elapsedSeconds = (curr.CapturedAt - prev.CapturedAt).TotalSeconds;
+            // Missing/disordered timestamps → fall back to the nominal sampling cadence
+            // rather than dividing by zero or trusting a negative interval.
+            if (elapsedSeconds <= 0)
+                elapsedSeconds = AntiCheatConstants.GpsSamplingIntervalSeconds;
+
+            var maxPlausibleMeters =
+                AntiCheatConstants.MaxSpeedMetersPerSecond * elapsedSeconds + gpsDriftMarginMeters;
+
+            if (distanceMeters > maxPlausibleMeters)
+                violations++;
+        }
+
+        var violationRate = (double)violations / (points.Count - 1);
+        if (violationRate > AntiCheatConstants.MaxSpeedViolationRate)
+        {
+            _logger.LogWarning(
+                "Batch rejected: {Rate:P1} implausible-speed hops ({Count}/{Total})",
+                violationRate, violations, points.Count - 1);
+            return "Movement speed exceeds physical limits";
+        }
+
+        return null;
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────

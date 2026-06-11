@@ -20,17 +20,20 @@ public class ClaimsController : ControllerBase
     private readonly ITerritoryService _territoryService;
     private readonly IHexGridService _hexGridService;
     private readonly ICurrentUser _currentUser;
+    private readonly IPathValidationService _pathValidation;
     private readonly ILogger<ClaimsController> _logger;
 
     public ClaimsController(
         ITerritoryService territoryService,
         IHexGridService hexGridService,
         ICurrentUser currentUser,
+        IPathValidationService pathValidation,
         ILogger<ClaimsController> logger)
     {
         _territoryService = territoryService;
         _hexGridService = hexGridService;
         _currentUser = currentUser;
+        _pathValidation = pathValidation;
         _logger = logger;
     }
 
@@ -145,6 +148,16 @@ public class ClaimsController : ControllerBase
             if (double.IsNaN(p.Lat) || double.IsNaN(p.Lng) ||
                 double.IsInfinity(p.Lat) || double.IsInfinity(p.Lng))
                 return BadRequest("Invalid coordinates in batch");
+        }
+
+        // Anti-cheat: reject batches whose consecutive points imply impossible speed
+        // (teleport / GPS spoofing). Mirrors the validation already applied to loop claims.
+        var speedError = _pathValidation.ValidateConsecutivePoints(
+            request.Points.Select(p => (p.Lat, p.Lng, p.CapturedAt)).ToList());
+        if (speedError != null)
+        {
+            _logger.LogWarning("Batch-step rejected for user {UserId}: {Reason}", callerId, speedError);
+            return BadRequest(new { error = $"Anti-cheat: {speedError}" });
         }
 
         try

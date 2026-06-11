@@ -27,7 +27,10 @@ builder.Services.AddScoped<IPushNotificationService, PushNotificationService>();
 builder.Services.AddScoped<IMissionService, MissionService>();
 builder.Services.AddScoped<IAchievementService, AchievementService>();
 builder.Services.AddSingleton<GeocodingService>();
-builder.Services.AddHttpClient<GeocodingService>();
+// Bound external geocoding latency: Nominatim is best-effort and the service already
+// falls back gracefully, so cap each request well below the 100s HttpClient default
+// (MEDIUM-6) to avoid tying up request threads when the upstream is slow/unreachable.
+builder.Services.AddHttpClient<GeocodingService>(c => c.Timeout = TimeSpan.FromSeconds(5));
 builder.Services.AddHostedService<DecayCleanupService>();
 
 // --- Identity resolution (caller derived from the Firebase JWT, never the request body) ---

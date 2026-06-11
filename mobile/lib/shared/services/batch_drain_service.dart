@@ -34,6 +34,11 @@ class BatchDrainService {
   final _resultController = StreamController<BatchResult>.broadcast();
   Stream<BatchResult> get onBatchResult => _resultController.stream;
 
+  /// Stream of user-facing rejection messages (e.g. anti-cheat speed violation)
+  /// for batches the server permanently refused. The offending points are dropped.
+  final _rejectionController = StreamController<String>.broadcast();
+  Stream<String> get onRejection => _rejectionController.stream;
+
   /// Current queue size (for UI indicators).
   int get queueSize => _queue.length;
 
@@ -82,9 +87,11 @@ class BatchDrainService {
     if (_queue.isEmpty) return true;
 
     _draining = true;
+    var peeked = const <QueuedStepPoint>[];
     try {
       final points = _queue.peek(_maxBatchSize);
       if (points.isEmpty) return true;
+      peeked = points;
 
       // Determine local date for streak calculation
       final now = DateTime.now();
@@ -117,6 +124,18 @@ class BatchDrainService {
         _handleFailure();
         return false;
       }
+    } on BatchRejectedException catch (e) {
+      // Permanent rejection (anti-cheat / invalid batch): the server will never
+      // accept these points, so retrying would jam the queue forever. Drop them,
+      // surface the reason, and treat this as a successful (non-backoff) cycle.
+      debugPrint('[BatchDrain] Batch permanently rejected: ${e.message}');
+      if (peeked.isNotEmpty) {
+        await _queue.removeProcessed(peeked.map((p) => p.clientId).toSet());
+      }
+      _backoffSeconds = 0;
+      _consecutiveFailures = 0;
+      if (!_disposed) _rejectionController.add(e.message);
+      return false;
     } on DioException catch (e) {
       debugPrint('[BatchDrain] Network error: ${e.message}');
       _handleFailure();
@@ -149,6 +168,7 @@ class BatchDrainService {
     _disposed = true;
     stop();
     _resultController.close();
+    _rejectionController.close();
   }
 }
 

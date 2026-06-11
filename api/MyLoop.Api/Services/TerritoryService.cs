@@ -637,6 +637,15 @@ public class TerritoryService : ITerritoryService
 
             var totalClaimedThisBatch = newCellsCount + stolenCellsCount;
 
+            // Real distance walked this slice (full GPS path, including travel over cells
+            // already owned). Fixes HIGH-11: DistanceKm was never incremented on the
+            // batch-step path, so the Distance achievement / leaderboard distance and the
+            // WalkDistance mission stayed permanently stuck for walk-and-claim players.
+            // The batch already passed inter-point speed anti-cheat at the controller.
+            var batchDistanceMeters = points.Count >= 2 ? _geo.CalculatePathDistance(pathPoints) : 0.0;
+            if (batchDistanceMeters > 0)
+                user.DistanceKm += batchDistanceMeters / 1000.0;
+
             // 5. Create a single Claim entity covering this slice (FK target for transfers)
             if (totalClaimedThisBatch > 0)
             {
@@ -671,8 +680,11 @@ public class TerritoryService : ITerritoryService
                 if (stolenCellsCount > 0)
                     await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCellsCount);
                 await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, totalClaimedThisBatch);
-                // ~30m per claimed hex approximation
-                await _missionService.RecordProgress(userId, MissionType.WalkDistance, totalClaimedThisBatch * 30);
+                // Real GPS distance for this slice (rounded to whole meters), replacing
+                // the prior ~30m-per-hex approximation so WalkDistance reflects actual walking.
+                var walkMeters = (int)Math.Round(batchDistanceMeters);
+                if (walkMeters > 0)
+                    await _missionService.RecordProgress(userId, MissionType.WalkDistance, walkMeters);
                 if (newExplorations > 0)
                     await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
                 if (user.IsStreakActive)
