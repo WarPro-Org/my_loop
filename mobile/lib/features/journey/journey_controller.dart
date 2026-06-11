@@ -9,7 +9,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/batch_drain_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
+import 'package:myloop/shared/services/step_claim_queue.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/features/journey/loop_detector.dart';
 
@@ -18,6 +20,14 @@ import 'package:myloop/features/journey/loop_detector.dart';
 // ──────────────────────────────────────────────────────────────────────────────
 
 enum JourneyStatus { idle, tracking, submitting }
+
+/// Minimal metadata for each step-claimed hex during a walk.
+class StepClaimMeta {
+  final int cellId;
+  final List<List<double>> boundary;
+  final bool wasStolen;
+  const StepClaimMeta({required this.cellId, required this.boundary, required this.wasStolen});
+}
 
 class JourneyState {
   final JourneyStatus status;
@@ -40,6 +50,8 @@ class JourneyState {
   final int? levelUpTo;
   /// Last achievement unlocked (for toast notification).
   final String? achievementUnlocked;
+  /// Metadata for each step-claimed hex (for hex manager integration).
+  final List<StepClaimMeta> claimedMeta;
 
   const JourneyState({
     this.status = JourneyStatus.idle,
@@ -56,6 +68,7 @@ class JourneyState {
     this.xpGainedThisWalk = 0,
     this.levelUpTo,
     this.achievementUnlocked,
+    this.claimedMeta = const [],
   });
 
   JourneyState copyWith({
@@ -73,6 +86,7 @@ class JourneyState {
     int? xpGainedThisWalk,
     int? levelUpTo,
     String? achievementUnlocked,
+    List<StepClaimMeta>? claimedMeta,
   }) {
     return JourneyState(
       status: status ?? this.status,
@@ -89,6 +103,7 @@ class JourneyState {
       xpGainedThisWalk: xpGainedThisWalk ?? this.xpGainedThisWalk,
       levelUpTo: levelUpTo,
       achievementUnlocked: achievementUnlocked,
+      claimedMeta: claimedMeta ?? this.claimedMeta,
     );
   }
 }
@@ -133,6 +148,7 @@ class JourneyController extends Notifier<JourneyState> {
         error: null,
       );
 
+      await _initWriteLayer();
       _positionSub = locationService.startTracking().listen(_onPosition);
       _startElapsedTimer();
     } catch (e) {
@@ -143,6 +159,7 @@ class JourneyController extends Notifier<JourneyState> {
   List<List<double>> stopJourney() {
     _positionSub?.cancel();
     _timer?.cancel();
+    _disposeWriteLayer();
     _resetTrackingState();
     final path = state.path;
     state = state.copyWith(
@@ -151,6 +168,7 @@ class JourneyController extends Notifier<JourneyState> {
       previewBoundaries: const [],
       claimedHexBoundaries: const [],
       claimedCount: 0,
+      claimedMeta: const [],
     );
     return path;
   }
@@ -180,7 +198,7 @@ class JourneyController extends Notifier<JourneyState> {
       distanceMeters: state.distanceMeters + distanceFromLast,
     );
 
-    _claimStep(pos.latitude, pos.longitude);
+    _enqueueStep(pos.latitude, pos.longitude);
     _throttledLoopCheck(updatedPath);
   }
 
@@ -208,39 +226,101 @@ class JourneyController extends Notifier<JourneyState> {
   }
 
   // ────────────────────────────────────────────────────────────────────────────
-  // Real-time step claiming — claim each hex as user walks through it
+  // Write-Ahead Log + Batch Drain — resilient step claiming
   // ────────────────────────────────────────────────────────────────────────────
 
-  bool _stepClaimInFlight = false;
+  StepClaimQueue? _queue;
+  BatchDrainService? _drainService;
+  StreamSubscription<BatchResult>? _drainSub;
 
-  Future<void> _claimStep(double lat, double lng) async {
-    if (_stepClaimInFlight) return; // Don't stack calls
+  /// Initialize the persistent queue and drain service for this walk.
+  Future<void> _initWriteLayer() async {
     final userId = ref.read(userProfileProvider).userId;
     if (userId == null) return;
 
-    _stepClaimInFlight = true;
-    try {
-      final api = ref.read(apiServiceProvider);
-      final result = await api.claimStep(userId: userId, lat: lat, lng: lng);
-      if (result != null && result.claimed && state.status == JourneyStatus.tracking) {
-        final updatedBoundaries = [...state.claimedHexBoundaries, result.boundary];
-        final achievementName = result.achievementsUnlocked.isNotEmpty
-            ? '${result.achievementsUnlocked.first.icon} ${result.achievementsUnlocked.first.name}'
-            : null;
-        state = state.copyWith(
-          claimedHexBoundaries: updatedBoundaries,
-          claimedCount: state.claimedCount + 1,
-          lastStolenFrom: result.wasStolen ? result.previousOwnerName : null,
-          xpGainedThisWalk: state.xpGainedThisWalk + result.xpGained,
-          levelUpTo: result.leveledUp ? result.newLevel : null,
-          achievementUnlocked: achievementName,
-        );
+    _queue = StepClaimQueue();
+    await _queue!.init();
+
+    final api = ref.read(apiServiceProvider);
+    _drainService = BatchDrainService(
+      queue: _queue!,
+      api: api,
+      userId: userId,
+    );
+
+    // Listen for batch results to update UI in real-time
+    _drainSub = _drainService!.onBatchResult.listen(_onBatchResult);
+    _drainService!.start();
+  }
+
+  /// Enqueue a GPS point into the persistent WAL (instant, disk-backed).
+  Future<void> _enqueueStep(double lat, double lng) async {
+    if (_queue == null) return;
+
+    final point = QueuedStepPoint(
+      clientId: '${DateTime.now().millisecondsSinceEpoch}_${lat.toStringAsFixed(6)}',
+      lat: lat,
+      lng: lng,
+      capturedAt: DateTime.now(),
+    );
+
+    await _queue!.enqueue(point);
+    _drainService?.notifyEnqueue();
+  }
+
+  /// Handle batch results from the drain service — update journey state.
+  void _onBatchResult(BatchResult result) {
+    if (state.status != JourneyStatus.tracking) return;
+
+    final newBoundaries = <List<List<double>>>[];
+    final newMeta = <StepClaimMeta>[];
+    String? lastStolen;
+
+    for (final r in result.results) {
+      if (r.claimed && r.boundary != null) {
+        newBoundaries.add(r.boundary!);
+        newMeta.add(StepClaimMeta(
+          cellId: r.cellId ?? 0,
+          boundary: r.boundary!,
+          wasStolen: r.wasStolen,
+        ));
+        if (r.wasStolen) lastStolen = r.previousOwnerName;
       }
-    } catch (_) {
-      // Best-effort — don't interrupt the walk
-    } finally {
-      _stepClaimInFlight = false;
     }
+
+    if (newBoundaries.isEmpty) return;
+
+    final achievementName = result.achievements.isNotEmpty
+        ? '${result.achievements.first.icon} ${result.achievements.first.name}'
+        : null;
+
+    state = state.copyWith(
+      claimedHexBoundaries: [...state.claimedHexBoundaries, ...newBoundaries],
+      claimedCount: state.claimedCount + newBoundaries.length,
+      claimedMeta: [...state.claimedMeta, ...newMeta],
+      lastStolenFrom: lastStolen,
+      xpGainedThisWalk: state.xpGainedThisWalk + result.xp.xpGained,
+      levelUpTo: result.xp.leveledUp ? result.xp.level : null,
+      achievementUnlocked: achievementName,
+    );
+  }
+
+  /// Drain all remaining points before showing capture celebration.
+  /// Returns true if successful, false if some points remain (network down).
+  Future<bool> drainBeforeCapture() async {
+    if (_drainService == null) return true;
+    return await _drainService!.drainNow();
+  }
+
+  /// Number of points pending in queue (for UI indicator).
+  int get pendingQueueSize => _queue?.length ?? 0;
+
+  void _disposeWriteLayer() {
+    _drainSub?.cancel();
+    _drainService?.dispose();
+    _drainService = null;
+    _drainSub = null;
+    // Keep _queue alive — points persist on disk for next app launch
   }
 
   // ────────────────────────────────────────────────────────────────────────────

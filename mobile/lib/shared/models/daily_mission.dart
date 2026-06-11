@@ -50,6 +50,25 @@ class DailyMission {
           : null,
     );
   }
+
+  DailyMission copyWith({
+    int? currentProgress,
+    bool? isCompleted,
+    DateTime? completedAt,
+  }) {
+    return DailyMission(
+      id: id,
+      type: type,
+      description: description,
+      targetValue: targetValue,
+      currentProgress: currentProgress ?? this.currentProgress,
+      xpReward: xpReward,
+      isCompleted: isCompleted ?? this.isCompleted,
+      completedAt: completedAt ?? this.completedAt,
+    );
+  }
+
+  bool get completed => isCompleted;
 }
 
 class XpInfo {

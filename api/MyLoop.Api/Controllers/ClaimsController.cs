@@ -2,13 +2,15 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using MyLoop.Api.Constants;
+using MyLoop.Api.Interfaces;
 using MyLoop.Api.Models;
-using MyLoop.Api.Services;
 
 namespace MyLoop.Api.Controllers;
 
 /// <summary>
-/// Handles territory claim submission.
+/// Handles territory claim submission. The acting user is ALWAYS the authenticated
+/// caller (resolved from the Firebase JWT via <see cref="ICurrentUser"/>); any UserId
+/// present in a request body is ignored.
 /// </summary>
 [ApiController]
 [Route("api/claims")]
@@ -17,15 +19,18 @@ public class ClaimsController : ControllerBase
 {
     private readonly ITerritoryService _territoryService;
     private readonly IHexGridService _hexGridService;
+    private readonly ICurrentUser _currentUser;
     private readonly ILogger<ClaimsController> _logger;
 
     public ClaimsController(
         ITerritoryService territoryService,
         IHexGridService hexGridService,
+        ICurrentUser currentUser,
         ILogger<ClaimsController> logger)
     {
         _territoryService = territoryService;
         _hexGridService = hexGridService;
+        _currentUser = currentUser;
         _logger = logger;
     }
 
@@ -36,12 +41,17 @@ public class ClaimsController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> SubmitClaim([FromBody] ClaimRequest request)
     {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
+        if (request.Path.Length > GameConstants.MaxClaimPathPoints)
+            return BadRequest("Path too long");
         if (!ValidatePathCoordinates(request.Path))
             return BadRequest("Invalid GPS coordinates in path");
 
         try
         {
-            var result = await _territoryService.ProcessClaim(request.UserId, request.Path);
+            var result = await _territoryService.ProcessClaim(callerId.Value, request.Path);
 
             if (!result.Success)
                 return BadRequest(new { error = result.Error });
@@ -50,7 +60,7 @@ public class ClaimsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Claim processing failed for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Claim processing failed for user {UserId}", callerId);
             return StatusCode(500, new { error = "Claim processing failed. Please try again." });
         }
     }
@@ -58,17 +68,21 @@ public class ClaimsController : ControllerBase
     /// <summary>
     /// Real-time walk-through claim. Batches of GPS points are sent during a walk
     /// and hexes the user physically touches are claimed immediately.
-    /// Returns claimed hex boundaries for instant rendering on the map.
     /// </summary>
     [HttpPost("trail")]
     public async Task<IActionResult> ClaimTrail([FromBody] TrailClaimRequest request)
     {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
+        if (request.Points.Length > GameConstants.MaxClaimPathPoints)
+            return BadRequest("Too many points");
         if (!ValidatePathCoordinates(request.Points))
             return BadRequest("Invalid GPS coordinates");
 
         try
         {
-            var result = await _territoryService.ProcessTrailClaim(request.UserId, request.Points);
+            var result = await _territoryService.ProcessTrailClaim(callerId.Value, request.Points);
 
             if (!result.Success)
                 return BadRequest(new { error = result.Error });
@@ -77,38 +91,77 @@ public class ClaimsController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Trail claim failed for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Trail claim failed for user {UserId}", callerId);
             return StatusCode(500, new { error = "Trail claim processing failed." });
         }
     }
 
     /// <summary>
     /// Single-point real-time claim. Each GPS tick sends one point —
-    /// if the user entered a new hex, it's claimed and the boundary returned
-    /// for instant rendering. ~100ms round-trip at walking speed.
+    /// if the user entered a new hex, it's claimed and the boundary returned.
     /// </summary>
     [HttpPost("step")]
     public async Task<IActionResult> ClaimStep([FromBody] StepClaimRequest request)
     {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
         if (request.Lat < -90 || request.Lat > 90 || request.Lng < -180 || request.Lng > 180)
             return BadRequest("Invalid coordinates");
 
         try
         {
-            var result = await _territoryService.ProcessStepClaim(request.UserId, request.Lat, request.Lng);
+            var result = await _territoryService.ProcessStepClaim(callerId.Value, request.Lat, request.Lng);
             return Ok(result);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Step claim failed for user {UserId}", request.UserId);
+            _logger.LogError(ex, "Step claim failed for user {UserId}", callerId);
             return StatusCode(500, new { error = "Step claim failed." });
         }
     }
 
     /// <summary>
+    /// Batch step claim. Receives N GPS points captured during a walk
+    /// (drained from the client's persistent write-ahead log) and processes
+    /// them atomically.
+    /// </summary>
+    [HttpPost("batch-step")]
+    public async Task<IActionResult> ClaimBatchStep([FromBody] BatchStepClaimRequest request)
+    {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
+        if (request?.Points == null || request.Points.Count == 0)
+            return BadRequest("No points provided");
+
+        if (request.Points.Count > 200)
+            return BadRequest("Too many points in a single batch (max 200)");
+
+        foreach (var p in request.Points)
+        {
+            if (p.Lat < -90 || p.Lat > 90 || p.Lng < -180 || p.Lng > 180)
+                return BadRequest("Invalid coordinates in batch");
+            if (double.IsNaN(p.Lat) || double.IsNaN(p.Lng) ||
+                double.IsInfinity(p.Lat) || double.IsInfinity(p.Lng))
+                return BadRequest("Invalid coordinates in batch");
+        }
+
+        try
+        {
+            var result = await _territoryService.ProcessBatchStepClaim(
+                callerId.Value, request.LocalDate, request.Points);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Batch step claim failed for user {UserId}", callerId);
+            return StatusCode(500, new { error = "Batch step claim failed." });
+        }
+    }
+
+    /// <summary>
     /// Preview which hexes a path would capture — no DB writes.
-    /// Called by the client during a walk when a loop is detected,
-    /// so the user can see hex fills appearing in real-time.
     /// </summary>
     [HttpPost("preview")]
     public IActionResult PreviewClaim([FromBody] PreviewRequest request)

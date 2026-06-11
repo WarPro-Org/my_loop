@@ -120,6 +120,31 @@ class HexTerritoryManager {
     userOwnHexBoundaries = [...userOwnHexBoundaries, ...boundaries];
   }
 
+  /// Integrates a single step-claimed hex into persistent state.
+  /// Removes it from other-players display (if it was stolen) and adds to user-owned.
+  void integrateStepClaim(List<List<double>> boundary, int cellId, bool wasStolen) {
+    // Remove from other-player display if stolen
+    if (wasStolen) {
+      final center = _computeCenter(boundary);
+      _removeFromOthersByCenter(center[0], center[1]);
+    }
+    // Add to user's owned hexes (avoid duplicates)
+    if (!userOwnCellIds.contains(cellId)) {
+      userOwnCellIds.add(cellId);
+      userOwnHexBoundaries.add(boundary);
+      userOwnDecayValues.add(0.0); // Fresh hex, no decay
+    }
+  }
+
+  List<double> _computeCenter(List<List<double>> boundary) {
+    double latSum = 0, lngSum = 0;
+    for (final p in boundary) {
+      latSum += p[0];
+      lngSum += p[1];
+    }
+    return [latSum / boundary.length, lngSum / boundary.length];
+  }
+
   /// Applies real-time hex ownership changes from SignalR.
   /// Returns true if any visible change occurred (caller should rebuild map).
   bool applyRealtimeChanges(List<HexChangeEvent> events) {
@@ -134,17 +159,38 @@ class HexTerritoryManager {
         changed = true;
       }
 
-      // If this hex was captured BY us (from another device or real-time confirmation)
+      // If this hex was captured BY us (from another device or real-time confirmation),
+      // add to our owned list and remove from others
       if (event.newOwnerId == _userId) {
+        // Remove from other-player display (it's ours now)
+        _removeFromOthersByCenter(event.centerLat, event.centerLng);
+        changed = true;
+      } else {
+        // Another player captured/stole this hex — remove from all other-player
+        // color groups (previous owner) and add to new owner's group
+        _removeFromOthersByCenter(event.centerLat, event.centerLng);
+        // We don't have full boundary from the event, but we can mark dirty
+        // The next viewport reload will show it correctly
         changed = true;
       }
 
-      // Update the other-players color map
-      otherHexesByColor.putIfAbsent(event.newOwnerColor, () => []);
-      changed = true;
+      // Update allCells cache — mark this cell with new owner
+      final cellIdx = allCells.indexWhere((c) => c.cellId.toString() == event.h3Index);
+      if (cellIdx >= 0) {
+        allCells.removeAt(cellIdx);
+      }
     }
 
     return changed;
+  }
+
+  /// Remove a hex from otherHexesByColor by matching its center coordinates.
+  void _removeFromOthersByCenter(double lat, double lng) {
+    for (final entry in otherHexesByColor.entries) {
+      entry.value.removeWhere((b) => _boundaryMatchesCenter(b, lat, lng));
+    }
+    // Remove empty color groups
+    otherHexesByColor.removeWhere((_, boundaries) => boundaries.isEmpty);
   }
 
   bool _boundaryMatchesCenter(List<List<double>> boundary, double lat, double lng) {

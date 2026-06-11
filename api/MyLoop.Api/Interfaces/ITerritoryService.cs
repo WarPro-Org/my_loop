@@ -29,6 +29,15 @@ public interface ITerritoryService
     Task<StepClaimResponse> ProcessStepClaim(Guid userId, double lat, double lng);
 
     /// <summary>
+    /// Batch step claim: processes N GPS points atomically in a single transaction.
+    /// Reliable replacement for per-tick step claims — survives flaky networks.
+    /// Pre-loads existing cells once, applies all changes, single SaveChangesAsync,
+    /// single consolidated push (final state, not per-point deltas).
+    /// </summary>
+    Task<BatchStepClaimResponse> ProcessBatchStepClaim(
+        Guid userId, string? clientLocalDate, List<BatchStepPoint> points);
+
+    /// <summary>
     /// Gets all territory cells within a map viewport bounding box.
     /// </summary>
     Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(

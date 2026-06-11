@@ -16,6 +16,8 @@ import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/hydration.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
@@ -117,10 +119,13 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   }
 
   Future<void> _refreshUserData(dynamic profile, ApiService api) async {
-    final user = await api.getUser(profile.userId!);
+    // Re-hydrate all slices (single API call) — SignalR may already have
+    // pushed deltas, but this ensures consistency for the celebration dialog.
+    await hydrateAllSlices(ref);
+    final ps = ref.read(profileSliceProvider);
+
     int updatedRank = profile.rank;
     try {
-      // Refresh leaderboard first so rank reflects the new hex count
       await api.refreshLeaderboard();
       final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId!, scope: 'city');
       updatedRank = lb.myRank ?? profile.rank;
@@ -128,9 +133,9 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
     if (mounted) {
       ref.read(userProfileProvider.notifier).updateStats(
-        hexCount: user.hexCount,
-        streak: user.streak,
-        distanceKm: user.distanceKm,
+        hexCount: ps.hexCount,
+        streak: ps.streak,
+        distanceKm: ps.distanceKm,
         rank: updatedRank,
       );
     }
@@ -398,6 +403,22 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     super.didUpdateWidget(old);
     _manageLocationPolling();
     _followCurrentPosition();
+    _integrateNewStepClaims(old.journey, widget.journey);
+  }
+
+  /// When new step claims arrive, integrate them into the hex territory manager
+  /// so stolen hexes disappear from the "other players" layer immediately.
+  void _integrateNewStepClaims(JourneyState prev, JourneyState next) {
+    if (next.claimedMeta.length <= prev.claimedMeta.length) return;
+    // Process only the new claims since last update
+    final newClaims = next.claimedMeta.sublist(prev.claimedMeta.length);
+    bool hadStolen = false;
+    for (final meta in newClaims) {
+      _hexManager.integrateStepClaim(meta.boundary, meta.cellId, meta.wasStolen);
+      if (meta.wasStolen) hadStolen = true;
+    }
+    // If a stolen hex was removed from others, trigger map repaint
+    if (hadStolen && mounted) setState(() {});
   }
 
   void _manageLocationPolling() {
@@ -467,7 +488,10 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _showHexOwnerSheet(TerritoryCell cell) {
     final profile = ref.read(userProfileProvider);
     final isOwn = cell.ownerId == profile.userId;
-    final ownerColor = Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+    // Show owner's actual color only for own hexes; black for others
+    final ownerColor = isOwn
+        ? Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000)
+        : const Color(0xFF1A1A1A);
 
     showModalBottomSheet(
       context: context,
@@ -671,13 +695,18 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   List<Widget> _buildOtherPlayerHexes() {
     // LOD: Only render other players' hexes at zoom 14+
     if (_currentZoom < 14.0) return [];
-    return _hexManager.otherHexesByColor.entries.map((entry) => AnimatedHexOverlay(
-      hexBoundaries: entry.value,
-      userColor: Color(int.parse(entry.key.replaceFirst('#', ''), radix: 16) | 0xFF000000),
+    // Show all other players' hexes in dark black regardless of their profile color
+    final allOtherBoundaries = _hexManager.otherHexesByColor.values
+        .expand((list) => list)
+        .toList();
+    if (allOtherBoundaries.isEmpty) return [];
+    return [AnimatedHexOverlay(
+      hexBoundaries: allOtherBoundaries,
+      userColor: const Color(0xFF1A1A1A),
       currentZoom: _currentZoom,
       isNewCapture: false,
       solidMode: _solidHexes,
-    )).toList();
+    )];
   }
 
   PolylineLayer _buildPathPolyline(JourneyState journey) {

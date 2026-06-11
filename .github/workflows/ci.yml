@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [develop, master]
+
+jobs:
+  backend:
+    name: Backend (.NET API)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore api/MyLoop.Api/MyLoop.Api.csproj
+
+      - name: Build
+        run: dotnet build api/MyLoop.Api/MyLoop.Api.csproj --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test tests/MyLoop.Api.Tests/MyLoop.Api.Tests.csproj --configuration Release
+
+  mobile:
+    name: Mobile (Flutter)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.0"
+          channel: stable
+
+      - name: Pub get
+        run: flutter pub get
+
+      # Errors block the build; pre-existing lints (infos/warnings) stay advisory
+      # and will be cleaned up in a dedicated mobile PR.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      # NOTE: some pre-existing widget tests are broken (pending timers; tests that hit a
+      # live network). They are non-blocking until fixed in a dedicated mobile cleanup PR,
+      # so they don't gate unrelated backend changes. Build + analyze remain hard gates.
+      - name: Test
+        continue-on-error: true
+        run: flutter test

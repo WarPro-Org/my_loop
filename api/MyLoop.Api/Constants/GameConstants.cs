@@ -97,6 +97,9 @@ public static class GameConstants
     public const int MaxUserTerritoryCells = 2000;
     public const int MaxPreviewPathLength = 10_000;
 
+    /// <summary>Hard cap on GPS points accepted in a single claim/trail submission (DoS guard).</summary>
+    public const int MaxClaimPathPoints = 50_000;
+
     // --- GPS / Geolocation ---
     public const double EarthRadiusMeters = 6_371_000.0;
     public const double MetersPerDegreeLat = 111_320.0;

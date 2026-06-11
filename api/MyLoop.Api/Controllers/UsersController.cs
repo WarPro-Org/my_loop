@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
@@ -20,15 +21,30 @@ public class UsersController : ControllerBase
     private readonly IPushNotificationService _pushService;
     private readonly GeocodingService _geocoding;
     private readonly AppDbContext _db;
+    private readonly ICurrentUser _currentUser;
 
     public UsersController(IUserService userService, IValidationService validation,
-        IPushNotificationService pushService, GeocodingService geocoding, AppDbContext db)
+        IPushNotificationService pushService, GeocodingService geocoding, AppDbContext db,
+        ICurrentUser currentUser)
     {
         _userService = userService;
         _validation = validation;
         _pushService = pushService;
         _geocoding = geocoding;
         _db = db;
+        _currentUser = currentUser;
+    }
+
+    /// <summary>
+    /// Returns Unauthorized/Forbid when the caller is not the user named in the route;
+    /// null when the caller owns the resource and the request may proceed.
+    /// </summary>
+    private async Task<IActionResult?> DenySelf(Guid routeUserId)
+    {
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+        if (routeUserId != callerId) return Forbid();
+        return null;
     }
 
     /// <summary>
@@ -66,10 +82,13 @@ public class UsersController : ControllerBase
     /// <summary>
     /// Look up a user by Firebase UID — used for login.
     /// </summary>
-    [AllowAnonymous]
     [HttpGet("by-uid/{firebaseUid}")]
     public async Task<IActionResult> GetByFirebaseUid([FromRoute] string firebaseUid)
     {
+        // A caller may only look up their own record by Firebase UID.
+        if (!string.Equals(firebaseUid, _currentUser.FirebaseUid, StringComparison.Ordinal))
+            return Forbid();
+
         var user = await _userService.GetByFirebaseUid(firebaseUid);
         if (user == null) return NotFound();
         return Ok(user);
@@ -81,6 +100,8 @@ public class UsersController : ControllerBase
     [HttpPatch("{id:guid}")]
     public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request)
     {
+        if (await DenySelf(id) is { } deny) return deny;
+
         // Validate any provided fields
         if (request.DisplayName != null)
         {
@@ -121,6 +142,8 @@ public class UsersController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteAccount([FromRoute] Guid id)
     {
+        if (await DenySelf(id) is { } deny) return deny;
+
         var deleted = await _userService.DeleteAccount(id);
         if (!deleted) return NotFound();
         return NoContent();
@@ -133,6 +156,8 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> RegisterDeviceToken(
         [FromRoute] Guid id, [FromBody] DeviceTokenRequest request)
     {
+        if (await DenySelf(id) is { } deny) return deny;
+
         if (string.IsNullOrWhiteSpace(request.Token)) return BadRequest("Token is required");
         await _pushService.RegisterDeviceToken(id, request.Token, request.Platform ?? "ios");
         return Ok();
@@ -145,6 +170,8 @@ public class UsersController : ControllerBase
     [HttpPost("{id:guid}/home")]
     public async Task<IActionResult> SetHome([FromRoute] Guid id, [FromBody] SetHomeRequest request)
     {
+        if (await DenySelf(id) is { } deny) return deny;
+
         if (request.Lat < -90 || request.Lat > 90 || request.Lng < -180 || request.Lng > 180)
             return BadRequest("Invalid coordinates");
 
@@ -187,6 +214,8 @@ public class UsersController : ControllerBase
     public async Task<IActionResult> GetClaims(
         [FromRoute] Guid id, [FromQuery] int page = 1, [FromQuery] int pageSize = 20)
     {
+        if (await DenySelf(id) is { } deny) return deny;
+
         if (pageSize > 50) pageSize = 50;
         if (page < 1) page = 1;
 
@@ -205,5 +234,96 @@ public class UsersController : ControllerBase
             .ToListAsync();
 
         return Ok(claims);
+    }
+
+    /// <summary>
+    /// Returns the FULL game state for a user in a single call:
+    /// profile + XP + missions + achievements + exploration + rank.
+    /// The mobile app calls this once on load and after every walk capture
+    /// instead of 7 separate API calls.
+    /// </summary>
+    [HttpGet("{id:guid}/game-state")]
+    public async Task<IActionResult> GetGameState([FromRoute] Guid id)
+    {
+        if (await DenySelf(id) is { } deny) return deny;
+
+        var user = await _db.Users.FindAsync(id);
+        if (user == null) return NotFound();
+
+        // XP & Level
+        var currentLevelXp = Constants.GameConstants.XpForLevel(user.Level);
+        var nextLevelXp = Constants.GameConstants.XpForLevel(user.Level + 1);
+        var progressXp = user.TotalXp - currentLevelXp;
+        var neededXp = nextLevelXp - currentLevelXp;
+
+        // Missions
+        var missionService = HttpContext.RequestServices.GetRequiredService<IMissionService>();
+        var missions = await missionService.GetTodaysMissions(id);
+
+        // Achievements
+        var achievementService = HttpContext.RequestServices.GetRequiredService<IAchievementService>();
+        var achievements = await achievementService.GetAllForUser(id);
+
+        // Exploration
+        var territoryService = HttpContext.RequestServices.GetRequiredService<ITerritoryService>();
+        var exploration = await territoryService.GetExplorationStats(id, 0, 0);
+
+        // Rank (city leaderboard)
+        int rank = 0;
+        try
+        {
+            var leaderboard = await _db.Users
+                .Where(u => u.City == user.City && !string.IsNullOrEmpty(u.City))
+                .OrderByDescending(u => u.HexCount)
+                .Select(u => u.Id)
+                .ToListAsync();
+            rank = leaderboard.IndexOf(id) + 1;
+        }
+        catch { /* non-critical */ }
+
+        return Ok(new
+        {
+            // Profile
+            user.Id,
+            user.DisplayName,
+            user.Color,
+            user.AvatarId,
+            user.HexCount,
+            user.TotalHexesCaptured,
+            user.TotalHexesStolen,
+            user.Streak,
+            user.IsStreakActive,
+            user.DistanceKm,
+            Rank = rank,
+
+            // XP
+            Xp = new
+            {
+                user.TotalXp,
+                user.Level,
+                ProgressXp = progressXp,
+                NeededXp = neededXp,
+                ProgressPercent = neededXp > 0 ? Math.Round(progressXp * 100.0 / neededXp, 1) : 100.0,
+            },
+
+            // Daily Missions
+            Missions = missions.Select(m => new
+            {
+                m.Id,
+                m.Type,
+                m.Description,
+                m.TargetValue,
+                m.CurrentProgress,
+                m.XpReward,
+                m.IsCompleted,
+                m.CompletedAt,
+            }),
+
+            // Achievements
+            Achievements = achievements,
+
+            // Exploration
+            Exploration = exploration,
+        });
     }
 }

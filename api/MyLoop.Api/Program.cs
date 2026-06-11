@@ -1,9 +1,11 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
+using MyLoop.Api.Interfaces;
 using MyLoop.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -28,6 +30,36 @@ builder.Services.AddSingleton<GeocodingService>();
 builder.Services.AddHttpClient<GeocodingService>();
 builder.Services.AddHostedService<DecayCleanupService>();
 
+// --- Identity resolution (caller derived from the Firebase JWT, never the request body) ---
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddMemoryCache();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+
+// --- Rate limiting (per authenticated user, falling back to client IP) ---
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        // Long-lived SignalR connections must not be throttled per-message.
+        if (httpContext.Request.Path.StartsWithSegments("/hubs"))
+            return RateLimitPartition.GetNoLimiter("hubs");
+
+        var partitionKey =
+            httpContext.User?.FindFirst("user_id")?.Value
+            ?? httpContext.User?.FindFirst("sub")?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+
+        return RateLimitPartition.GetFixedWindowLimiter(partitionKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 120,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        });
+    });
+});
+
 // --- SignalR ---
 builder.Services.AddSignalR();
 
@@ -47,17 +79,39 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = "myloop-6aefc",
             ValidateLifetime = true,
         };
+        // Allow SignalR WebSocket connections to pass JWT via query string
+        // (WebSocket upgrade requests can't set Authorization header)
+        options.Events = new Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            },
+        };
     });
 builder.Services.AddAuthorization();
 
 // --- CORS ---
+// The mobile client is native (not browser-based) and is unaffected by CORS.
+// We therefore allow ONLY explicitly configured browser origins, and never combine
+// a wildcard/reflected origin with credentials. Configure via "Cors:AllowedOrigins".
+var corsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+    ?? Array.Empty<string>();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
-        policy.SetIsOriginAllowed(_ => true)
-              .AllowAnyMethod()
-              .AllowAnyHeader()
-              .AllowCredentials());
+    {
+        if (corsOrigins.Length > 0)
+            policy.WithOrigins(corsOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+        else
+            policy.WithOrigins("http://localhost").AllowAnyHeader().AllowAnyMethod();
+    });
 });
 
 var app = builder.Build();
@@ -65,6 +119,7 @@ var app = builder.Build();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 app.MapControllers();
 app.MapHub<MyLoop.Api.Hubs.TerritoryHub>("/hubs/territory");
 
@@ -152,6 +207,39 @@ using (var scope = app.Services.CreateScope())
             CREATE INDEX IF NOT EXISTS ""IX_ExploredCells_NeighborhoodId""
             ON ""ExploredCells"" (""NeighborhoodId"")");
 
+        // Backfill ExploredCells from TerritoryCells for any cells that were captured
+        // before the ExploredCells tracking was added — computes correct res-8 neighborhood
+        var hexGrid = scope.ServiceProvider.GetRequiredService<IHexGridService>();
+        var unbackfilled = db.Database.SqlQueryRaw<long>(
+            @"SELECT t.""CellId"" FROM ""TerritoryCells"" t
+              WHERE NOT EXISTS (
+                  SELECT 1 FROM ""ExploredCells"" e
+                  WHERE e.""UserId"" = t.""OwnerId"" AND e.""CellId"" = t.""CellId""
+              )").ToList();
+
+        if (unbackfilled.Count > 0)
+        {
+            // Also fix any existing rows that used the wrong parent resolution
+            db.Database.ExecuteSqlRaw(@"DELETE FROM ""ExploredCells""");
+
+            var cells = db.TerritoryCells.AsNoTracking()
+                .Select(t => new { t.CellId, t.OwnerId, t.ClaimedAt })
+                .ToList();
+
+            foreach (var batch in cells.Chunk(500))
+            {
+                foreach (var c in batch)
+                {
+                    var neighborhoodId = hexGrid.GetNeighborhoodId(c.CellId);
+                    db.Database.ExecuteSqlRaw(
+                        @"INSERT INTO ""ExploredCells"" (""UserId"", ""CellId"", ""NeighborhoodId"", ""FirstVisitedAt"")
+                          VALUES ({0}, {1}, {2}, {3})
+                          ON CONFLICT (""UserId"", ""CellId"") DO NOTHING",
+                        c.OwnerId, c.CellId, neighborhoodId, c.ClaimedAt);
+                }
+            }
+        }
+
         // XP & Missions schema
         db.Database.ExecuteSqlRaw(
             "ALTER TABLE \"Users\" ADD COLUMN IF NOT EXISTS \"TotalXp\" bigint NOT NULL DEFAULT 0");
@@ -210,6 +298,13 @@ using (var scope = app.Services.CreateScope())
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_UserAchievements_UserId""
             ON ""UserAchievements"" (""UserId"")");
+
+        // NeighborhoodId on TerritoryCells for per-area ownership queries
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"TerritoryCells\" ADD COLUMN IF NOT EXISTS \"NeighborhoodId\" bigint NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_OwnerId_NeighborhoodId""
+            ON ""TerritoryCells"" (""OwnerId"", ""NeighborhoodId"")");
 
         // Performance: BRIN index for viewport spatial queries (much faster than B-tree for range scans)
         db.Database.ExecuteSqlRaw(@"
@@ -331,3 +426,6 @@ using (var startupScope = app.Services.CreateScope())
 }
 
 app.Run();
+
+// Exposed so the integration-test project (WebApplicationFactory) can boot the app.
+public partial class Program { }

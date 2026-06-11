@@ -7,6 +7,7 @@ library;
 
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
@@ -15,6 +16,8 @@ import 'package:myloop/shared/models/trail_claim_response.dart';
 import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/models/user.dart';
+import 'package:myloop/shared/services/batch_drain_service.dart';
+import 'package:myloop/shared/services/step_claim_queue.dart';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
 /// Defaults to ngrok tunnel for mobile testing over cellular.
@@ -170,8 +173,30 @@ class ApiService {
       });
       final data = response.data as Map<String, dynamic>;
       return StepClaimResponse.fromJson(data);
-    } catch (_) {
-      return null; // Best-effort
+    } catch (e) {
+      debugPrint('[StepClaim] Failed: $e');
+      return null; // Best-effort — don't interrupt the walk
+    }
+  }
+
+  /// Batch step claim — sends N queued GPS points in a single transaction.
+  /// Returns the server response or null on network failure.
+  Future<BatchResult?> claimBatchStep({
+    required String userId,
+    required String localDate,
+    required List<QueuedStepPoint> points,
+  }) async {
+    try {
+      final response = await _dio.post('/api/claims/batch-step', data: {
+        'userId': userId,
+        'localDate': localDate,
+        'points': points.map((p) => p.toJson()).toList(),
+      });
+      final data = response.data as Map<String, dynamic>;
+      return BatchResult.fromJson(data);
+    } catch (e) {
+      debugPrint('[BatchStepClaim] Failed: $e');
+      return null;
     }
   }
 
@@ -210,6 +235,18 @@ class ApiService {
   Future<AppUser> getUser(String id) async {
     final response = await _dio.get('/api/users/$id');
     return AppUser.fromJson(response.data);
+  }
+
+  /// Fetches the FULL game state in one call: profile, XP, missions,
+  /// achievements, exploration, rank. Single network round-trip.
+  Future<Map<String, dynamic>?> getGameState(String userId) async {
+    try {
+      final response = await _dio.get('/api/users/$userId/game-state');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      debugPrint('[API] getGameState failed: $e');
+      return null;
+    }
   }
 
   /// Looks up a user by Firebase UID. Returns null if not registered.

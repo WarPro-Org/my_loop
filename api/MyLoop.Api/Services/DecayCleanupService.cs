@@ -71,5 +71,19 @@ public class DecayCleanupService : BackgroundService
             _logger.LogInformation("Decay cleanup: released {Count} cells, updated {Owners} owners",
                 deleted, decremented);
         }
+
+        // Break streaks for users who didn't claim yesterday
+        var yesterday = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1);
+        var brokenStreaks = await db.Database.ExecuteSqlAsync($"""
+            UPDATE "Users"
+            SET "IsStreakActive" = false, "Streak" = 0
+            WHERE "IsStreakActive" = true
+              AND ("LastClaimDate" IS NULL OR "LastClaimDate" < {yesterday})
+            """, ct);
+
+        if (brokenStreaks > 0)
+        {
+            _logger.LogInformation("Streak cleanup: broke {Count} inactive streaks", brokenStreaks);
+        }
     }
 }
