@@ -10,6 +10,8 @@ public static class GameConstants
     public const int MinPointsForPolygon = 4;
     public const double MinWalkDistanceMeters = 200.0;
     public const double MaxClaimAreaSquareMeters = 5_000_000.0; // 5 km²
+    /// <summary>Hard cap on cells assigned in one claim (secondary guard alongside area).</summary>
+    public const int MaxCellsPerClaim = 3000;
     public const int MaxClaimsPerDay = 20;
     public const double LoopClosureDistanceMeters = 50.0;
     public const int MinLoopPoints = 20;

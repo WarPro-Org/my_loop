@@ -16,6 +16,7 @@
     <!-- The API is built against EF Core 10.0.8 (via Microsoft.EntityFrameworkCore.Design 10.0.8).
          A direct reference forces the test project to the same version, else CS1705. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.8" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="3.10.0" />
   </ItemGroup>
 
   <ItemGroup>
