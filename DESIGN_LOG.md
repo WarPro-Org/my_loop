@@ -30,13 +30,21 @@ Duel/war = same real streets, **per-event overlay that resets to 0**; re-walking
 **Settled**
 - Solo = **open world + shield** (shield params re-open: O2/O6 from earlier).
 - Divisions on **Trophies** (rec), not hex count.
+- **Duel AND war = independent capture** (no contention): co-located players, same or rival clan, each capture the same hex for their own score. Score = sum of what each collects.
+- **Live opponent progress** shown during duels/wars (tension without proximity).
 
-**Open / grilling (block lock)**
-- **O11 — Duel contention:** parallel/independent (step-race, geography decides) vs match-nearby (real head-to-head, needs density)? 
-- **O12 — Duel is thin:** no opponent interaction + re-walk same block 3×/day = repetitive. Mitigate with **live opponent progress** (rec). Accept the loop?
-- **O13 — War vs duel inconsistency:** war = shared contested (first-come locks hex, even across rival clans); duel = independent. Intentional?
-- **O14 — "net-new" definition:** hex the *player* never owned, or one **no one** ever owned globally?
-- **O15 — Loss = −trophies** (needed for a real ladder)? confirm.
+**Duel/war strategy (depth beyond "collect most")**
+| Lever | Decision it adds | Built? |
+|---|---|---|
+| Loops score big (close loop → interior) | route-planning > raw steps | ✅ exists |
+| Bonus/objective hexes (5× spawns) | detour vs sweep tradeoff | new, easy |
+| Best-of-3 objectives (most hexes / biggest loop / most net-new) | comeback; less density dominance | new (defer past v1) |
+*Rec for v1: loops + bonus hexes + live bar. Skip best-of-3 initially.*
+
+**Open (block lock)**
+- **O13 — War team strategy:** independent+sum = no coordination. Add clan **contiguity/coverage bonus** so being a team matters? Or accept wars = sum of solo effort?
+- **O14 — "net-new"** = hex the *player* never owned (assumed) — confirm.
+- **O15 — Loss = −trophies?** confirm (needed for ladder).
 
 **Deferred:** shield numbers (solo), curves (hex→division, XP→level), seed fix, XP cosmetic scope, clans (entry 02).
 
