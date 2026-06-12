@@ -7,35 +7,37 @@ Status: 🔵 in progress · 🟢 locked · ⚪ not started.
 
 ## 01 — Progression & PvP model  🔵
 
-**Verified now (code):** `Level` (from XP, only rises, unlocks nothing) + `Tier` (from current hexes, caps at 3,000 — but seed users already hold 6–7k). Two ladders, no clear jobs.
+**Verified now (code):** `Level` (XP, only rises, unlocks nothing) + `Tier` (current hexes, caps 3,000 — seed users already 6–7k). To be replaced by the model below.
 
 **Settled**
-- One hex counter = **current hexes** (live). "Max ever" = vanity stat only.
-- **XP = cosmetics/status only**, never power.
+- **World = Safe.** Solo territory can't be stolen, only decays → **shield/steal-cap system dropped.**
+- Three things, one job each:
 
-**Proposed model — three things, one job each**
 | Thing | Its one job | Earned from |
 |---|---|---|
-| **Hexes** | Territory → map, leaderboard, clan strength, XP income | Solo walking; winning duels/wars |
-| **Trophies** | Competitive rank → divisions/tiers + matchmaking | Duels (win +/ lose −) |
-| **XP / Level** | Cosmetic unlocks | All activity |
+| **Hexes (account)** | Territory → map, leaderboard, clan strength, XP income | Solo collect; net-new captures in duels/wars |
+| **Trophies** | Rank → divisions + matchmaking | Duels/wars (win +, lose −) |
+| **XP / Level** | Cosmetics only (never power) | All activity |
 
-**Modes → what they affect**
-| Mode | You do | Affects |
+- **Divisions sit on Trophies**; matchmaking = same trophy-tier.
+
+**Modes**
+
+| Mode | How it works | Affects |
 |---|---|---|
-| Solo collect | Walk, take neutral/decayed land | +Hexes, +XP, exploration, missions, streak |
-| Matchmade duel | Opt-in 6h race vs skill-matched foe | ±Trophies → division, +XP, cosmetic reward |
-| Clan war | Team vs team | +Clan trophies, clan XP, member contribution |
+| **Solo collect** | Real world, persistent. Walk → take neutral/decayed land → kept (only decay removes it). | +Hexes, +XP, exploration, missions, streak |
+| **Duel** | Opt-in, same-tier, 6h, **fresh 0-start scoreboard** on the same real streets. Every hex walked = duel point (own hexes included, re-collected fresh); hexes never owned before also added to account. Higher score wins. | ±Trophies→division, +XP, cosmetics; +Hexes (net-new only) |
+| **War** | Duel, but clan vs clan. | +Clan trophies, +clan XP, member contribution; +Hexes (net-new only) |
 
-**Open forks (block lock)**
-- **O9 — World safety:** Open (steal by walking through anyone's hex; needs shield + tier-gating) vs **Safe** (PvP only in opt-in duels/wars). *Rec: Safe* — deletes shield system, protects newbies/sleepers free.
-- **O10 — Divisions on Trophies (skill) or Hexes (territory)?** *Rec: Trophies.* Reverses earlier "divisions = hexes" — hex count rewards dense-city geography + hoarding, not skill.
-- **O11 — Duel format:** matched players are in different real places, so a duel = **parallel race** (each captures in own area 6h, more wins), not fighting over shared land. Confirm.
+**Open (block lock)**
+- **O11** — confirm "different map" = separate scoreboard on the *same* real streets (not a second geography).
+- **O12** — duel fairness: same-tier ≠ equal geography/free-time. Accept / match-by-density / **score by net-new only** (rec).
+- **O13** — confirm loss = −trophies (needed for a real ladder).
 
-**Deferred until forks close:** shield numbers (only if Open world), division/XP curves, seed-data fix, XP cosmetic scope.
+**Deferred:** curves (hex→division thresholds, XP→level), seed-data fix, XP cosmetic scope, clan mechanics (entry 02).
 
 ---
 
-## 02 — Clans  ⚪  (clan strength consumes Hexes; clan wars award Clan trophies)
-## 03 — Territory wars  ⚪
+## 02 — Clans  ⚪  (clan strength = members' Hexes; wars award Clan trophies)
+## 03 — Territory wars  ⚪  (mechanics = team duel; see 01)
 ## 04 — XP cosmetics  ⚪
