@@ -101,16 +101,74 @@ _Net-new = a hex **that player** never owned before._
 
 ---
 
+## 🔢 Numbers — v1 starting values (designed to tune with live data)
+
+### 🛡️ Solo defense
+| Param | Value | Why |
+|---|---|---|
+| Per-hex cooldown | **1h** | was 0.0167 (test bug) — stops ping-pong |
+| Steal cap per window (X) | **clamp(20% of your hexes, min 5, max 50)** | can't be wiped |
+| Shield duration | **(stolen ÷ X) × 16h**, min **4h** | adaptive to damage |
+| Shield trigger | when X hit, or 1h after first steal | |
+| Shield burn (you capture while shielded) | **−20 min per hex** captured | attacking ends protection |
+| Starter shield | first **3 days** or until **50 hexes** | newbie ramp |
+| Decay | 7d local … 90d far (unchanged) | the solo antagonist |
+
+### 🏆 Trophy ladder → divisions (replaces hex-based tiers)
+| Tier | Trophy floor | | Per duel |
+|---|---|---|---|
+| Bronze | 0 | | Win **+30** |
+| Silver | 400 | | Lose **−15** |
+| Gold | 1,000 | | Floor-protected: can't drop below current tier |
+| Platinum | 1,800 | | Matchmaking: within **±150 trophies** (~same tier) |
+| Crystal | 2,800 | | First **3 duels** = placement/calibration |
+| Diamond | 4,000+ | | Each tier splits into 4 divisions (I–IV) |
+
+### ✨ XP & Levels
+| Param | Value |
+|---|---|
+| Curve (keep) | `Level = 1 + √(XP/100)` |
+| Sources (keep) | capture +10 · steal +25 · walk +50/km · streak +20/day · all-missions +100 · achievements +25–1000 |
+| **XP income** | walk XP × `(1 + min(0.5, hexes/10000))` — more territory = faster XP **when active** |
+| Pace | ~600 XP/active day → L10 ≈ 2 wks, L20 ≈ 2 mo, L50 ≈ 1 yr |
+
+### 🎨 Cosmetic unlocks (by level + duel/war drops)
+| Level | Unlock |
+|---|---|
+| 1 | Base hex skin + trail |
+| 3 | Hex skin #2 |
+| **5** | **Clan creation** (anti-spam gate) + first trail FX |
+| 8 | Claim animation FX |
+| 10 | Profile frame |
+| 15 | Map theme |
+| 20 | Premium hex skin |
+| — | Seasonal cosmetics from duel/war wins (keeps max-level players earning) |
+
+### ⚔️ Duel / War params
+| Param | Duel | War |
+|---|---|---|
+| Window | 6h | 24h |
+| Frequency | 3/day | clan-scheduled |
+| Members | 1v1 | 5–50 per clan |
+| Bonus hexes | 3–5 @ 5× | 3–5 @ 5× |
+| Matchmaking | same individual division | same clan division |
+
+### ⚙️ Code constants to change (`GameConstants.cs`)
+`CellCooldownHours 0.0167 → 1.0` · retire hex-based `HexTier` as division source → trophy ladder · **add:** `ShieldMaxHours=16, ShieldFloorHours=4, StealCapPct=0.2 (min5/max50), StarterShieldDays=3, ShieldBurnMinPerHex=20, TrophyWin=30, TrophyLoss=15, XpIncomeCapPct=0.5` + division floors · fix seed users to new ladder.
+
+---
+
 ## 📌 Status
 | Entry | State |
 |---|---|
-| 01 Player progression spine | ✅ model locked |
-| 02 Clans | ✅ locked (roles, 50 cap, war≥5, chat v1) |
-| 03 Territory wars | ✅ model locked (v1 = sum of effort; contiguity → v2) |
-| 04 XP cosmetics | 🔵 scope: hex skins, trail FX, claim FX, profile, map theme, level-gated clan-create |
+| 01 Player progression spine | ✅ locked |
+| 02 Clans | ✅ locked |
+| 03 Territory wars | ✅ locked (v1 = sum of effort; contiguity → v2) |
+| 04 XP cosmetics | ✅ locked |
+| 05 Numbers | ✅ v1 starting values (tune with telemetry) |
 
 ## 🚀 Launch
 **Single city: Stockholm.** Every multiplayer system (duels, wars, clans, stealing, leaderboards) needs local density; scattered global = empty map. Note: Turf (Sweden) proves the appetite and is the direct competitor.
 
-## ⏳ Deferred tuning (numbers, after model)
-Shield: X = clamp(% of holdings) + max/floor hours + burn-per-capture · Curves: Hex→division thresholds (raise past 7k), XP→Level · Seed-data fix.
+## ▶️ Next
+Design is complete enough to build v1. Implement on the feature branch, instrument telemetry, and rebalance the Entry-05 numbers from real Stockholm play.
