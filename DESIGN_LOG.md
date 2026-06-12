@@ -1,55 +1,51 @@
 # MyLoop — Design Log
 
-How the game actually works. One subsystem per entry, concise: **how it works → what it affects → open questions.** Mode: **local only, not pushed.**
-Status: 🔵 in progress · 🟢 locked · ⚪ not started.
+How the game actually works. One subsystem per entry, concise: **how it works → what it affects → open.** Mode: **local only, not pushed.**
+Status: 🔵 in progress · 🟢 locked (model) · ⚪ not started.
 
 ---
 
-## 01 — Progression & PvP model  🔵
-
-**Verified now (code):** `Level` (XP, only rises, unlocks nothing) + `Tier` (current hexes, caps 3,000 — seed users already 6–7k). To be reworked.
-
-**Three maps**
-
-| Map | Stealable? | Shield? | Decay? | Persists? |
-|---|---|---|---|---|
-| **Solo** | Yes (neighbors) | **Yes** | Yes | Yes — your real territory |
-| **Duel** | No | No | Resets each duel | Only **net-new** hexes → solo (with decay) |
-| **War** | No | No | Resets each war | Only **net-new** hexes → solo (with decay) |
-
-Duel/war = same real streets, **per-event overlay that resets to 0**; re-walking owned hexes scores for the event; any never-owned hex also lands in solo. Enables 3 duels/day on the same area.
+## 01 — Player progression spine  🟢 model locked (numbers deferred)
 
 **Three things, one job each**
-
-| Thing | Job | Earned from |
+| Thing | Its one job | Earned from |
 |---|---|---|
 | **Hexes (account)** | Territory → map, leaderboard, clan strength, XP income | Solo collect; net-new in duels/wars |
-| **Trophies** | Rank → divisions + matchmaking (same-tier) | Duels/wars (win +, lose −) |
+| **Individual trophies** | Individual division + duel matchmaking (same-tier) | Duels: win +, lose − |
 | **XP / Level** | Cosmetics only (never power) | All activity |
 
-**Settled**
-- Solo = **open world + shield** (shield params re-open: O2/O6 from earlier).
-- Divisions on **Trophies** (rec), not hex count.
-- **Duel AND war = independent capture** (no contention): co-located players, same or rival clan, each capture the same hex for their own score. Score = sum of what each collects.
-- **Live opponent progress** shown during duels/wars (tension without proximity).
+**Three maps**
+| Map | Stealable? | Shield? | Decay? | Persists? |
+|---|---|---|---|---|
+| Solo | Yes (neighbors) | **Yes** | Yes | Yes — real territory |
+| Duel | No | No | Resets each duel | Only **net-new** → solo (w/ decay) |
+| War | No | No | Resets each war | Only **net-new** → solo (w/ decay) |
 
-**Duel/war strategy (depth beyond "collect most")**
-| Lever | Decision it adds | Built? |
-|---|---|---|
-| Loops score big (close loop → interior) | route-planning > raw steps | ✅ exists |
-| Bonus/objective hexes (5× spawns) | detour vs sweep tradeoff | new, easy |
-| Best-of-3 objectives (most hexes / biggest loop / most net-new) | comeback; less density dominance | new (defer past v1) |
-*Rec for v1: loops + bonus hexes + live bar. Skip best-of-3 initially.*
-
-**Open (block lock)**
-- **O13 — War team strategy:** independent+sum = no coordination. Add clan **contiguity/coverage bonus** so being a team matters? Or accept wars = sum of solo effort?
-- **O14 — "net-new"** = hex the *player* never owned (assumed) — confirm.
-- **O15 — Loss = −trophies?** confirm (needed for ladder).
-
-**Deferred:** shield numbers (solo), curves (hex→division, XP→level), seed fix, XP cosmetic scope, clans (entry 02).
+**Duel** — opt-in, same-tier, 6h, **fresh 0-start** overlay on real streets; independent capture (no contention); re-walking owned hexes scores; **net-new = a hex the player never owned** → added to solo. Live opponent progress shown. Win/lose ±individual trophies.
+**Strategy levers** (also used in wars): loops score big (close loop → interior; ✅ built) · bonus/objective hexes (5× spawns) · best-of-3 objectives (defer past v1).
 
 ---
 
-## 02 — Clans  ⚪  (clan strength = members' Hexes; war = team duel, shared map)
-## 03 — Territory wars  ⚪  (see 01 — shared contested overlay)
-## 04 — XP cosmetics  ⚪
+## 02 — Clans  🔵
+
+- Create/join; roles Leader/Officer/Member; clan chat.
+- **Clan strength = members' Hexes** (drives clan leaderboard).
+- **Clan trophies + clan division** ← wars (win +, lose −) → war matchmaking by clan division. *Independent of individual trophies.*
+- **Open:** min level to create (anti-spam), max members, invite/kick rules, chat scope. → next session.
+
+## 03 — Territory wars  🔵
+
+- = **team duel**: independent capture, 0-start reset overlay, net-new → solo (w/ decay), strategy levers apply.
+- **Affects:** clan trophies/division (win/lose); each member gets **+XP + net-new hexes only** (NOT individual trophies).
+- **v1 = sum of members' effort** (no contiguity — unusable at launch density).
+- **Deferred to v2:** clan **contiguity bonus** (connected member territory) — gated on local density / single-city launch.
+
+## 04 — XP cosmetics  ⚪  (scope: hex skins, trail, claim FX, profile, map theme, level-gated clan create)
+
+---
+
+## Launch strategy (recommendation)
+- **Launch single-city: Stockholm.** All multiplayer (duels, wars, clans, stealing, leaderboards) + future contiguity require local density. Scattered global launch = empty map. Note: Turf (Sweden) = proven appetite + direct competitor.
+
+## Deferred tuning (numbers, after model)
+Shield: X = clamp(% of holdings), max/floor hours, burn-per-capture · curves: Hex→division thresholds (raise past 7k), XP→Level · seed-data fix.
