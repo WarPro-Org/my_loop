@@ -1,236 +1,210 @@
-# MyLoop — Roadmap & Product Plan (V1→V3)
+# MyLoop — Feature Roadmap (V1 → V3)
 
-Single source of truth. **Rule:** every version hooks the **solo** player (empty city) *and* the **multiplayer** player (dense city).
-Build-state tags reflect a real scan of `/api` and `/mobile`. ✅ built · 🟡 data exists, UX missing · ⚠️ launch-blocker · 🔴 new.
+**What MyLoop is:** a walking game. You walk in the real world, the hexagons you pass through become your territory. Play **solo** to build your own empire, or join a **clan** to conquer land as a team.
 
----
+This doc is **feature-only**: what each feature is, how it works, who it's for, and when it ships.
 
-## 1. Version overview
-
-| | **V1 — Foundation** | **V2 — Sticky & Shareable** | **V3 — Living World** |
-|---|---|---|---|
-| **Goal** | Fun solo, multiplayer-ready | Retention + organic growth | Density-driven depth |
-| **Solo hook** | Explore + fight decay | Weekly recap + routes | Seasons + mastery |
-| **Multi hook** | Steal/defend + local board | Rivalries + country board | Teams + territory wars |
-| **Headline** | Light up your map (fog-of-war) | Shareable loop cards | Seasons |
+**Legend** — Who it's for: 🧍 Individual · 👥 Clan (team) · 🔀 Overlapping (both).
+Build: ✅ built · 🟡 partly built · 🔴 new.
 
 ---
 
-## 2. Core loop (V1)
-
-```mermaid
-flowchart LR
-    A[Start Walk] --> B[Capture hexes live]
-    B --> C{Close a loop?}
-    C -- yes --> D[Fill whole area]
-    C -- no --> E[Keep trail hexes]
-    D --> F[Finish: XP + streak + map %]
-    E --> F
-    F --> G{Neighbor nearby?}
-    G -- no --> H[Solo: fog %, decay, tiers]
-    G -- yes --> I[Multi: steal, defend, rank]
-    H --> A
-    I --> A
-```
-
----
-
-## 3. Feature → Version → Mistake solved
-
-| Feature | Solo/Multi | Ver | Mistake it kills | Who made it |
-|---|:--:|:--:|---|---|
-| Real-time capture (active walk) | Both | V1 | Battery murder; 24/7 tracking creep | All GPS games |
-| Close-the-loop area capture | Both | V1 | No "wow"; trail-only is flat | Strava |
-| **Fog-of-war exploration %** | Solo | V1 | **Dead zones / needs density** | Pokémon GO, Ingress |
-| Territory decay | Solo | V1 | "Claimed all → done" plateau | Collection games |
-| Streaks + grace day | Solo | V1 | Streak anxiety → churn | Duolingo |
-| Daily missions (solo-completable) | Solo | V1 | Goals needing other players | Turf |
-| Achievements / XP / tiers | Solo | V1 | Pay-to-win progression | Many F2P |
-| Steal & defend (real cooldown) | Multi | V1 | Territory flips = chaos / needs density | Turf, Ingress |
-| **Local leaderboard first** | Multi | V1 | Empty global board demotivates | Pre-density games |
-| Solo + multi notifications | Both | V1 | Spam / solo player never pinged | Most apps |
-| Teach-by-doing onboarding | Both | V1 | Tutorial never teaches core loop | Most games |
-| Licensed map tiles | Infra | V1 | ToS break / cost blowup | (tile scraping) |
-| Weekly recap | Solo | V2 | No weekly reason to return | — |
-| Shareable loop card | Growth | V2 | No organic acquisition loop | — |
-| Suggested routes | Solo | V2 | "Where do I even walk?" friction | Niantic |
-| Rivalries / revenge | Multi | V2 | No recurring opponent = no grudge | — |
-| Country leaderboard | Multi | V2 | Scales competition post-density | — |
-| Seasons / resets | Both | V3 | Veterans lock out newcomers | Ingress, MMOs |
-| Teams / alliances | Multi | V3 | No cooperation hook | — |
-| Territory wars | Multi | V3 | No high-status set pieces | — |
-| Prestige / mastery | Solo | V3 | No end-game for grinders | — |
-
----
-
-## 4. V1 features — how they work
-
-| Feature | How it works | Alone → Dense | Build |
-|---|---|---|---|
-| **The Walk** | Tap Start → walk → hexes turn yours live → Finish summary | Free land → contested | 🟡 (bg unbuilt) |
-| **Close the Loop** | Curve back to start → whole enclosed area fills | Solo land-grab → swallow rival cluster | ✅ |
-| **Fog-of-war** | Map starts dark; walking reveals it permanently; complete neighborhoods | **Main goal** → side goal | 🟡 |
-| **Decay** | Owned hexes fade over days; re-walk to refresh; push before expiry | Your antagonist → rivals grab fading land | ✅ / 🟡 push |
-| **Streaks** | Daily walk = streak; 1 grace day absorbs a miss | Pure solo | ✅ / 🔴 grace |
-| **Missions** | 3 solo-completable goals/day + all-3 bonus | Pure solo | ✅ (dup bug) |
-| **XP/tiers** | Walking earns XP→levels→tier badge; achievements | Pure solo status | ✅ |
-| **Steal/defend** | Walk through rival hex = steal; cooldown shields fresh claims | Silent → core conflict | ✅ (config) |
-| **Local board** | Rank vs nearby players; "#1 in your area" even at low density | Self/area → real ladder | ✅ |
-| **Notifications** | Solo: decay/explore. Multi: stolen/rank-drop | Solo still pinged | ✅ / 🟡 |
-| **Onboarding** | Guided real first walk + first loop, not a slideshow | Same | 🟡 |
-
----
-
-## 4b. V2 features — how they work
-
-| Feature | How it works | Alone → Dense | Build |
-|---|---|---|---|
-| **Weekly recap** | Sunday summary: km walked, hexes, new areas, tier progress | Solo ritual → + social comparison | 🔴 (from existing data) |
-| **Shareable loop card** | Export an image of your loop + captured area to share | Brag solo → flex a rival win | 🔴 |
-| **Fog-of-war (full mode)** | Promote exploration from card to a first-class map mode | Headline solo goal | 🟡 |
-| **Suggested routes** | "1.2 km loop near you captures ~25 hexes" | Removes "where do I walk?" | 🔴 |
-| **Rivalries / revenge** | "PlayerX took 12 hexes from you this week" → reclaim list | n/a → recurring grudge loop | 🟡 (`CellTransfer` exists) |
-| **Country leaderboard** | Expand scope beyond local once density supports it | n/a → wider ladder | ✅ |
-| **Player profiles** | View another player's stats/territory/tier | n/a → social proof | 🟡 |
-| **"Near your turf" alert** | Push when a rival is active by your land | n/a → defend-now urgency | 🔴 |
-| **Anti-cheat hardening** | Tighten spoof detection before competition scales | Both | ✅ → harden |
-
----
-
-## 4c. V3 features — how they work
-
-| Feature | How it works | Alone → Dense | Build |
-|---|---|---|---|
-| **Seasons / resets** | Periodic territory reset; fresh goals + season rewards | Fresh solo goals → everyone re-competes | 🔴 |
-| **Teams / alliances** | Join a neighborhood team; pooled territory | n/a → cooperation hook | 🔴 |
-| **Territory wars** | Timed events to contest a zone together | n/a → high-status set piece | 🔴 |
-| **Prestige / mastery** | Post-max-tier mastery tracks for grinders | Solo end-game | 🔴 |
-| **Personal challenges/quests** | Renewable solo objectives ("explore 5 areas this week") | Solo content tap | 🔴 |
-| **Friends / light social** | Follow players, compare, light social graph | n/a → relationship retention | 🔴 |
-
----
-
-## 5. Genre mistakes we design against
-
-| # | Mistake | Antidote |
-|---|---|---|
-| M1 | Dead zones (nothing where you live) | Fog-of-war + decay + tiers (zero players needed) |
-| M2 | Requires density to be fun | Graceful density degradation (§7) |
-| M3 | Battery murder | Capture only during explicit walk; tuned GPS |
-| M4 | Onboarding never teaches the loop | First session = real capture + real loop |
-| M5 | Streak anxiety → churn | Grace day / freeze |
-| M6 | Empty leaderboard demotivates | Local scope; always a meaningful standing |
-| M7 | Pay-to-win | Progression earned only by walking |
-| M8 | Spoofing ruins competition | Local boards + server anti-cheat |
-| M9 | Annoying/empty notifications | Every alert earned + personal |
-| M10 | Fake players | Never fake presence; seeded land labeled neutral |
-| M11 | Progress lost on bad network | Offline write-ahead-log (already built) |
-| M12 | Safety/liability ignored | Safety nudges + clear terms |
-
----
-
-## 6. Player journey (V1)
-
-```mermaid
-flowchart LR
-    S1[Session 1: capture + first loop + 'light your map' goal] --> D1[Day 1-3 solo: missions, fog %, decay, tiers]
-    D1 --> D4[Day 4: rival steals → push → reclaim]
-    D4 --> D7[Day 7: streak 7, '#2 in area', 80% explored]
-    D7 --> D14[Day 14: tiers climbing + rivalry + 2nd neighborhood]
-```
-
-Hooked solo first (M1/M2 killed); multiplayer arrives **additively**, never required.
-
----
-
-## 7. Density behavior
-
-| Feature | Alone | Dense |
-|---|---|---|
-| Map | Canvas, fog reveals | Live battlefield |
-| Capture | Free land | Contested land |
-| Decay | Your antagonist | Rivals grab fading land first |
-| Leaderboard | "#1 in area" / vs past-you | Real ladder |
-| Steal/defend | Silent (no fakes) | Core conflict |
-| Explore % | Main goal | Side goal |
-
-> Hard rule: **never fake players.** Neutral seeded land = ok; fake live rivals = no.
-
----
-
-## 8. Build state & launch-blockers
+## 1. The two ways to play
 
 ```mermaid
 flowchart TD
-    subgraph Built ✅
-      X1[Loop capture] --- X2[Decay+cleanup]
-      X3[Missions/XP/achievements/streaks] --- X4[Steal/leaderboard/SignalR/FCM]
-      X5[Offline claim queue]
-    end
-    subgraph UX missing 🟡
-      Y1[Fog-of-war] --- Y2[Decay push] --- Y3[Onboarding tutorial]
-    end
-    subgraph Blockers ⚠️
-      Z1[Background capture unbuilt] --- Z2[Cooldown=1min]
-      Z3[Dup missions: no constraint] --- Z4[SignalR authz leak] --- Z5[Keyless tiles]
-    end
+    P[Player walks] --> H[Captures hexes]
+    H --> SOLO[🧍 Solo: my territory, my rank, my tier]
+    H --> CLAN[👥 Clan: our territory, our rank, our wars]
+    SOLO -. same hex counts for both .-> CLAN
 ```
 
-| ⚠️ Blocker | Where | Fix |
-|---|---|---|
-| Background capture unbuilt | `location_service.dart:69`; no Android loc perms/service | Foreground-service model, or honest foreground-only |
-| Cooldown = 1 min "test" | `GameConstants.cs:21` | Real value (hrs), config-driven |
-| Duplicate daily missions | `AppDbContext.cs:94`, `MissionService.cs:66` | `UNIQUE(UserId,Date,Type)` |
-| SignalR group data leak | `TerritoryHub.cs:36` | Reject caller ≠ userId |
-| Keyless map tiles | `journey_screen.dart:676` | Self-host Protomaps or keyed free tier |
-| Stats divergence ("hex discrepancy") | `userProfileProvider` vs `profileSlice` | One SSOT slice; re-home SignalR to auth scope |
+A captured hex is **always yours personally** — and if you're in a clan, it **also** counts toward the clan. One walk, two kinds of progress.
 
 ---
 
-## 9. Failure modes (market)
+## 2. Feature map — individual / team / overlapping
 
-| Risk | Mitigation |
-|---|---|
-| Empty city → churn | Solo-complete game (fog-of-war, decay, tiers) |
-| Background tracking rejected / battery | Explicit visible "active walk", foreground service |
-| Spoofers ruin leaderboard | Local scope early + anti-cheat |
-| Safety/liability | Terms + safety nudges, no reward for reckless routes |
-| Battery drain | Tuned GPS, no bg map refresh |
-| Cost runaway | No Google Maps (done); cache geocoding; self-host tiles |
+| Feature | 🧍/👥/🔀 | One-line |
+|---|:--:|---|
+| Real-time capture (the walk) | 🔀 | Walk → hexes turn yours live |
+| Close-the-loop area capture | 🔀 | Close a loop → grab everything inside |
+| Visible map | 🔀 | See neutral, your, rival & enemy-clan land |
+| Personal territory & decay | 🧍 | Your hexes fade if you don't re-walk |
+| Steal & defend | 🔀 | Walk through a rival hex to take it; cooldown protects fresh claims |
+| Streaks | 🧍 | Daily walking streak (with grace day) |
+| Daily missions | 🧍 | 3 small goals/day |
+| Achievements | 🧍 | Long-term milestones |
+| Player XP / level / tier | 🧍 | Personal progression |
+| Player leaderboard | 🧍 | Rank vs nearby players |
+| **Clan** (create/join) | 👥 | Team you belong to |
+| **Clan chat** | 👥 | Talk & coordinate |
+| **Clan territory** | 👥 | Land your members hold together |
+| **Clan XP / level / tier** | 👥 | Team progression |
+| **Clan leaderboard** | 👥 | Clan vs clan |
+| **Clan missions** | 👥 | Shared team goals |
+| **Territory wars** | 👥 | Two clans fight over a zone, winner takes it |
+| Notifications | 🔀 | Personal + clan events |
 
 ---
 
-## 10. Cost to run ≈ $0/mo
+## 3. How each feature works
 
-| Component | Free option |
-|---|---|
-| API + Postgres + SignalR | Oracle Cloud Always-Free VM (self-host all) |
-| Push (FCM) / Auth (Firebase) | Free tier |
-| Map tiles | Self-host Protomaps PMTiles, or MapTiler keyed free tier |
-| Geocoding | Nominatim (cache hard) early |
-| **Unavoidable** | Apple $99/yr · Google $25 once |
+### 3a. Individual & overlapping features
 
----
+| Feature | What it is | How it works | Build |
+|---|---|---|---|
+| **The Walk** 🔀 | Capture hexes by walking | Tap Start → walk → each hex you enter turns yours live → tap Finish for a summary. Works offline (syncs later). | 🟡 |
+| **Close the Loop** 🔀 | Area capture | Walk back near your start → the whole enclosed area fills with your color at once. | ✅ |
+| **Visible map** 🔀 | The game board | Full map always visible. Color-coded: ⬜ neutral (grab it), 🟩 yours, 🟥 rival player, 🟦 your clan, 🟧 enemy clan. | 🟡 |
+| **Decay** 🧍 | Land needs upkeep | Your hexes slowly fade; re-walk to refresh. Fully faded = released. Push reminder before they expire. | ✅ |
+| **Steal & defend** 🔀 | Take rival land | Walk through a rival's hex = it's yours. Freshly claimed hexes get a cooldown shield so they can't be instantly re-taken. | ✅ |
+| **Streaks** 🧍 | Daily habit | Walk on consecutive days → streak grows. One grace day absorbs a miss. | ✅ |
+| **Daily missions** 🧍 | Bite-size goals | 3 goals/day (capture X, walk Y, etc.) + bonus for all 3. | ✅ |
+| **Achievements** 🧍 | Milestones | Unlock badges for lifetime stats (distance, captures, streak…). | ✅ |
+| **Player leaderboard** 🧍 | Personal rank | Ranked vs nearby players; always shows a meaningful standing. | ✅ |
 
-## 11. Roadmap sequence
+### 3b. Clan (team) features
+
+| Feature | What it is | How it works | Build |
+|---|---|---|---|
+| **Clan** 👥 | Your team | Create or join a clan. Roles: **Leader · Officer · Member**. Leader/officers invite, kick, declare wars. | 🔴 |
+| **Clan chat** 👥 | Team comms | In-app chat for the clan; coordinate walks & wars. | 🔴 |
+| **Clan territory** 👥 | Shared land | Every hex a member holds counts as clan land. Shown as one color on the map. Clan area = sum of members' territory. | 🔴 |
+| **Clan missions** 👥 | Shared goals | Weekly team objectives ("clan captures 1,000 hexes") → clan XP + rewards. | 🔴 |
+| **Clan leaderboard** 👥 | Clan vs clan | Clans ranked by clan XP / territory / wars won. | 🔴 |
+| **Territory wars** 👥 | Team battle | See below. | 🔴 |
+
+### 3c. Territory wars (V1) — how a war works
 
 ```mermaid
 flowchart LR
-    B[Fix 5 blockers] --> V1[V1 Foundation\nsolo-complete + light multi]
-    V1 --> V2[V2 Sticky\nrecap + share + rivalries]
-    V2 --> V3[V3 Living World\nseasons + teams]
+    D[Leader declares war on a zone] --> W[War window opens e.g. 24h]
+    W --> M[Both clans' members walk & capture hexes in the zone]
+    M --> S[Live score: hexes held by each clan]
+    S --> E[Window closes]
+    E --> V{Most hexes held?}
+    V -- Clan A --> RA[Clan A wins zone + big clan XP + rewards]
+    V -- Clan B --> RB[Clan B wins zone + big clan XP + rewards]
 ```
 
-**V1 gate:** solo player has 2 weeks of goals with zero neighbors **and** conflict works when neighbors exist.
+- A **zone** = a defined map region. A leader/officer declares war (or accepts a challenge).
+- During the window, members of both clans race to **capture and hold** hexes in that zone.
+- The clan **holding the most hexes** when time runs out **wins** the zone, plus a clan-XP payout and bragging rights.
+- Individual captures during a war **also** earn the member their normal personal XP.
 
 ---
 
-## 12. Open decisions (block V1 lock)
+## 4. Stats we track
 
-| # | Decision | Recommendation |
+### 4a. Per **player** (most already built)
+| Stat | Meaning | Built |
 |---|---|---|
-| 1 | Background vs foreground capture | Honest foreground-only if bg not reliable in ~1 mo |
-| 2 | Decay speed (solo) | Moderate; tunable without redeploy |
-| 3 | Leaderboard default scope | Smallest unit with ≥2 players |
-| 4 | Streak forgiveness | 1 grace day |
-| 5 | Onboarding requires closing a loop? | Strongly guide, don't hard-require |
+| Hex count | Hexes you currently own | ✅ |
+| Total captured | Lifetime hexes captured | ✅ |
+| Total stolen | Hexes taken from others | ✅ |
+| Distance walked | Lifetime km | ✅ |
+| Streak / max streak | Current & best daily streak | ✅ |
+| XP / Level / Tier | Personal progression | ✅ |
+| Achievements | Unlocked count | ✅ |
+| Rank | Position on leaderboard | ✅ |
+| **Clan contribution** | Hexes/XP you added to your clan | 🔴 |
+
+### 4b. Per **clan** (new)
+| Stat | Meaning | Built |
+|---|---|---|
+| Members | Count + roster | 🔴 |
+| Clan territory | Total hexes/area held by members | 🔴 |
+| Clan XP / Level / Tier | Team progression | 🔴 |
+| Wars won / lost | War record | 🔴 |
+| Clan rank | Position vs other clans | 🔴 |
+| Weekly activity | Members' km + captures this week | 🔴 |
+| Founded / Leader | Identity | 🔴 |
+
+---
+
+## 5. How XP works
+
+### 5a. Player XP — what earns it (values from current code)
+| Action | XP |
+|---|---|
+| Capture a hex | +10 |
+| Steal a hex | +25 |
+| Walk 1 km | +50 |
+| Active streak (per day) | +20 |
+| Complete a mission | varies |
+| Complete all 3 daily missions | +100 |
+| Unlock an achievement | varies |
+
+**Level** rises as total XP grows (each level needs more than the last). Level + hex count set your **Tier badge**.
+
+### 5b. Clan XP — what earns it (new design)
+| Action | Clan XP |
+|---|---|
+| Any member captures a hex | small share to clan |
+| Member steals from an **enemy clan** | bonus |
+| Win a **territory war** | large |
+| Complete a **clan mission** | medium |
+
+**Clan Level / Tier** rises with clan XP — unlocks more members, more simultaneous wars, clan perks.
+
+---
+
+## 6. Progression: noob → advanced
+
+### Player journey
+```mermaid
+flowchart LR
+    N[Noob\nLvl 1, Bronze\nfirst walks & loops] --> R[Regular\nstreak + missions\njoins a clan]
+    R --> V[Veteran\nbig territory, steals\ncontributes to clan]
+    V --> E[Advanced/Elite\ntop rank, leads wars\nhigh tier]
+```
+
+### Clan journey
+```mermaid
+flowchart LR
+    NC[New clan\nfew members\nsmall land] --> GC[Growing\nclan missions\nfirst war]
+    GC --> EC[Established\nbig territory\nwar wins]
+    EC --> DC[Dominant\ncontrols regions\ntop clan board]
+```
+
+*(Tier names are placeholders — Player: Bronze→…→Elite · Clan: Squad→Crew→Faction→Empire. Final names TBD.)*
+
+---
+
+## 7. What players need to **share** (collaboration)
+
+| Shared thing | Who shares it | Why |
+|---|---|---|
+| Clan territory | All members | One pooled map presence |
+| Clan chat | All members | Coordinate walks & wars |
+| Clan XP / Level | All members | Everyone's captures level up the clan |
+| Clan missions | All members | Team goal, split the work |
+| Territory wars | All members | Win by capturing together in the zone |
+
+---
+
+## 8. Version rollout
+
+| Feature | V1 | V2 | V3 |
+|---|:--:|:--:|:--:|
+| Real-time capture, loops, visible map | ● | | |
+| Personal territory, decay, steal/defend | ● | | |
+| Streaks, missions, achievements, player XP/tiers | ● | | |
+| Player leaderboard (local) | ● | | |
+| **Clans: create/join, roles, chat** | ● | | |
+| **Clan territory + clan XP/level** | ● | | |
+| **Territory wars** | ● | | |
+| Clan missions | | ● | |
+| Clan leaderboard (clan vs clan) | | ● | |
+| Rivalries / revenge, player profiles | | ● | |
+| Country leaderboard, shareable cards, weekly recap | | ● | |
+| Seasons / resets | | | ● |
+| Alliances (clans team up), prestige/mastery | | | ● |
+| Friends / social graph | | | ● |
+
+> **Co-founder note (honest):** clans + territory wars are *multiplayer* features — they shine when players are nearby and fade in an empty city. So V1 **keeps the full solo set** (capture, decay, streaks, missions, tiers) so a lone player still has a complete game, while clans/wars switch on the moment a second player shows up. That's how we win both the empty city and the packed one.
+
+---
+
+*Build-state tags reflect the current codebase. Items marked 🔴 are the new work for V1 clans + wars.*
