@@ -6,58 +6,40 @@
 
 ---
 
-## 📌 Part 0 — Strategy & the "Why" (living log — nothing final unless ✅)
+## 📖 Part 0 — The Decision Story (how we got here & why)
 
-> How we decide direction: what we chose, what we rejected, **why** — grounded in why other apps failed.
+> Read top to bottom — each choice builds on the last. **✅ = locked.** This is the *why*; the *how* (mechanics) follows below.
 
-**🧭 North star (proposed):** **"Claim your city."** A hyper-local, competitive, crew-based land-grab — your real neighbourhood is the board; your conquered map is your flag.
+**1 · The starting question.** A walking game where you capture real-world hexagon territory — but *who is it for, and why would anyone download it?* Everything below answers that.
 
-**Identity ✅ (re-evaluated & LOCKED 2026-06):** competitive **GAME** first; **fitness = free outcome** we advertise but never design around (Pokémon GO trojan-horse model). "Serve both audiences" rejected as *positioning* → mush.
-- _Re-checked vs fitness-first:_ fitness-walking is a bloodbath owned by Apple/Strava/Fitbit with hardware+data moats a solo founder can't beat; game is a lane they won't enter → **defensible** blue ocean, higher ceiling, fits founder energy.
-- _The condition that makes game safe:_ v1 core is **solo-playable** → neutralises the game direction's only fatal weakness (density). _If it needed a crowd on day 1, we'd flip to fitness. It doesn't._
-- _Bonus:_ the v1 solo spine is also a cheap experiment — real behaviour reveals whether users lean conquer vs get-fit, instead of guessing.
+**2 · Game or fitness? → GAME ✅.** You can't design for competitive gamers *and* wellness walkers — serving both softens the competition into mush no one can describe in a sentence. We chose **game**; *fitness is a free side-effect we advertise but never design around* (Pokémon GO's trick — fitness as trojan horse, not pitch). **Why game beat fitness** (re-checked, not assumed): fitness-walking is owned by Apple/Strava/Fitbit behind hardware+data moats a solo founder can't break; the competitive-territory lane is one they *won't* enter → defensible blue ocean, higher ceiling, and what the founder actually wants to build for years. **The catch we had to clear:** a competitive game dies with no one nearby — so the core *had* to be **solo-playable** (collect/loop/decay alone; stealing layers on with neighbours). It is. *If it weren't, we'd have chosen fitness.*
 
-**Emotional core (proposed):** hexes ≠ Pokémon (no borrowed love), so we **manufacture** emotion from 3 feelings needing no IP:
-1. **"My streets"** — ownership of real places (territorial instinct, older than any IP).
-2. **"Someone near me wants them"** — local rivalry = built-in word-of-mouth.
-3. **"Look at my map"** — your colour spreading across the real world = the shareable flex (Strava-heatmap effect).
+**3 · But nobody loves a hexagon.** Pokémon GO loaded 20 years of fandom into its install button; we have shapes. **The reframe:** territory games never ran on loving the *collectible* — Risk, Civ, Clash, Monopoly run on **owning, winning, "this is MINE."** So we don't sell the hex; we **manufacture** emotion from three feelings that need no IP — **"my streets"** (ownership) · **"someone near me wants them"** (rivalry) · **"look at my map"** (your colour spreading = the shareable flex). The hex is just the pixel the feeling is painted on.
 
-### 📉 Why others failed — what we copy / avoid
+**4 · Is the audience too small? → No, that's a myth ✅** (researched). Mobile gaming ≈ 3B people, ~52% women, avg age ~36, mostly casual — not lazy shut-ins. Pokémon GO ($6.3B lifetime, still ~$500M/yr) converted *tens of millions of normal people* who were neither gamers nor fitness buffs. **Size was never the risk — retention is.** Harry Potter: Wizards Unite had a top-3 IP and still died in 2 years, killed by *complexity + weak retention*, not audience. **We have no IP → even less margin → simple + sticky is survival, not preference.**
+
+**5 · The flag → "Claim your city." ✅** Hyper-local, competitive, crew-based land-grab: your real neighbourhood is the board; your conquered map is your flag.
+
+**6 · Money? → Prizes ignite, never sustain ✅.** No move-to-earn (StepN's per-step value bred bots → ponzi → collapse). A one-off **sponsored** prize ("King of the City") is allowed *only* as a launch spark to manufacture density — never ongoing (overjustification effect trains mercenaries and crowds out the real emotion), and only once anti-cheat can defend it.
+
+**7 · How much to ship? → One simple spine, then layer by density ✅.** The proven killers are complexity and empty maps. Ship the smallest complete loop; add the rest **as the city fills**: **v1 spine → v2 duels + clans → v3 wars.** Never ship a layer the map is too empty to support.
+
+**8 · The v1 core → 3 verbs ✅.** **Collect · Steal · Close-a-loop-to-capture-everything-inside.** Decay, shield, local leaderboard, missions, streak exist only to *support* these three.
+
+**9 · The real bet → density, not features.** All of the above only ignites if we put enough players *near each other*. Mechanics are done; this is what's actually unsolved → **the open question we tackle next: which Stockholm pocket, and the first 50.**
+
+### 📉 Evidence: the graveyard (why others failed)
 | App | Got right | Why it failed / stayed small | Our move |
 |---|---|---|---|
-| Pokémon GO | IP emotion, social, simple verb | rural dead zones; needs IP + huge content | density-first; manufacture emotion (no IP) |
-| Ingress | deep, devoted core | complex, hardcore-only, no acquisition hook | dead-simple onboarding |
-| **Turf** | our exact mechanic, fanatics | no emotional wrapper / acquisition → tiny for 10 yrs | identity + rivalry + word-of-mouth |
-| **StepN** (move-to-earn) | explosive growth | crypto ROI loop → bots/mercenaries → ponzi collapse | **never tie play to per-action money** |
-| Strava | identity + heatmap flex + social | premium fatigue; not a game | steal the heatmap flex, skip the paywall core |
-| Pikmin Bloom | cozy, broad reach | shallow, low stakes, forgettable | stakes + rivalry drive retention |
-| Zombies, Run! | loyal narrative niche | solo, narrow, no competition | social + competition over solo story |
+| Pokémon GO | IP emotion, social, simple verb | rural dead zones; needs IP + content | density-first; manufacture emotion |
+| Ingress | deep core | complex, hardcore-only, no hook | dead-simple onboarding |
+| **Turf** | our exact mechanic | no emotional wrapper → tiny for 10 yrs | identity + rivalry + word-of-mouth |
+| **StepN** | explosive growth | per-step money → bots → ponzi collapse | never tie play to money |
+| Strava | heatmap flex + social | not a game; premium fatigue | steal the flex, skip paywall core |
+| Wizards Unite | top IP, big launch | too complex, weak retention → dead in 2 yrs | simple + sticky |
 
-### 🎯 Why our gamble is *better* (not safer — better)
-- **Blue ocean:** all walking energy is cozy/wellness; nobody owns competitive-local-tribal walking.
-- **We design around the exact killers others ignored:** density (city-first), cold-start (ghost duels), hardcore-lapping (tiers/shields/divisions), the money trap (no tokens).
-- **Emotion is manufactured, not borrowed** → repeatable in any city, unlike Pokémon's IP dependence.
-- **Asymmetric bet:** ~$0 to test one city · bounded downside · whole-category upside · founder-market fit.
-
-### 🔎 Audience reality check (researched 2026-06)
-**Worry tested:** "gamers won't go outside, fit people won't game → audience = tiny intersection." **Verdict: that Venn framing is a myth — size isn't the risk, retention is.**
-- Mobile gaming ≈ **3B people, ~52% women, avg age ~36, 44% casual** — not lazy male shut-ins (that's hardcore PC/console, not us).
-- **Pokémon GO proves conversion:** ~$6.3B lifetime, still ~$500M/yr, tens of millions walking — most neither "gamers" nor "fitness people." Audience is *created*, not a pre-existing sliver.
-- **Graveyard is real:** Harry Potter: Wizards Unite had a top-tier IP and **shut down in 2 yrs** (earned in its whole run ≈ what PoGo makes in a month). Cause = weak retention + **too complex** + narrative-not-sandbox + outdoor friction — **not** audience size or brand.
-
-**Decisions reinforced:** (1) stop second-guessing TAM — it's huge; win **density + retention**. (2) **Simple beats complex** → validates v1 = one spine, not 3 modes. (3) **Sandbox beats narrative** → territory sandbox is right. (4) Sobering: **we have no IP** → *less* margin than games that died → must be simpler + stickier than they were.
-
-### 🔴 The real bet = density, not features
-Mechanics are done; life/death is **manufacturing a dense pocket** — rivalry, clans, and the emotion itself only switch on with people nearby. Plan: seed **one tight community** (campus / run club / Discord / one Stockholm district) so density is instant on day one.
-
-### 💸 Money & prizes (decision)
-- ❌ **Move-to-earn / per-action value** (money or tokens per hex) — banned. The StepN trap: farmers/bots → ponzi → collapse.
-- ✅ **Finite, sponsored event prizes** (e.g. a Stockholm shoe shop sponsors "King of the City") — allowed as a **one-off acquisition/ignition tactic only**. _Gated:_ (1) real anti-cheat first (a real prize = a real spoof incentive), (2) reward more than just #1 (raffle above a threshold / per-division / most-improved) so casuals keep hope.
-- ⚠️ **Prizes are ignition, NOT identity.** Use a one-off event to spark density, then step back. Retention must be **intrinsic** (own your city, beat rivals, flex your map). Recurring reliance on prizes = red flag the core hook failed — **overjustification effect**: extrinsic rewards crowd out the very emotion we're manufacturing.
-- **The line:** "occasional prize to bootstrap density" ✅ vs "earn value every step" ❌ vs "prizes as ongoing retention" ❌.
-
-### 🔵 Open
-First 50 players + which dense pocket · anti-cheat hardening before any real-prize contest · final emotional-core wording.
+### 🔵 Still open
+**Which dense Stockholm pocket + the first 50 players** · anti-cheat before any real-prize contest · final emotional-core wording.
 
 ---
 
