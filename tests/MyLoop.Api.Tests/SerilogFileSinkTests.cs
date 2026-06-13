@@ -15,9 +15,9 @@ public class SerilogFileSinkTests
     [Fact]
     public void File_sink_writes_json_lines_carrying_the_trace_id()
     {
-        var dir = Path.Combine(Path.GetTempPath(), "myloop-log-test-" + Guid.NewGuid().ToString("N"));
+        var dir = Path.Join(Path.GetTempPath(), "myloop-log-test-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
-        var path = Path.Combine(dir, "test-.log");
+        var path = Path.Join(dir, "test-.log");
 
         try
         {
