@@ -6,25 +6,46 @@
 
 ---
 
-## 📌 Part 0 — Strategy & the "Why" (living log — in progress, nothing final unless ✅)
+## 📌 Part 0 — Strategy & the "Why" (living log — nothing final unless ✅)
 
-> Records **how** we're deciding the app's direction: what we considered, what we chose, what we rejected and **why**. Updated as we discuss.
+> How we decide direction: what we chose, what we rejected, **why** — grounded in why other apps failed.
 
-**The questions we're answering:** who is this for · why would anyone download it · what do they get · game or fitness · how it grows launch → future.
+**🧭 North star (proposed):** **"Claim your city."** A hyper-local, competitive, crew-based land-grab — your real neighbourhood is the board; your conquered map is your flag.
 
-### Topic 1 — Identity: game-first or fitness-first? _(leaning, not locked)_
-- **Considered:** serve both audiences — competitive gamers *and* wellness walkers.
-- **Rejected:** "both" as **positioning**. Designing/marketing for both forces us to soften the competition → product becomes mush (gamers find it limp, wellness users still find it stressful, marketing can't describe it in one line).
-- **Leaning:** **competitive territory game first**; fitness is a **free outcome** we can advertise but never design around — the Pokémon GO model (fitness = trojan horse, not the pitch). _Reason:_ matches founder excitement; blue ocean (rest of walking is going cozy/wellness).
-- **Price if we commit:** narrower, denser, younger audience · Stockholm-first · not courting the wellness mass-market at launch.
-- **Known trap + our guard:** hardcore players lapping casuals (this keeps Turf tiny) → guarded by tier matchmaking, ghost duels, shields, divisions.
+**Identity (leaning):** competitive **game** first; **fitness = free outcome** we advertise but never design around (Pokémon GO trojan-horse model). "Serve both audiences" rejected as *positioning* → product becomes mush, unmarketable in one line.
 
-### 🔴 Open blocker — hexes have no built-in emotional pull
-- Pokémon GO partly worked because people **already loved Pokémon** — borrowed attachment drove downloads. **Hexagons have zero innate pull; nobody dreams of collecting them.** (Raised by founder — valid.)
-- **Reframe:** territory games don't run on loving the *collectible* — they run on **ownership, rivalry, status, identity** (Risk, Civ, Clash, Turf, Monopoly — nobody loves the tile, they love owning/winning).
-- **But:** that's a *retention* driver. The *acquisition* hook ("why download") is exactly what Pokémon's IP gave for free and we lack.
-- **Implication:** we must **manufacture** the emotion Pokémon borrowed — via theme + "your real streets are contested turf." Harder than borrowing it → our theming/identity/onboarding bar is **high**, not optional.
-- **To decide:** what is our manufactured emotional core? candidates → *ownership ("rule your city")* · *rivalry/clan identity* · *self-expression ("your colour, your map")* · *real-world meaning ("the places you actually go become yours")*.
+**Emotional core (proposed):** hexes ≠ Pokémon (no borrowed love), so we **manufacture** emotion from 3 feelings needing no IP:
+1. **"My streets"** — ownership of real places (territorial instinct, older than any IP).
+2. **"Someone near me wants them"** — local rivalry = built-in word-of-mouth.
+3. **"Look at my map"** — your colour spreading across the real world = the shareable flex (Strava-heatmap effect).
+
+### 📉 Why others failed — what we copy / avoid
+| App | Got right | Why it failed / stayed small | Our move |
+|---|---|---|---|
+| Pokémon GO | IP emotion, social, simple verb | rural dead zones; needs IP + huge content | density-first; manufacture emotion (no IP) |
+| Ingress | deep, devoted core | complex, hardcore-only, no acquisition hook | dead-simple onboarding |
+| **Turf** | our exact mechanic, fanatics | no emotional wrapper / acquisition → tiny for 10 yrs | identity + rivalry + word-of-mouth |
+| **StepN** (move-to-earn) | explosive growth | crypto ROI loop → bots/mercenaries → ponzi collapse | **never tie play to per-action money** |
+| Strava | identity + heatmap flex + social | premium fatigue; not a game | steal the heatmap flex, skip the paywall core |
+| Pikmin Bloom | cozy, broad reach | shallow, low stakes, forgettable | stakes + rivalry drive retention |
+| Zombies, Run! | loyal narrative niche | solo, narrow, no competition | social + competition over solo story |
+
+### 🎯 Why our gamble is *better* (not safer — better)
+- **Blue ocean:** all walking energy is cozy/wellness; nobody owns competitive-local-tribal walking.
+- **We design around the exact killers others ignored:** density (city-first), cold-start (ghost duels), hardcore-lapping (tiers/shields/divisions), the money trap (no tokens).
+- **Emotion is manufactured, not borrowed** → repeatable in any city, unlike Pokémon's IP dependence.
+- **Asymmetric bet:** ~$0 to test one city · bounded downside · whole-category upside · founder-market fit.
+
+### 🔴 The real bet = density, not features
+Mechanics are done; life/death is **manufacturing a dense pocket** — rivalry, clans, and the emotion itself only switch on with people nearby. Plan: seed **one tight community** (campus / run club / Discord / one Stockholm district) so density is instant on day one.
+
+### 💸 Money & prizes (decision)
+- ❌ **Move-to-earn / per-action value** (money or tokens per hex) — banned. The StepN trap: farmers/bots → ponzi → collapse.
+- ✅ **Finite, sponsored event prizes** (e.g. a Stockholm shoe shop sponsors "King of the City") — allowed as an **acquisition tactic**. _Gated:_ (1) real anti-cheat first (a real prize = a real spoof incentive), (2) reward more than just #1 (raffle above a threshold / per-division / most-improved) so casuals keep hope.
+- **The line:** "win occasional prizes" ✅ vs "earn value every step" ❌.
+
+### 🔵 Open
+First 50 players + which dense pocket · anti-cheat hardening before any real-prize contest · final emotional-core wording.
 
 ---
 
