@@ -50,6 +50,20 @@ First 50 players + which dense pocket · anti-cheat hardening before any real-pr
 
 ---
 
+## 🪜 Release roadmap — gated by density
+
+> Ship ONE clear loop, then layer. **Release order = how many players a feature needs.** The app grows as the map fills. (The full design below is the *destination* — this is the order it ships in.)
+
+| Phase | Ships | Needs | The pitch |
+|---|---|---|---|
+| **v1 — The Spine** | claim / hold / **steal** / defend / **decay** · local leaderboard · solo retention (missions, streak, achievements, XP→cosmetics) · **shield** · starter shield | works at **any** density (solo + ambient PvP with neighbours) | "Conquer and defend your city by walking" |
+| **v2 — Structured competition** | **Duels** + Trophies + Tiers/Divisions (ghost-duel fallback) · **Clans** + chat + discovery | low density (duels via ghost); a few who group | "Prove you're the best — climb the ladder, form a crew" |
+| **v3 — Social warfare** | **Clan Wars** · seasons · clan perks · competitive area-exploration | 5+ coordinated members × 2 clans | "Your crew conquers the city" |
+
+**Rule:** never ship a layer the city is too empty to support. v1's only job is to prove the core bet — *people will walk to claim & defend turf* — as cheaply as possible (most of it already exists in code).
+
+---
+
 ## 🗺️ The world in one picture
 
 ```mermaid
@@ -189,8 +203,8 @@ flowchart LR
 ---
 
 ## 📌 Status & Launch
-01 Progression ✅ · 02 Clans ✅ · 03 Wars ✅ · 04 Cosmetics ✅ · 05 Numbers ✅ (tune live).
-**Launch single-city: Stockholm** — all multiplayer needs local density; scattered = empty map. (Turf = proven appetite + competitor.)
+**Design locked** for all systems (01 Progression · 02 Clans · 03 Wars · 04 Cosmetics · 05 Numbers). **Shipped per the Release Roadmap, not all at once:** v1 = the Spine · v2 = Duels + Clans · v3 = Wars.
+**Launch single-city: Stockholm** — multiplayer layers need local density; scattered = empty map. (Turf = proven appetite + competitor.)
 
 ---
 
@@ -203,5 +217,7 @@ flowchart LR
 ## 🔵 Known issue to tune (not a blocker)
 - **Duel fairness vs geography:** matched by skill, but a walking race also favours dense areas + free time. Loops + bonus hexes give an efficiency path. v1: accept; if telemetry shows geography dominating, switch duel scoring to **hexes-per-km**.
 
-## ⏳ v2 backlog
+## ⏳ Later backlog (v2/v3)
 Seasons · clan missions (keep clans alive between wars) · best-of-3 duel objectives · clan contiguity bonus · trash-talk chat · clan perks.
+
+**Area exploration (H3 % of a district)** — verdict: useful for a *specific job* (low-density/solo bridge + onboarding ramp + spreads players out), **only in a COMPETITIVE framing** — rival %, explore-first → claim advantage, "first to 100% of a district" title. ❌ Never as cozy "complete your map" for its own sake = identity drift toward the wellness ocean we rejected. Ships v2/v3, never a pillar.
