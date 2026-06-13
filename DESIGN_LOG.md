@@ -36,6 +36,14 @@
 - **Emotion is manufactured, not borrowed** → repeatable in any city, unlike Pokémon's IP dependence.
 - **Asymmetric bet:** ~$0 to test one city · bounded downside · whole-category upside · founder-market fit.
 
+### 🔎 Audience reality check (researched 2026-06)
+**Worry tested:** "gamers won't go outside, fit people won't game → audience = tiny intersection." **Verdict: that Venn framing is a myth — size isn't the risk, retention is.**
+- Mobile gaming ≈ **3B people, ~52% women, avg age ~36, 44% casual** — not lazy male shut-ins (that's hardcore PC/console, not us).
+- **Pokémon GO proves conversion:** ~$6.3B lifetime, still ~$500M/yr, tens of millions walking — most neither "gamers" nor "fitness people." Audience is *created*, not a pre-existing sliver.
+- **Graveyard is real:** Harry Potter: Wizards Unite had a top-tier IP and **shut down in 2 yrs** (earned in its whole run ≈ what PoGo makes in a month). Cause = weak retention + **too complex** + narrative-not-sandbox + outdoor friction — **not** audience size or brand.
+
+**Decisions reinforced:** (1) stop second-guessing TAM — it's huge; win **density + retention**. (2) **Simple beats complex** → validates v1 = one spine, not 3 modes. (3) **Sandbox beats narrative** → territory sandbox is right. (4) Sobering: **we have no IP** → *less* margin than games that died → must be simpler + stickier than they were.
+
 ### 🔴 The real bet = density, not features
 Mechanics are done; life/death is **manufacturing a dense pocket** — rivalry, clans, and the emotion itself only switch on with people nearby. Plan: seed **one tight community** (campus / run club / Discord / one Stockholm district) so density is instant on day one.
 
