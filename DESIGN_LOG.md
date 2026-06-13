@@ -6,6 +6,28 @@
 
 ---
 
+## 📌 Part 0 — Strategy & the "Why" (living log — in progress, nothing final unless ✅)
+
+> Records **how** we're deciding the app's direction: what we considered, what we chose, what we rejected and **why**. Updated as we discuss.
+
+**The questions we're answering:** who is this for · why would anyone download it · what do they get · game or fitness · how it grows launch → future.
+
+### Topic 1 — Identity: game-first or fitness-first? _(leaning, not locked)_
+- **Considered:** serve both audiences — competitive gamers *and* wellness walkers.
+- **Rejected:** "both" as **positioning**. Designing/marketing for both forces us to soften the competition → product becomes mush (gamers find it limp, wellness users still find it stressful, marketing can't describe it in one line).
+- **Leaning:** **competitive territory game first**; fitness is a **free outcome** we can advertise but never design around — the Pokémon GO model (fitness = trojan horse, not the pitch). _Reason:_ matches founder excitement; blue ocean (rest of walking is going cozy/wellness).
+- **Price if we commit:** narrower, denser, younger audience · Stockholm-first · not courting the wellness mass-market at launch.
+- **Known trap + our guard:** hardcore players lapping casuals (this keeps Turf tiny) → guarded by tier matchmaking, ghost duels, shields, divisions.
+
+### 🔴 Open blocker — hexes have no built-in emotional pull
+- Pokémon GO partly worked because people **already loved Pokémon** — borrowed attachment drove downloads. **Hexagons have zero innate pull; nobody dreams of collecting them.** (Raised by founder — valid.)
+- **Reframe:** territory games don't run on loving the *collectible* — they run on **ownership, rivalry, status, identity** (Risk, Civ, Clash, Turf, Monopoly — nobody loves the tile, they love owning/winning).
+- **But:** that's a *retention* driver. The *acquisition* hook ("why download") is exactly what Pokémon's IP gave for free and we lack.
+- **Implication:** we must **manufacture** the emotion Pokémon borrowed — via theme + "your real streets are contested turf." Harder than borrowing it → our theming/identity/onboarding bar is **high**, not optional.
+- **To decide:** what is our manufactured emotional core? candidates → *ownership ("rule your city")* · *rivalry/clan identity* · *self-expression ("your colour, your map")* · *real-world meaning ("the places you actually go become yours")*.
+
+---
+
 ## 🗺️ The world in one picture
 
 ```mermaid
