@@ -205,6 +205,21 @@ flowchart LR
 **Design locked** for all systems (01 Progression · 02 Clans · 03 Wars · 04 Cosmetics · 05 Numbers). **Shipped per the Release Roadmap, not all at once:** v1 = the Spine · v2 = Duels + Clans · v3 = Wars.
 **Launch single-city: Stockholm** — multiplayer layers need local density; scattered = empty map. (Turf = proven appetite + competitor.)
 
+### 🚦 Launch reality — shy, non-student solo founder
+**GTM = online/content, not in-person hustle:** the conquered-map clip is the marketing (no face needed) on TikTok/IG/r/Stockholm; seed via ONE warm online community (local Discord/FB group/subreddit/run club); sponsored prize arranged by email; launch the **brand**, not yourself. (Campus-tabling = parked.)
+
+**Design for city-level aliveness** (a sparse map must still feel live):
+| Lever | Why sparse feels alive | v1? |
+|---|---|---|
+| Persistent enemy territory | others' turf stays on the map → raid it offline/across-town (**steal is async**) | ✅ core |
+| Citywide leaderboard | chase a name, not a neighbour | ✅ |
+| Neutral "wild"/landmark hexes | PvE conquest targets fill empty areas (honest, not fake players) | ➕ add v1 |
+| Hotspots + activity pings | bonus hexes cluster at landmarks → sparse players converge; "3 hexes claimed near you today" | ➕ add v1 |
+| Async/ghost duels | compete citywide, zero proximity | v2 |
+
+**v1 competition framing = CITY scale** (leaderboard + raiding persisted turf + neutral hotspots); street-rivalry is the upgrade as density grows.
+**⚠️ Caveat:** these make sparse feel *active* and buy a runway to density — they do NOT replace it; real-time rivalry/clans/wars still need it. Don't over-lean on PvE fill or we drift back to the cozy/solo game we rejected.
+
 ---
 
 ## ✅ Decisions locked this round
