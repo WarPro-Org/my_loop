@@ -63,6 +63,11 @@ flowchart TD
 
 _(Clans have a parallel **Clan Trophies → Clan Division** ladder, fed by wars.)_
 
+### 🎖️ What climbing Tiers & Divisions gives you
+- **v1:** status everywhere (profile, leaderboard, clan roster) **+ a tier-exclusive cosmetic** each new tier (Gold skin, Diamond trail) — wearable status, no power.
+- **v2:** **Seasons** — monthly soft-reset + exclusive seasonal cosmetics by peak tier (the CoC/Apex recurring chase).
+- _Hexes rank you by **territory** (leaderboard); Trophies rank you by **duel skill** (Tier). Two identities, both "winning."_
+
 ---
 
 ## 🎮 Solo vs Duel vs Clan War — side by side
@@ -110,6 +115,8 @@ flowchart LR
 
 - **Max 50 members.** War needs **≥5**. Chat = **clan-only** (trash-talk to rivals → v2).
 - **Clan strength = Σ members' current hex count** → clan leaderboard.
+- **Clan discovery:** browse/search clans (sorted by division, activity, proximity) + request to join — so new players actually find a clan.
+- High clan division → **cosmetic clan badge + bragging rights** (v1); perks (bigger cap, etc.) → v2.
 - **Roles** (Scout → Ranger → Captain → Sovereign):
 
 | Role | Can do |
@@ -127,11 +134,11 @@ flowchart LR
 
 **🏆 Trophy → Tier** — Bronze 0 · Silver 400 · Gold 1,000 · Platinum 1,800 · Crystal 2,800 · Diamond 4,000 (each = 4 divisions). Duel **win +30 / lose −15**, tier-floor protected. Matchmaking ±150 trophies. First 3 duels = placement.
 
-**✨ XP & Levels** — `Level = 1 + √(XP/100)`. Capture +10 · steal +25 · walk +50/km · streak +20/day · all-missions +100 · achievements +25–1000. _(XP income from hexes — proposed CUT for v1.)_
+**✨ XP & Levels** — `Level = 1 + √(XP/100)`. Capture +10 · steal +25 · walk +50/km · streak +20/day · all-missions +100 · achievements +25–1000. _(XP from actions only — no idle/territory income.)_
 
 **🎨 Cosmetic unlocks** — L1 base skin+trail · L3 skin#2 · **L5 clan creation** + trail FX · L8 claim FX · L10 profile frame · L15 map theme · L20 premium skin · + seasonal drops from duel/war wins.
 
-**⚔️ Duel / War** — Duel 6h, 3/day, 1v1, same-division. War 24h, 5–50, same clan division. Bonus hexes 3–5 @ 5×.
+**⚔️ Duel / War** — Duel: **queue & search → push when matched → both get 6h**; **ghost-duel fallback** (race a same-tier player's recorded run) if no match in ~2 min. 3/day, same-division. War 24h, 5–50, same clan division. Bonus hexes 3–5 @ 5×.
 
 **⚙️ Code constants (`GameConstants.cs`)** — `CellCooldownHours 0.0167→6.0` · rename/retire `HexTier` → trophy-driven `Tier` · add `ShieldMaxHours=16, ShieldFloorHours=4, StealCapPct=0.2(min5/max50), StarterShieldDays=3, ShieldBurnMinPerHex=20, TrophyWin=30, TrophyLoss=15` + division floors · fix seed users.
 
@@ -143,10 +150,14 @@ flowchart LR
 
 ---
 
-## 🔵 OPEN — to decide (grill list)
-1. **Duels: live-simultaneous or async?** Two real people both free in the same 6h is hard at launch. Async (challenge → opponent has 24h to run their own 6h vs your recorded score) fills far easier.
-2. **What does climbing Tier actually GIVE?** Right now: a badge + matchmaking. Reward milestones (cosmetics? rewards?) or status-only?
-3. **What does a high Clan Division give?** Bigger cap? Perks? Cosmetic clan badge? Or status-only?
-4. **Matchmaking pool at launch** — too few same-tier players/clans online. Fallback (widen band, bots, async)?
-5. **Rename `HexTier`** (it's trophy-driven now) — agree?
-6. **Cut XP-income** for v1 — agree?
+## ✅ Decisions locked this round
+- Duel matching = **queue & search → push when matched → both 6h**, with **ghost-duel fallback** (recorded same-tier run) so duels always fire at launch.
+- **Tier rewards** = status + tier-exclusive cosmetics (v1); **Seasons** (v2).
+- **Clan division** = cosmetic clan badge + bragging (v1); perks (v2). **Clan discovery browser** added.
+- `HexTier` → **Tier** (trophy-driven). **XP-income removed.**
+
+## 🔵 Known issue to tune (not a blocker)
+- **Duel fairness vs geography:** matched by skill, but a walking race also favours dense areas + free time. Loops + bonus hexes give an efficiency path. v1: accept; if telemetry shows geography dominating, switch duel scoring to **hexes-per-km**.
+
+## ⏳ v2 backlog
+Seasons · clan missions (keep clans alive between wars) · best-of-3 duel objectives · clan contiguity bonus · trash-talk chat · clan perks.
