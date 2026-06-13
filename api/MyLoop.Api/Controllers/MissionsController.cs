@@ -19,12 +19,15 @@ public class MissionsController : ControllerBase
     private readonly IMissionService _missionService;
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<MissionsController> _logger;
 
-    public MissionsController(IMissionService missionService, AppDbContext db, ICurrentUser currentUser)
+    public MissionsController(IMissionService missionService, AppDbContext db, ICurrentUser currentUser,
+        ILogger<MissionsController> logger)
     {
         _missionService = missionService;
         _db = db;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     /// <summary>
@@ -35,7 +38,12 @@ public class MissionsController : ControllerBase
     {
         var callerId = await _currentUser.TryGetUserIdAsync();
         if (callerId is null) return Unauthorized();
-        if (routeUserId != callerId) return Forbid();
+        if (routeUserId != callerId)
+        {
+            _logger.LogWarning("Cross-user access denied: caller {CallerId} requested missions/XP for {RouteUserId}",
+                callerId, routeUserId);
+            return Forbid();
+        }
         return null;
     }
 

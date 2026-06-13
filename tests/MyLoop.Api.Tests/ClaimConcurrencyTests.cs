@@ -64,7 +64,7 @@ public class ClaimConcurrencyTests : IAsyncLifetime
 
         return new TerritoryService(
             db, hex.Object, geo.Object, notifier.Object, pathValidator.Object,
-            push.Object, new GeocodingService(new HttpClient()),
+            push.Object, new GeocodingService(new HttpClient(), NullLogger<GeocodingService>.Instance),
             missions.Object, achievements.Object, NullLogger<TerritoryService>.Instance);
     }
 

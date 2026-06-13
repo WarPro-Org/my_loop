@@ -17,11 +17,14 @@ public class TerritoryController : ControllerBase
 {
     private readonly ITerritoryService _territoryService;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<TerritoryController> _logger;
 
-    public TerritoryController(ITerritoryService territoryService, ICurrentUser currentUser)
+    public TerritoryController(ITerritoryService territoryService, ICurrentUser currentUser,
+        ILogger<TerritoryController> logger)
     {
         _territoryService = territoryService;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     /// <summary>
@@ -117,7 +120,12 @@ public class TerritoryController : ControllerBase
     {
         var callerId = await _currentUser.TryGetUserIdAsync();
         if (callerId is null) return Unauthorized();
-        if (routeUserId != callerId) return Forbid();
+        if (routeUserId != callerId)
+        {
+            _logger.LogWarning("Cross-user access denied: caller {CallerId} requested private territory data for {RouteUserId}",
+                callerId, routeUserId);
+            return Forbid();
+        }
         return null;
     }
 }

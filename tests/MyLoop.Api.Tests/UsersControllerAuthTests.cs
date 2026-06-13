@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Controllers;
 using MyLoop.Api.Interfaces;
@@ -22,7 +23,7 @@ public class UsersControllerAuthTests
         Mock<IPushNotificationService> push,
         Mock<ICurrentUser> currentUser) =>
         new(users.Object, Mock.Of<IValidationService>(), push.Object,
-            geocoding: null!, db: null!, currentUser.Object);
+            geocoding: null!, db: null!, currentUser.Object, NullLogger<UsersController>.Instance);
 
     [Fact]
     public async Task DeleteAccount_for_another_user_is_forbidden_and_deletes_nothing()

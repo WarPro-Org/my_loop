@@ -251,6 +251,7 @@ app.MapGet("/terms", () => Results.Content("""
 // Ensure the database schema exists on startup.
 using (var scope = app.Services.CreateScope())
 {
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
 
@@ -385,7 +386,12 @@ using (var scope = app.Services.CreateScope())
             CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Decay""
             ON ""TerritoryCells"" (""LastRefreshedAt"", ""DecayDays"")");
     }
-    catch { /* Column/table already exists */ }
+    catch (Exception ex)
+    {
+        // The DDL above is idempotent (IF NOT EXISTS), so a throw here is unlikely to be a
+        // benign "already exists" — surface it instead of swallowing a real schema failure.
+        startupLogger.LogWarning(ex, "Startup schema sync failed (continuing; later queries may break if this was a real error)");
+    }
 
     // Seed data if the Users table is empty
     if (!db.Users.Any())
