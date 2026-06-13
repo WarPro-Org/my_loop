@@ -41,8 +41,9 @@ Mechanics are done; life/death is **manufacturing a dense pocket** — rivalry, 
 
 ### 💸 Money & prizes (decision)
 - ❌ **Move-to-earn / per-action value** (money or tokens per hex) — banned. The StepN trap: farmers/bots → ponzi → collapse.
-- ✅ **Finite, sponsored event prizes** (e.g. a Stockholm shoe shop sponsors "King of the City") — allowed as an **acquisition tactic**. _Gated:_ (1) real anti-cheat first (a real prize = a real spoof incentive), (2) reward more than just #1 (raffle above a threshold / per-division / most-improved) so casuals keep hope.
-- **The line:** "win occasional prizes" ✅ vs "earn value every step" ❌.
+- ✅ **Finite, sponsored event prizes** (e.g. a Stockholm shoe shop sponsors "King of the City") — allowed as a **one-off acquisition/ignition tactic only**. _Gated:_ (1) real anti-cheat first (a real prize = a real spoof incentive), (2) reward more than just #1 (raffle above a threshold / per-division / most-improved) so casuals keep hope.
+- ⚠️ **Prizes are ignition, NOT identity.** Use a one-off event to spark density, then step back. Retention must be **intrinsic** (own your city, beat rivals, flex your map). Recurring reliance on prizes = red flag the core hook failed — **overjustification effect**: extrinsic rewards crowd out the very emotion we're manufacturing.
+- **The line:** "occasional prize to bootstrap density" ✅ vs "earn value every step" ❌ vs "prizes as ongoing retention" ❌.
 
 ### 🔵 Open
 First 50 players + which dense pocket · anti-cheat hardening before any real-prize contest · final emotional-core wording.
