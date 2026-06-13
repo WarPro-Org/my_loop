@@ -48,8 +48,8 @@ public class GeocodingService
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Nominatim area lookup returned {StatusCode} for {Lat},{Lng}; using fallback name",
-                    (int)response.StatusCode, lat, lng);
+                _logger.LogWarning("Nominatim area lookup returned {StatusCode}; using fallback name",
+                    (int)response.StatusCode);
                 return CacheAndReturn(cacheKey, FallbackName(lat, lng));
             }
 
@@ -63,7 +63,7 @@ public class GeocodingService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Nominatim area lookup failed for {Lat},{Lng}; using fallback name", lat, lng);
+            _logger.LogWarning(ex, "Nominatim area lookup failed; using fallback name");
             return CacheAndReturn(cacheKey, FallbackName(lat, lng));
         }
         finally
@@ -132,8 +132,8 @@ public class GeocodingService
 
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning("Nominatim location lookup returned {StatusCode} for {Lat},{Lng}; using empty location",
-                    (int)response.StatusCode, lat, lng);
+                _logger.LogWarning("Nominatim location lookup returned {StatusCode}; using empty location",
+                    (int)response.StatusCode);
                 return CacheLocationAndReturn(cacheKey, new LocationInfo());
             }
 
@@ -157,7 +157,7 @@ public class GeocodingService
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Nominatim location lookup failed for {Lat},{Lng}; using empty location", lat, lng);
+            _logger.LogWarning(ex, "Nominatim location lookup failed; using empty location");
             return CacheLocationAndReturn(cacheKey, new LocationInfo());
         }
         finally
