@@ -39,6 +39,9 @@ class AppLogger {
     Logger.root.level = kReleaseMode ? Level.WARNING : Level.ALL;
 
     Logger.root.onRecord.listen((record) {
+      // Build the full line ONCE — including error + stack — so the ring buffer
+      // (which ships with crash reports in release) carries the same diagnostic
+      // detail as the console, not just the static message.
       final line = _format(record);
 
       // Ring buffer — always retained; this is the crash-report tail.
@@ -46,17 +49,18 @@ class AppLogger {
       _ring.add(line);
 
       // Console — debug builds only.
-      if (kDebugMode) {
-        debugPrint(line);
-        if (record.error != null) debugPrint('  error: ${record.error}');
-        if (record.stackTrace != null) debugPrint(record.stackTrace.toString());
-      }
+      if (kDebugMode) debugPrint(line);
     });
   }
 
-  static String _format(LogRecord r) =>
-      '[${r.time.toIso8601String()}] ${r.level.name.padRight(7)} '
-      '[${r.loggerName}] ${r.message}';
+  static String _format(LogRecord r) {
+    final buffer = StringBuffer()
+      ..write('[${r.time.toIso8601String()}] ${r.level.name.padRight(7)} ')
+      ..write('[${r.loggerName}] ${r.message}');
+    if (r.error != null) buffer.write('\n  error: ${r.error}');
+    if (r.stackTrace != null) buffer.write('\n${r.stackTrace}');
+    return buffer.toString();
+  }
 
   /// The most recent log lines (oldest first), capped at [max].
   /// Attached to crash reports as the `logTail`.
