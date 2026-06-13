@@ -20,6 +20,10 @@ api/**/obj/
 api/**/.vs/
 api/**/appsettings.Development.json
 
+# Serilog rolling log files
+logs/
+api/**/logs/
+
 # Flutter
 mobile/.dart_tool/
 mobile/.packages
