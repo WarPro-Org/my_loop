@@ -12,7 +12,10 @@
 
 **🧭 North star (proposed):** **"Claim your city."** A hyper-local, competitive, crew-based land-grab — your real neighbourhood is the board; your conquered map is your flag.
 
-**Identity (leaning):** competitive **game** first; **fitness = free outcome** we advertise but never design around (Pokémon GO trojan-horse model). "Serve both audiences" rejected as *positioning* → product becomes mush, unmarketable in one line.
+**Identity ✅ (re-evaluated & LOCKED 2026-06):** competitive **GAME** first; **fitness = free outcome** we advertise but never design around (Pokémon GO trojan-horse model). "Serve both audiences" rejected as *positioning* → mush.
+- _Re-checked vs fitness-first:_ fitness-walking is a bloodbath owned by Apple/Strava/Fitbit with hardware+data moats a solo founder can't beat; game is a lane they won't enter → **defensible** blue ocean, higher ceiling, fits founder energy.
+- _The condition that makes game safe:_ v1 core is **solo-playable** → neutralises the game direction's only fatal weakness (density). _If it needed a crowd on day 1, we'd flip to fitness. It doesn't._
+- _Bonus:_ the v1 solo spine is also a cheap experiment — real behaviour reveals whether users lean conquer vs get-fit, instead of guessing.
 
 **Emotional core (proposed):** hexes ≠ Pokémon (no borrowed love), so we **manufacture** emotion from 3 feelings needing no IP:
 1. **"My streets"** — ownership of real places (territorial instinct, older than any IP).
@@ -69,6 +72,12 @@ First 50 players + which dense pocket · anti-cheat hardening before any real-pr
 | **v3 — Social warfare** | **Clan Wars** · seasons · clan perks · competitive area-exploration | 5+ coordinated members × 2 clans | "Your crew conquers the city" |
 
 **Rule:** never ship a layer the city is too empty to support. v1's only job is to prove the core bet — *people will walk to claim & defend turf* — as cheaply as possible (most of it already exists in code).
+
+**🎯 v1 core — keep it exactly this simple (3 verbs):**
+1. **Collect** — walk → the hexes you cross become yours.
+2. **Steal** — walk through a neighbour's hex → it's yours.
+3. **Close a loop → capture everything inside.**
+Everything else (decay, shield, local leaderboard, missions, streak, XP→cosmetics) exists only to *support* these three. No duels/clans/wars in v1.
 
 ---
 
