@@ -1,8 +1,8 @@
 /// Game state hydration — loads all slices from single API call on login/resume.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
@@ -10,6 +10,8 @@ import 'package:myloop/shared/state/xp_slice.dart';
 import 'package:myloop/shared/state/missions_slice.dart';
 import 'package:myloop/shared/state/achievements_slice.dart';
 import 'package:myloop/shared/state/exploration_slice.dart';
+
+final _log = Logger('Hydrate');
 
 /// Hydrates all state slices from the unified game-state endpoint.
 /// Call this once after login and on app resume from background.
@@ -20,7 +22,7 @@ Future<void> hydrateAllSlices(WidgetRef ref) async {
 
   final data = await api.getGameState(profile.userId!);
   if (data == null) {
-    debugPrint('[Hydrate] getGameState returned null — skipping hydration');
+    _log.warning('getGameState returned null — skipping hydration');
     return;
   }
 
@@ -31,7 +33,7 @@ Future<void> hydrateAllSlices(WidgetRef ref) async {
   ref.read(achievementsSliceProvider.notifier).hydrate(data['achievements'] as List? ?? []);
   ref.read(explorationSliceProvider.notifier).hydrate(data['exploration'] as List? ?? []);
 
-  debugPrint('[Hydrate] All slices hydrated successfully');
+  _log.fine('All slices hydrated successfully');
 }
 
 /// Same as hydrateAllSlices but accepts a Ref (for use outside widgets).

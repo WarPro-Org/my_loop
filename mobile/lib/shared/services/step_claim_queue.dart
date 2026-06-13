@@ -1,8 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
+
+final _log = Logger('StepClaimQueue');
 
 /// A persistent write-ahead log for GPS step claims.
 ///
@@ -76,7 +78,7 @@ class StepClaimQueue {
         final json = jsonDecode(line) as Map<String, dynamic>;
         points.add(QueuedStepPoint.fromJson(json));
       } catch (e) {
-        debugPrint('[StepClaimQueue] Skipping corrupt line: $e');
+        _log.warning('Skipping corrupt line', e);
       }
     }
     return points;

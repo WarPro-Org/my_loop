@@ -10,11 +10,13 @@ library;
 
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:signalr_netcore/signalr_client.dart';
 
 import 'package:myloop/shared/services/api_service.dart';
+
+final _log = Logger('SignalR');
 
 /// Event emitted when hex ownership changes are received from the server.
 class HexChangeEvent {
@@ -196,28 +198,28 @@ class TerritoryRealtimeService {
 
     _hubConnection!.onclose(({error}) {
       _isConnected = false;
-      debugPrint('[SignalR] Connection closed: $error');
+      _log.warning('Connection closed: $error');
     });
 
     _hubConnection!.onreconnected(({connectionId}) {
       _isConnected = true;
-      debugPrint('[SignalR] Reconnected: $connectionId');
+      _log.info('Reconnected: $connectionId');
       _resubscribeAll();
     });
 
     try {
       await _hubConnection!.start();
       _isConnected = true;
-      debugPrint('[SignalR] Connected to $hubUrl');
+      _log.info('Connected to $hubUrl');
 
       // Join personal group if authenticated
       if (userId != null && userId.isNotEmpty) {
         await _hubConnection!.invoke('JoinUserGroup', args: [userId]);
-        debugPrint('[SignalR] Joined user group: user_$userId');
+        _log.fine('Joined user group: user_$userId');
       }
     } catch (e) {
       _isConnected = false;
-      debugPrint('[SignalR] Connection failed: $e');
+      _log.warning('Connection failed', e);
     }
   }
 
@@ -293,7 +295,7 @@ class TerritoryRealtimeService {
     final raw = arguments[0];
     if (raw is! Map<String, dynamic>) return;
     _userStatsController.add(UserStatsDelta.fromJson(raw));
-    debugPrint('[SignalR] UserStatsDelta received: hexCount=${raw['hexCount']}');
+    _log.fine('UserStatsDelta received: hexCount=${raw['hexCount']}');
   }
 
   void _handleXp(List<Object?>? arguments) {
@@ -301,7 +303,7 @@ class TerritoryRealtimeService {
     final raw = arguments[0];
     if (raw is! Map<String, dynamic>) return;
     _xpController.add(XpDelta.fromJson(raw));
-    debugPrint('[SignalR] XpDelta received: +${raw['xpGained']} XP');
+    _log.fine('XpDelta received: +${raw['xpGained']} XP');
   }
 
   void _handleMissions(List<Object?>? arguments) {
@@ -309,7 +311,7 @@ class TerritoryRealtimeService {
     final raw = arguments[0];
     if (raw is! Map<String, dynamic>) return;
     _missionController.add(MissionDelta.fromJson(raw));
-    debugPrint('[SignalR] MissionDelta received');
+    _log.fine('MissionDelta received');
   }
 
   void _handleAchievements(List<Object?>? arguments) {
@@ -317,7 +319,7 @@ class TerritoryRealtimeService {
     final raw = arguments[0];
     if (raw is! Map<String, dynamic>) return;
     _achievementController.add(AchievementDelta.fromJson(raw));
-    debugPrint('[SignalR] AchievementUnlocked received');
+    _log.fine('AchievementUnlocked received');
   }
 
   Future<void> _resubscribeAll() async {

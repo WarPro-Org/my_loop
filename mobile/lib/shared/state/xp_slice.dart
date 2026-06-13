@@ -2,9 +2,11 @@
 /// Updated via SignalR XpDelta push or full hydration on login.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
+
+final _log = Logger('XpSlice');
 
 class XpState {
   final int totalXp;
@@ -29,7 +31,7 @@ class XpSlice extends Notifier<XpState> {
   XpState build() {
     final realtime = ref.read(territoryRealtimeProvider);
     realtime.onXp.listen((delta) {
-      debugPrint('[XpSlice] Delta received: +${delta.xpGained} XP, level=${delta.level}');
+      _log.fine('Delta received: +${delta.xpGained} XP, level=${delta.level}');
       state = XpState(
         totalXp: delta.totalXp,
         level: delta.level,
