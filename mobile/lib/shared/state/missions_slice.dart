@@ -25,7 +25,10 @@ class MissionsSlice extends Notifier<MissionsState> {
   @override
   MissionsState build() {
     final realtime = ref.read(territoryRealtimeProvider);
-    realtime.onMissions.listen((delta) {
+    // Cancel the subscription when the provider is disposed/rebuilt — otherwise
+    // every build() re-run (e.g. on logout→login) adds another live listener on
+    // the broadcast stream, leaking subscriptions and applying each delta N times.
+    final sub = realtime.onMissions.listen((delta) {
       _log.fine('Delta received: ${delta.updates.length} updates');
       // Apply progress from delta to existing missions
       final updated = state.missions.map((m) {
@@ -48,6 +51,7 @@ class MissionsSlice extends Notifier<MissionsState> {
         isLoaded: true,
       );
     });
+    ref.onDispose(sub.cancel);
     return const MissionsState();
   }
 

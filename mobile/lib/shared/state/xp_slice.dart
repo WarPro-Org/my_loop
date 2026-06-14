@@ -30,7 +30,7 @@ class XpSlice extends Notifier<XpState> {
   @override
   XpState build() {
     final realtime = ref.read(territoryRealtimeProvider);
-    realtime.onXp.listen((delta) {
+    final sub = realtime.onXp.listen((delta) {
       _log.fine('Delta received: +${delta.xpGained} XP, level=${delta.level}');
       state = XpState(
         totalXp: delta.totalXp,
@@ -41,6 +41,7 @@ class XpSlice extends Notifier<XpState> {
         isLoaded: true,
       );
     });
+    ref.onDispose(sub.cancel);
     return const XpState();
   }
 
