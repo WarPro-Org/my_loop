@@ -7,7 +7,6 @@ library;
 
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
@@ -16,8 +15,12 @@ import 'package:myloop/shared/models/trail_claim_response.dart';
 import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/models/user.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/batch_drain_service.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
+import 'package:myloop/shared/services/trace_context.dart';
+
+final _log = Logger('API');
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
 /// Defaults to ngrok tunnel for mobile testing over cellular.
@@ -42,6 +45,10 @@ class ApiService {
         )) {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
+        // W3C trace context — the backend adopts this as the request trace id,
+        // so mobile actions, server logs, and crash reports share one id.
+        options.headers['traceparent'] = TraceContext.newTraceparent();
+
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
           final token = await user.getIdToken();
@@ -174,7 +181,7 @@ class ApiService {
       final data = response.data as Map<String, dynamic>;
       return StepClaimResponse.fromJson(data);
     } catch (e) {
-      debugPrint('[StepClaim] Failed: $e');
+      _log.warning('Step claim failed', e);
       return null; // Best-effort — don't interrupt the walk
     }
   }
@@ -204,10 +211,10 @@ class ApiService {
       if (status != null && status >= 400 && status < 500) {
         throw BatchRejectedException(extractApiError(e) ?? 'Batch rejected by server');
       }
-      debugPrint('[BatchStepClaim] Transient failure: ${e.message}');
+      _log.warning('Batch step claim transient failure: ${e.message}');
       return null;
     } catch (e) {
-      debugPrint('[BatchStepClaim] Failed: $e');
+      _log.warning('Batch step claim failed', e);
       return null;
     }
   }
@@ -268,7 +275,7 @@ class ApiService {
       final response = await _dio.get('/api/users/$userId/game-state');
       return response.data as Map<String, dynamic>;
     } catch (e) {
-      debugPrint('[API] getGameState failed: $e');
+      _log.warning('getGameState failed', e);
       return null;
     }
   }

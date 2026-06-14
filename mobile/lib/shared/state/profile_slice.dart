@@ -2,9 +2,11 @@
 /// Updated via SignalR UserStatsDelta push or full hydration on login.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
+
+final _log = Logger('ProfileSlice');
 
 class ProfileState {
   final int hexCount;
@@ -56,7 +58,7 @@ class ProfileSlice extends Notifier<ProfileState> {
     // Listen to SignalR user stats pushes
     final realtime = ref.read(territoryRealtimeProvider);
     realtime.onUserStats.listen((delta) {
-      debugPrint('[ProfileSlice] Delta received: hexCount=${delta.hexCount}');
+      _log.fine('Delta received: hexCount=${delta.hexCount}');
       state = state.copyWith(
         hexCount: delta.hexCount,
         totalHexesCaptured: delta.totalHexesCaptured,

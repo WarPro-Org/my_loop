@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
+
+final _log = Logger('BatchDrain');
 
 /// Drains the [StepClaimQueue] in batches and POSTs to the server's
 /// `/api/claims/batch-step` endpoint.
@@ -128,7 +130,7 @@ class BatchDrainService {
       // Permanent rejection (anti-cheat / invalid batch): the server will never
       // accept these points, so retrying would jam the queue forever. Drop them,
       // surface the reason, and treat this as a successful (non-backoff) cycle.
-      debugPrint('[BatchDrain] Batch permanently rejected: ${e.message}');
+      _log.warning('Batch permanently rejected: ${e.message}');
       if (peeked.isNotEmpty) {
         await _queue.removeProcessed(peeked.map((p) => p.clientId).toSet());
       }
@@ -137,11 +139,11 @@ class BatchDrainService {
       if (!_disposed) _rejectionController.add(e.message);
       return false;
     } on DioException catch (e) {
-      debugPrint('[BatchDrain] Network error: ${e.message}');
+      _log.warning('Network error: ${e.message}');
       _handleFailure();
       return false;
     } catch (e) {
-      debugPrint('[BatchDrain] Unexpected error: $e');
+      _log.severe('Unexpected error', e);
       _handleFailure();
       return false;
     } finally {

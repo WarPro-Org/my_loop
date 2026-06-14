@@ -2,10 +2,12 @@
 /// Updated via SignalR AchievementUnlocked push or full hydration on login.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
+
+final _log = Logger('AchievementsSlice');
 
 class AchievementsState {
   final List<Achievement> achievements;
@@ -22,7 +24,7 @@ class AchievementsSlice extends Notifier<AchievementsState> {
   AchievementsState build() {
     final realtime = ref.read(territoryRealtimeProvider);
     realtime.onAchievements.listen((delta) {
-      debugPrint('[AchievementsSlice] ${delta.unlocks.length} new unlocks');
+      _log.fine('${delta.unlocks.length} new unlocks');
       // Mark newly unlocked achievements
       final unlockIds = delta.unlocks.map((u) => u.id).toSet();
       final updated = state.achievements.map((a) {

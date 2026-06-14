@@ -2,10 +2,12 @@
 /// Updated via SignalR MissionDelta push or full hydration on login.
 library;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
+
+final _log = Logger('MissionsSlice');
 
 class MissionsState {
   final List<DailyMission> missions;
@@ -24,7 +26,7 @@ class MissionsSlice extends Notifier<MissionsState> {
   MissionsState build() {
     final realtime = ref.read(territoryRealtimeProvider);
     realtime.onMissions.listen((delta) {
-      debugPrint('[MissionsSlice] Delta received: ${delta.updates.length} updates');
+      _log.fine('Delta received: ${delta.updates.length} updates');
       // Apply progress from delta to existing missions
       final updated = state.missions.map((m) {
         final match = delta.updates.where(
