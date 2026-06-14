@@ -20,6 +20,7 @@ library;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:myloop/shared/services/profile_cache.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Authentication Service
@@ -143,6 +144,9 @@ class AuthService {
   /// After this call, [authStateChanges] emits `null`, triggering navigation
   /// back to the login screen via the auth state listener.
   Future<void> signOut() async {
+    // Drop the cached offline profile so the next user can't inherit this
+    // session on a later offline launch (issue #19).
+    await ProfileCache.clear();
     // Only attempt Google sign-out if we previously initialized the SDK.
     if (_googleInitialized) {
       await GoogleSignIn.instance.signOut();
