@@ -35,6 +35,32 @@ my_loop/
 
 ---
 
+## Pre-PR Skill Gate
+
+Before opening **or** merging a PR, run the skill(s) relevant to what the PR touches.
+This is a hard gate. Note in the PR description which skills were run.
+
+Skills live in `.claude/skills/` (vendored from [ECC](https://github.com/affaan-m/ECC),
+chosen from MyLoop's documented failure classes in `architecturalIssues_11th_June2026.md`).
+
+| If the PR touches… | Run before opening/merging |
+|--------------------|----------------------------|
+| .NET API code (Controllers / Services / Data) | `dotnet-patterns`, `csharp-testing` |
+| DB schema / EF migrations / hex counts | `database-migrations` (verify atomicity + explicit transactions) |
+| API endpoints or request/response shapes | `api-design` |
+| **Anything crossing .NET ↔ Flutter** (DTOs, SignalR payloads, IDs, game constants) | `api-design` + **manually confirm field names, types (H3 CellId, UserId), and constants match on both sides** |
+| Auth, anti-cheat, client-supplied coordinates, rate limits, secrets | `security-review` |
+| SignalR / real-time / caches / offline queues | `latency-critical-systems` |
+| Flutter / Dart code or Riverpod state | `dart-flutter-patterns`, `flutter-dart-code-review` |
+| Error/exception handling or offline durability | `error-handling` |
+| **Always — final gate** | `verification-loop` (tests green) + the PR-review skill |
+
+The cross-stack row is a deliberate manual check — contract drift (.NET ↔ Flutter type/field/ID
+mismatches) is MyLoop's #1 bug class and no single skill fully owns it. If a skill surfaces an
+issue, fix it before pushing.
+
+---
+
 ## Running Locally
 
 ### API
