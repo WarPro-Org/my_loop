@@ -57,7 +57,7 @@ class ProfileSlice extends Notifier<ProfileState> {
   ProfileState build() {
     // Listen to SignalR user stats pushes
     final realtime = ref.read(territoryRealtimeProvider);
-    realtime.onUserStats.listen((delta) {
+    final sub = realtime.onUserStats.listen((delta) {
       _log.fine('Delta received: hexCount=${delta.hexCount}');
       state = state.copyWith(
         hexCount: delta.hexCount,
@@ -68,6 +68,7 @@ class ProfileSlice extends Notifier<ProfileState> {
         distanceKm: delta.distanceKm,
       );
     });
+    ref.onDispose(sub.cancel);
     return const ProfileState();
   }
 

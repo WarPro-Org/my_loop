@@ -23,7 +23,7 @@ class AchievementsSlice extends Notifier<AchievementsState> {
   @override
   AchievementsState build() {
     final realtime = ref.read(territoryRealtimeProvider);
-    realtime.onAchievements.listen((delta) {
+    final sub = realtime.onAchievements.listen((delta) {
       _log.fine('${delta.unlocks.length} new unlocks');
       // Mark newly unlocked achievements
       final unlockIds = delta.unlocks.map((u) => u.id).toSet();
@@ -35,6 +35,7 @@ class AchievementsSlice extends Notifier<AchievementsState> {
       }).toList();
       state = AchievementsState(achievements: updated, isLoaded: true);
     });
+    ref.onDispose(sub.cancel);
     return const AchievementsState();
   }
 
