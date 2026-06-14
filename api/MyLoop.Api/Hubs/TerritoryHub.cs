@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
+using MyLoop.Api.Interfaces;
 
 namespace MyLoop.Api.Hubs;
 
@@ -11,9 +13,14 @@ namespace MyLoop.Api.Hubs;
 /// </summary>
 public class TerritoryHub : Hub
 {
+    private readonly IUserService _users;
     private readonly ILogger<TerritoryHub> _logger;
 
-    public TerritoryHub(ILogger<TerritoryHub> logger) => _logger = logger;
+    public TerritoryHub(IUserService users, ILogger<TerritoryHub> logger)
+    {
+        _users = users;
+        _logger = logger;
+    }
 
     public override Task OnConnectedAsync()
     {
@@ -50,8 +57,10 @@ public class TerritoryHub : Hub
 
     /// <summary>
     /// Client calls this after auth to subscribe to personal state deltas.
-    /// Group name: "user_{userId}" — receives UserStatsDelta, XpDelta, MissionDelta, AchievementUnlocked.
-    /// Validates caller is authenticated (token passed via query string on connect).
+    /// Group name: "user_{userId}" where userId is the caller's INTERNAL DB Guid
+    /// (the same id the server pushes deltas to — see TerritoryNotifier).
+    /// Validates caller is authenticated (token passed via query string on connect)
+    /// AND that the requested group is their own.
     /// </summary>
     public async Task JoinUserGroup(string userId)
     {
@@ -62,6 +71,30 @@ public class TerritoryHub : Hub
                 userId, Context.ConnectionId);
             throw new HubException("Authentication required for personal group subscription.");
         }
+
+        // A caller may only join THEIR OWN personal group, else any authenticated user
+        // could subscribe to another user's private deltas (stats, XP, missions,
+        // achievements). The JWT carries the Firebase UID, but the group is keyed by the
+        // INTERNAL Guid, so we must map UID -> internal id (same mapping the REST layer
+        // uses, CurrentUser.cs) before comparing — comparing the raw UID claim against the
+        // Guid arg would reject every legitimate join.
+        var firebaseUid = Context.User.FindFirst("user_id")?.Value
+            ?? Context.User.FindFirst("sub")?.Value
+            ?? Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(firebaseUid))
+            throw new HubException("Authentication required for personal group subscription.");
+
+        var caller = await _users.GetByFirebaseUid(firebaseUid);
+        if (caller is null
+            || !Guid.TryParse(userId, out var requestedId)
+            || caller.Id != requestedId)
+        {
+            _logger.LogWarning("Cross-user personal-group join rejected: caller uid {Uid} tried to join user_{UserId}",
+                firebaseUid, userId);
+            throw new HubException("Cannot subscribe to another user's personal group.");
+        }
+
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
     }
 
