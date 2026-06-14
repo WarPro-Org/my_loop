@@ -103,6 +103,13 @@ void main() {
         q.getAll().map((p) => p.clientId).toSet(),
         reason: 'disk and memory diverged on iteration $i',
       );
+      // Also pin the surviving set so a regression that drops all data (leaving
+      // both disk and memory empty) can't satisfy the invariant above.
+      expect(
+        q.getAll().map((p) => p.clientId).toSet(),
+        {'x$i', 'y$i'},
+        reason: 'expected the two appends to survive the rewrite on iteration $i',
+      );
     }
   });
 }
