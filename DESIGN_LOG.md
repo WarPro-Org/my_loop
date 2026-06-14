@@ -220,6 +220,13 @@ flowchart LR
 **v1 competition framing = CITY scale** (leaderboard + raiding persisted turf + neutral hotspots); street-rivalry is the upgrade as density grows.
 **⚠️ Caveat:** these make sparse feel *active* and buy a runway to density — they do NOT replace it; real-time rivalry/clans/wars still need it. Don't over-lean on PvE fill or we drift back to the cozy/solo game we rejected.
 
+### 🤖 Bots / adaptive AI presence (decision)
+Instinct (seed liveliness now, fade as real players arrive) = right shape. **What** the bots pretend to be is the whole risk:
+- ✅ **Neutral "AI faction" / wild territory** that holds hexes and **adaptively recedes** as real players join — honest, fills the map, no trust risk.
+- ✅ **Bot duel opponents** (v2) as accepted matchmaking fill.
+- ❌ **Bots impersonating real humans** (fake names on leaderboard / in clans / "PlayerX stole your hexes") — banned. Three killers: (1) **GPS-plausibility** — fake walking is what our own anti-cheat is built to catch; (2) breaks our "never fake live players" rule; (3) breaks the core promise ("a *real* rival took my street") — and in a competitive game it always gets discovered → 1-star death.
+- ✅ **Leaderboard stays 100% real**, even if short ("#3 of 11 in Stockholm"). A faked leaderboard is the most discoverable + most damaging move.
+
 ---
 
 ## ✅ Decisions locked this round
