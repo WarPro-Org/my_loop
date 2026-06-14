@@ -132,12 +132,12 @@ public class TerritoryService : ITerritoryService
 
             // Personal deltas to claiming user
             var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
-            _ = PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
+            await PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
 
             // Victim deltas
             var victimIds = transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct();
             foreach (var victimId in victimIds)
-                _ = PushVictimDelta(victimId);
+                await PushVictimDelta(victimId);
 
             return ClaimResult.Succeeded(new ClaimResponse
             {
@@ -300,12 +300,12 @@ public class TerritoryService : ITerritoryService
 
         // Personal deltas to claiming user
         var trailUserForPush = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
-        _ = PushPersonalDeltas(userId, trailUserForPush, xpResult, xpAmount, missionResult, newAchievements);
+        await PushPersonalDeltas(userId, trailUserForPush, xpResult, xpAmount, missionResult, newAchievements);
 
         // Victim deltas
         var victimIds = transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct();
         foreach (var victimId in victimIds)
-            _ = PushVictimDelta(victimId);
+            await PushVictimDelta(victimId);
 
         var stolenCount = claimed.Count(c => c.WasStolen);
         return TrailClaimResult.Succeeded(new TrailClaimResponse
@@ -440,15 +440,15 @@ public class TerritoryService : ITerritoryService
         // ── Real-time push notifications (fire-and-forget, AFTER commit) ──
 
         // Public: hex ownership broadcast to region
-        _ = BroadcastOwnershipChanges(userId, [hexCell],
+        await BroadcastOwnershipChanges(userId, [hexCell],
             [CreateTransfer(hexCell.CellId, existing?.OwnerId, userId, claimId)]);
 
         // Personal: push state deltas to claiming user
-        _ = PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
+        await PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
 
         // Victim: push decremented stats
         if (existing != null && existing.OwnerId != Guid.Empty)
-            _ = PushVictimDelta(existing.OwnerId);
+            await PushVictimDelta(existing.OwnerId);
 
         return new StepClaimResponse
         {
@@ -721,15 +721,15 @@ public class TerritoryService : ITerritoryService
             // 10. ONE consolidated push per slice (after commit)
             if (capturedHexes.Count > 0)
             {
-                _ = BroadcastOwnershipChanges(userId, capturedHexes, transfers);
-                _ = PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
+                await BroadcastOwnershipChanges(userId, capturedHexes, transfers);
+                await PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
 
                 var victimIds = transfers
                     .Where(t => t.FromUserId != null)
                     .Select(t => t.FromUserId!.Value)
                     .Distinct();
                 foreach (var victimId in victimIds)
-                    _ = PushVictimDelta(victimId);
+                    await PushVictimDelta(victimId);
             }
 
             // 11. Build response
@@ -1359,46 +1359,63 @@ public class TerritoryService : ITerritoryService
         }
     }
 
+    // NOTE: All post-commit notification helpers are AWAITED by callers (so they run
+    // while the request-scoped DbContext is still alive) and self-protect with try/catch
+    // (so a push/broadcast failure can never fail or roll back an already-committed claim).
     private async Task BroadcastOwnershipChanges(
         Guid userId, List<HexCell> cells, List<CellTransfer> transfers)
     {
-        var user = await _db.Users.FindAsync(userId);
-        if (user == null) return;
-
-        var transferLookup = transfers
-            .Where(t => t.FromUserId != null)
-            .ToDictionary(t => t.CellId, t => t.FromUserId);
-
-        var changes = cells.Select(c =>
+        try
         {
-            var center = _hexGrid.GetCellCenter(c.CellId);
-            return new HexChangeEvent(
-                H3Index: c.CellId.ToString(),
-                CenterLat: center.Lat,
-                CenterLng: center.Lng,
-                NewOwnerId: userId,
-                NewOwnerColor: user.Color,
-                NewOwnerDisplayName: user.DisplayName,
-                PreviousOwnerId: transferLookup.GetValueOrDefault(c.CellId),
-                ParentCellId: _hexGrid.GetParentCellId(c.CellId)
-            );
-        }).ToList();
+            var user = await _db.Users.FindAsync(userId);
+            if (user == null) return;
 
-        await _notifier.NotifyHexOwnershipChanged(changes);
+            var transferLookup = transfers
+                .Where(t => t.FromUserId != null)
+                .ToDictionary(t => t.CellId, t => t.FromUserId);
+
+            var changes = cells.Select(c =>
+            {
+                var center = _hexGrid.GetCellCenter(c.CellId);
+                return new HexChangeEvent(
+                    H3Index: c.CellId.ToString(),
+                    CenterLat: center.Lat,
+                    CenterLng: center.Lng,
+                    NewOwnerId: userId,
+                    NewOwnerColor: user.Color,
+                    NewOwnerDisplayName: user.DisplayName,
+                    PreviousOwnerId: transferLookup.GetValueOrDefault(c.CellId),
+                    ParentCellId: _hexGrid.GetParentCellId(c.CellId)
+                );
+            }).ToList();
+
+            await _notifier.NotifyHexOwnershipChanged(changes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to broadcast ownership changes for user {UserId}", userId);
+        }
     }
 
     private async Task NotifyVictimsOfTheft(Guid thiefUserId, List<CellTransfer> transfers)
     {
-        var thief = await _db.Users.FindAsync(thiefUserId);
-        if (thief == null) return;
-
-        var victimGroups = transfers
-            .Where(t => t.FromUserId != null && t.FromUserId != thiefUserId)
-            .GroupBy(t => t.FromUserId!.Value);
-
-        foreach (var group in victimGroups)
+        try
         {
-            await _pushService.NotifyHexStolen(group.Key, thief.DisplayName, group.Count());
+            var thief = await _db.Users.FindAsync(thiefUserId);
+            if (thief == null) return;
+
+            var victimGroups = transfers
+                .Where(t => t.FromUserId != null && t.FromUserId != thiefUserId)
+                .GroupBy(t => t.FromUserId!.Value);
+
+            foreach (var group in victimGroups)
+            {
+                await _pushService.NotifyHexStolen(group.Key, thief.DisplayName, group.Count());
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to notify theft victims for thief {UserId}", thiefUserId);
         }
     }
 
