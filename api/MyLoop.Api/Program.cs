@@ -6,9 +6,52 @@ using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
 using MyLoop.Api.Interfaces;
+using MyLoop.Api.Middleware;
 using MyLoop.Api.Services;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// --- Logging (Serilog) ---
+// Stable contract: structured events enriched with the W3C trace id + caller, emitted as JSON.
+// Only the sinks below ever change as we scale (file → Seq → OTLP/Grafana) — never app code.
+//   • Console: human-readable, surfaces the trace id, for live tailing.
+//   • File:    daily rolling compact JSON so EVERY enriched property (trace id, caller, status,
+//              elapsed) is captured and greppable when reconstructing a beta bug after the fact.
+//   • Seq:     optional self-hosted search UI; only wired when "Seq:ServerUrl" is configured, and
+//              the sink buffers/no-ops if Seq is unreachable so a missing container never breaks
+//              the app. Growth path: add Serilog.Sinks.OpenTelemetry to ship OTLP to Grafana
+//              (Loki/Tempo) without touching application code.
+// Levels come from the "Serilog" config section.
+builder.Host.UseSerilog((context, services, config) =>
+{
+    // Anchor the log path to the content root (not the relative CWD): under systemd or a
+    // container, CWD is often "/" which isn't writable, and Serilog swallows the open
+    // failure to SelfLog — the durable log would silently write nowhere. Allow ops to
+    // override the directory (e.g. /var/log/myloop) via "Serilog:LogDirectory".
+    var logDirectory = context.Configuration["Serilog:LogDirectory"]
+        ?? Path.Combine(context.HostingEnvironment.ContentRootPath, "logs");
+
+    config
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .WriteTo.Console(
+            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {Message:lj}{NewLine}{Exception}")
+        .WriteTo.File(
+            formatter: new CompactJsonFormatter(),
+            path: Path.Combine(logDirectory, "myloop-.log"),
+            rollingInterval: RollingInterval.Day,
+            retainedFileCountLimit: 7,
+            fileSizeLimitBytes: 50_000_000,
+            rollOnFileSizeLimit: true,
+            shared: true);
+
+    var seqUrl = context.Configuration["Seq:ServerUrl"];
+    if (!string.IsNullOrWhiteSpace(seqUrl))
+        config.WriteTo.Seq(seqUrl);
+});
 
 // --- Database ---
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -118,6 +161,35 @@ builder.Services.AddCors(options =>
 });
 
 var app = builder.Build();
+
+// Surface the W3C trace id before anything else so even auth failures are traceable, and so
+// every log line in the request — including the request summary below — carries it.
+app.UseMiddleware<TraceContextMiddleware>();
+
+// One tidy summary line per request (method, path, status, elapsed ms) enriched with the
+// caller's Firebase uid. Long-lived SignalR traffic and the health/static endpoints are
+// dropped to Verbose so they don't flood the Information-level stream.
+app.UseSerilogRequestLogging(options =>
+{
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        var firebaseUid =
+            httpContext.User.FindFirst("user_id")?.Value
+            ?? httpContext.User.FindFirst("sub")?.Value;
+        if (!string.IsNullOrEmpty(firebaseUid))
+            diagnosticContext.Set("FirebaseUid", firebaseUid);
+    };
+    options.GetLevel = (httpContext, elapsed, ex) =>
+    {
+        var path = httpContext.Request.Path;
+        if (ex != null || httpContext.Response.StatusCode >= 500)
+            return Serilog.Events.LogEventLevel.Error;
+        if (path.StartsWithSegments("/hubs")
+            || path == "/" || path == "/privacy" || path == "/terms")
+            return Serilog.Events.LogEventLevel.Verbose;
+        return Serilog.Events.LogEventLevel.Information;
+    };
+});
 
 app.UseCors();
 app.UseAuthentication();
