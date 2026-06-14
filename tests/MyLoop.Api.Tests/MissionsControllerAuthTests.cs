@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Controllers;
 using MyLoop.Api.Data;
@@ -21,7 +22,7 @@ public class MissionsControllerAuthTests
         new(new DbContextOptionsBuilder<AppDbContext>().Options);
 
     private static MissionsController Build(Mock<IMissionService> missions, Mock<ICurrentUser> currentUser) =>
-        new(missions.Object, NoDb(), currentUser.Object);
+        new(missions.Object, NoDb(), currentUser.Object, NullLogger<MissionsController>.Instance);
 
     [Fact]
     public async Task GetMissions_for_another_user_is_forbidden_and_reads_nothing()

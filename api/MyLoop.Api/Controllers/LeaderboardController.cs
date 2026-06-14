@@ -13,10 +13,12 @@ namespace MyLoop.Api.Controllers;
 public class LeaderboardController : ControllerBase
 {
     private readonly ILeaderboardService _leaderboardService;
+    private readonly ILogger<LeaderboardController> _logger;
 
-    public LeaderboardController(ILeaderboardService leaderboardService)
+    public LeaderboardController(ILeaderboardService leaderboardService, ILogger<LeaderboardController> logger)
     {
         _leaderboardService = leaderboardService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -43,6 +45,7 @@ public class LeaderboardController : ControllerBase
     public async Task<IActionResult> Refresh()
     {
         var playerCount = await _leaderboardService.RefreshLeaderboard();
+        _logger.LogInformation("Leaderboard refreshed: {PlayerCount} players ranked", playerCount);
         return Ok(new { Message = "Leaderboard refreshed", PlayerCount = playerCount });
     }
 }

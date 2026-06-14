@@ -22,10 +22,11 @@ public class UsersController : ControllerBase
     private readonly GeocodingService _geocoding;
     private readonly AppDbContext _db;
     private readonly ICurrentUser _currentUser;
+    private readonly ILogger<UsersController> _logger;
 
     public UsersController(IUserService userService, IValidationService validation,
         IPushNotificationService pushService, GeocodingService geocoding, AppDbContext db,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser, ILogger<UsersController> logger)
     {
         _userService = userService;
         _validation = validation;
@@ -33,6 +34,7 @@ public class UsersController : ControllerBase
         _geocoding = geocoding;
         _db = db;
         _currentUser = currentUser;
+        _logger = logger;
     }
 
     /// <summary>
@@ -43,7 +45,12 @@ public class UsersController : ControllerBase
     {
         var callerId = await _currentUser.TryGetUserIdAsync();
         if (callerId is null) return Unauthorized();
-        if (routeUserId != callerId) return Forbid();
+        if (routeUserId != callerId)
+        {
+            _logger.LogWarning("Cross-user access denied: caller {CallerId} targeted account {RouteUserId}",
+                callerId, routeUserId);
+            return Forbid();
+        }
         return null;
     }
 
@@ -65,6 +72,7 @@ public class UsersController : ControllerBase
         if (avatarError != null) return BadRequest(avatarError);
 
         var user = await _userService.Register(request);
+        _logger.LogInformation("New user registered: {UserId}", user.Id);
         return Created($"/api/users/{user.Id}", user);
     }
 
@@ -87,7 +95,11 @@ public class UsersController : ControllerBase
     {
         // A caller may only look up their own record by Firebase UID.
         if (!string.Equals(firebaseUid, _currentUser.FirebaseUid, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("Cross-user UID lookup denied: caller {CallerUid} requested another UID",
+                _currentUser.FirebaseUid);
             return Forbid();
+        }
 
         var user = await _userService.GetByFirebaseUid(firebaseUid);
         if (user == null) return NotFound();
@@ -146,6 +158,7 @@ public class UsersController : ControllerBase
 
         var deleted = await _userService.DeleteAccount(id);
         if (!deleted) return NotFound();
+        _logger.LogInformation("Account deleted: {UserId}", id);
         return NoContent();
     }
 
@@ -279,7 +292,12 @@ public class UsersController : ControllerBase
                 .ToListAsync();
             rank = leaderboard.IndexOf(id) + 1;
         }
-        catch { /* non-critical */ }
+        catch (Exception ex)
+        {
+            // Rank is a non-critical adornment on the game-state payload; degrade to 0 rather
+            // than fail the whole call, but record it so a recurring failure is visible.
+            _logger.LogWarning(ex, "Rank computation failed for {UserId}; returning rank 0", id);
+        }
 
         return Ok(new
         {

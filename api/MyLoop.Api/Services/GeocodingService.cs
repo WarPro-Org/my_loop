@@ -11,14 +11,16 @@ namespace MyLoop.Api.Services;
 public class GeocodingService
 {
     private readonly HttpClient _http;
+    private readonly ILogger<GeocodingService> _logger;
     private readonly ConcurrentDictionary<string, string> _cache = new();
     private readonly ConcurrentDictionary<string, LocationInfo> _locationCache = new();
     private readonly SemaphoreSlim _throttle = new(1, 1); // 1 req/sec Nominatim policy
     private DateTime _lastRequest = DateTime.MinValue;
 
-    public GeocodingService(HttpClient http)
+    public GeocodingService(HttpClient http, ILogger<GeocodingService> logger)
     {
         _http = http;
+        _logger = logger;
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("MyLoop/1.0 (territory-game)");
     }
 
@@ -45,7 +47,11 @@ public class GeocodingService
             _lastRequest = DateTime.UtcNow;
 
             if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Nominatim area lookup returned {StatusCode}; using fallback name",
+                    (int)response.StatusCode);
                 return CacheAndReturn(cacheKey, FallbackName(lat, lng));
+            }
 
             var json = await response.Content.ReadAsStringAsync();
             var doc = JsonDocument.Parse(json);
@@ -55,8 +61,9 @@ public class GeocodingService
             var name = TryExtractName(root);
             return CacheAndReturn(cacheKey, name ?? FallbackName(lat, lng));
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Nominatim area lookup failed; using fallback name");
             return CacheAndReturn(cacheKey, FallbackName(lat, lng));
         }
         finally
@@ -124,7 +131,11 @@ public class GeocodingService
             _lastRequest = DateTime.UtcNow;
 
             if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Nominatim location lookup returned {StatusCode}; using empty location",
+                    (int)response.StatusCode);
                 return CacheLocationAndReturn(cacheKey, new LocationInfo());
+            }
 
             var json = await response.Content.ReadAsStringAsync();
             var doc = JsonDocument.Parse(json);
@@ -144,8 +155,9 @@ public class GeocodingService
 
             return CacheLocationAndReturn(cacheKey, info);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Nominatim location lookup failed; using empty location");
             return CacheLocationAndReturn(cacheKey, new LocationInfo());
         }
         finally

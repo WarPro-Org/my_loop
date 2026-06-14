@@ -11,6 +11,26 @@ namespace MyLoop.Api.Hubs;
 /// </summary>
 public class TerritoryHub : Hub
 {
+    private readonly ILogger<TerritoryHub> _logger;
+
+    public TerritoryHub(ILogger<TerritoryHub> logger) => _logger = logger;
+
+    public override Task OnConnectedAsync()
+    {
+        _logger.LogDebug("Hub connected: {ConnectionId} (authenticated: {IsAuth})",
+            Context.ConnectionId, Context.User?.Identity?.IsAuthenticated == true);
+        return base.OnConnectedAsync();
+    }
+
+    public override Task OnDisconnectedAsync(Exception? exception)
+    {
+        if (exception != null)
+            _logger.LogWarning(exception, "Hub disconnected with error: {ConnectionId}", Context.ConnectionId);
+        else
+            _logger.LogDebug("Hub disconnected: {ConnectionId}", Context.ConnectionId);
+        return base.OnDisconnectedAsync(exception);
+    }
+
     /// <summary>
     /// Client calls this to subscribe to a geographic region (public map events).
     /// Region ID = H3 res-3 parent cell ID (covers ~12,000 km²).
@@ -38,6 +58,8 @@ public class TerritoryHub : Hub
         // Only authenticated connections can join personal groups
         if (Context.User?.Identity?.IsAuthenticated != true)
         {
+            _logger.LogWarning("Unauthenticated personal-group join rejected for user_{UserId} on {ConnectionId}",
+                userId, Context.ConnectionId);
             throw new HubException("Authentication required for personal group subscription.");
         }
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");

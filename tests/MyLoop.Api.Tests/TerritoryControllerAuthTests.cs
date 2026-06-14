@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Controllers;
 using MyLoop.Api.Interfaces;
@@ -14,7 +15,7 @@ public class TerritoryControllerAuthTests
 {
     private static TerritoryController Build(
         Mock<ITerritoryService> territory, Mock<ICurrentUser> currentUser) =>
-        new(territory.Object, currentUser.Object);
+        new(territory.Object, currentUser.Object, NullLogger<TerritoryController>.Instance);
 
     [Fact]
     public async Task GetStolenCells_for_another_user_is_forbidden_and_reads_nothing()
