@@ -63,6 +63,12 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
 
+  # Used by test/step_claim_queue_test.dart to stub the app documents directory
+  # (these are transitive prod deps; declared here so the test imports them
+  # directly without tripping depend_on_referenced_packages).
+  path_provider_platform_interface: ^2.1.0
+  plugin_platform_interface: ^2.1.0
+
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
