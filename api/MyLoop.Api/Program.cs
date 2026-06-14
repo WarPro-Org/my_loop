@@ -26,6 +26,13 @@ var builder = WebApplication.CreateBuilder(args);
 // Levels come from the "Serilog" config section.
 builder.Host.UseSerilog((context, services, config) =>
 {
+    // Anchor the log path to the content root (not the relative CWD): under systemd or a
+    // container, CWD is often "/" which isn't writable, and Serilog swallows the open
+    // failure to SelfLog — the durable log would silently write nowhere. Allow ops to
+    // override the directory (e.g. /var/log/myloop) via "Serilog:LogDirectory".
+    var logDirectory = context.Configuration["Serilog:LogDirectory"]
+        ?? Path.Combine(context.HostingEnvironment.ContentRootPath, "logs");
+
     config
         .ReadFrom.Configuration(context.Configuration)
         .ReadFrom.Services(services)
@@ -34,7 +41,7 @@ builder.Host.UseSerilog((context, services, config) =>
             outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {Message:lj}{NewLine}{Exception}")
         .WriteTo.File(
             formatter: new CompactJsonFormatter(),
-            path: "logs/myloop-.log",
+            path: Path.Combine(logDirectory, "myloop-.log"),
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: 7,
             fileSizeLimitBytes: 50_000_000,
