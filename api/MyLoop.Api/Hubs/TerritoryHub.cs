@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.SignalR;
 
 namespace MyLoop.Api.Hubs;
@@ -62,6 +63,22 @@ public class TerritoryHub : Hub
                 userId, Context.ConnectionId);
             throw new HubException("Authentication required for personal group subscription.");
         }
+
+        // A caller may only join THEIR OWN personal group. Resolve identity from the
+        // same claims the REST layer uses (see CurrentUser.cs) and reject mismatches —
+        // otherwise any authenticated user could subscribe to another user's private
+        // state deltas (stats, XP, missions, achievements) by passing their id.
+        var callerId = Context.User.FindFirst("user_id")?.Value
+            ?? Context.User.FindFirst("sub")?.Value
+            ?? Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+        if (string.IsNullOrEmpty(callerId) || !string.Equals(callerId, userId, StringComparison.Ordinal))
+        {
+            _logger.LogWarning("Cross-user personal-group join rejected: caller {CallerId} tried to join user_{UserId}",
+                callerId, userId);
+            throw new HubException("Cannot subscribe to another user's personal group.");
+        }
+
         await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
     }
 
