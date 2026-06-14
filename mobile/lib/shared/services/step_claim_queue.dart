@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -19,6 +20,29 @@ class StepClaimQueue {
   File? _file;
   List<QueuedStepPoint>? _cache;
 
+  /// Serializes every disk-mutating operation. Without this an [enqueue] append
+  /// can interleave with a [removeProcessed]/[clear] rewrite: the rewrite snapshots
+  /// the cache, the append lands on the file, then the rewrite's atomic rename
+  /// replaces the file with a snapshot that lacks the just-appended point — so a
+  /// queued GPS point survives only in memory and is lost if the OS kills the app.
+  Future<void> _writeLock = Future<void>.value();
+
+  /// Runs [action] after all previously-queued mutations complete, chaining the
+  /// lock so callers are serialized regardless of how their futures interleave.
+  Future<T> _synchronized<T>(Future<T> Function() action) {
+    final completer = Completer<T>();
+    final previous = _writeLock;
+    _writeLock = completer.future.then((_) {}, onError: (_) {});
+    previous.whenComplete(() async {
+      try {
+        completer.complete(await action());
+      } catch (e, st) {
+        completer.completeError(e, st);
+      }
+    });
+    return completer.future;
+  }
+
   /// Initialize the queue (resolves app documents directory).
   Future<void> init() async {
     final dir = await getApplicationDocumentsDirectory();
@@ -30,12 +54,12 @@ class StepClaimQueue {
   }
 
   /// Enqueue a GPS point for later batch submission.
-  Future<void> enqueue(QueuedStepPoint point) async {
-    assert(_file != null, 'Call init() first');
-    final line = jsonEncode(point.toJson());
-    await _file!.writeAsString('$line\n', mode: FileMode.append, flush: true);
-    _cache?.add(point);
-  }
+  Future<void> enqueue(QueuedStepPoint point) => _synchronized(() async {
+        assert(_file != null, 'Call init() first');
+        final line = jsonEncode(point.toJson());
+        await _file!.writeAsString('$line\n', mode: FileMode.append, flush: true);
+        _cache?.add(point);
+      });
 
   /// Peek the first [count] items without removing them.
   List<QueuedStepPoint> peek(int count) {
@@ -53,17 +77,17 @@ class StepClaimQueue {
   List<QueuedStepPoint> getAll() => List.unmodifiable(_cache ?? []);
 
   /// Remove processed points by their clientIds (called after server ACK).
-  Future<void> removeProcessed(Set<String> clientIds) async {
-    if (_cache == null || clientIds.isEmpty) return;
-    _cache!.removeWhere((p) => clientIds.contains(p.clientId));
-    await _rewriteFile();
-  }
+  Future<void> removeProcessed(Set<String> clientIds) => _synchronized(() async {
+        if (_cache == null || clientIds.isEmpty) return;
+        _cache!.removeWhere((p) => clientIds.contains(p.clientId));
+        await _rewriteFile();
+      });
 
   /// Clear all entries (e.g., on logout).
-  Future<void> clear() async {
-    _cache?.clear();
-    await _atomicWrite('');
-  }
+  Future<void> clear() => _synchronized(() async {
+        _cache?.clear();
+        await _atomicWrite('');
+      });
 
   /// Read all entries from disk (used on init and after crash recovery).
   Future<List<QueuedStepPoint>> _readAll() async {
