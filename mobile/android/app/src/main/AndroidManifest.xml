@@ -1,4 +1,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Location for walk tracking (issue #20). Background recording with the
+         screen off is achieved via a location-typed FOREGROUND SERVICE (visible
+         notification) rather than ACCESS_BACKGROUND_LOCATION: a foreground
+         service does not require that permission, and omitting it keeps us out
+         of Google Play's background-location declaration/review policy. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
     <application
         android:label="myloop"
         android:name="${applicationName}"
