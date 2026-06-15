@@ -27,7 +27,9 @@ public class LegalController : ControllerBase
     private IActionResult HtmlPage(string fileName)
     {
         var webRoot = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
-        var path = Path.Combine(webRoot, LegalDirectory, fileName);
+        // Guard against a rooted/traversal segment silently discarding the web-root prefix; callers
+        // only ever pass a bare file name, so reduce to that defensively.
+        var path = Path.Combine(webRoot, LegalDirectory, Path.GetFileName(fileName));
         if (!System.IO.File.Exists(path))
             return NotFound();
         return Content(System.IO.File.ReadAllText(path), "text/html");
