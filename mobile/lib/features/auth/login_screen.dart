@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
+import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/push_notification_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -251,6 +252,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           distanceKm: existing.distanceKm,
           rank: rank,
         );
+        // Cache the profile bound to this Firebase user so a later offline
+        // launch can restore this session instead of bouncing them back to
+        // login (issue #19). Binding to firebaseUid keeps a different account
+        // on the same device from inheriting it offline.
+        await ProfileCache.save(firebaseUid, ref.read(userProfileProvider));
+
         // Initialize push notifications after login
         ref.read(pushNotificationProvider).initialize(existing.id);
 
@@ -273,7 +280,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         context.go('/avatar');
       }
     } catch (e) {
-      // API unreachable — show error, don't blindly route to avatar picker
+      // Server unreachable. If this is an already-authenticated session and we
+      // have a cached profile, let the user back into the app offline (issue
+      // #19) instead of stranding them on the login screen.
+      if (await _restoreOfflineSession(e, firebaseUid)) return;
+
+      // No cached session to fall back on (e.g. brand-new login with no
+      // network) — show the retry prompt and don't blindly route to avatar.
       if (mounted) {
         setState(() => _autoSigningIn = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -289,6 +302,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         );
       }
     }
+  }
+
+  /// When the backend is unreachable on launch but Firebase still has a
+  /// restored session, bring the user in using their last cached profile so
+  /// they stay logged in offline (issue #19). [firebaseUid] is the user who
+  /// just authenticated; the cached profile is only restored when it is bound
+  /// to that same UID, so a different account on this device can never inherit
+  /// the previous user's profile/session offline. Returns `true` only if it
+  /// actually routed the user to /home; `false` otherwise (so the caller can
+  /// fall back to the retry prompt).
+  Future<bool> _restoreOfflineSession(Object error, String firebaseUid) async {
+    if (!isServerUnreachable(error)) return false;
+    if (ref.read(authServiceProvider).currentUser == null) return false;
+
+    final cached = await ProfileCache.load();
+    if (cached == null || cached.firebaseUid != firebaseUid) return false;
+
+    final profile = cached.profile;
+    final userId = profile.userId;
+    if (userId == null) return false;
+
+    ref.read(userProfileProvider.notifier).setFromApi(
+          userId: userId,
+          avatarId: profile.avatarId,
+          color: profile.color,
+          displayName: profile.displayName,
+          hexCount: profile.hexCount,
+          streak: profile.streak,
+          distanceKm: profile.distanceKm,
+          rank: profile.rank,
+        );
+
+    // Report success only if we actually navigated; if the widget was disposed
+    // mid-await we did not route, and the caller must not treat it as handled.
+    if (!mounted) return false;
+    context.go('/home');
+    return true;
   }
 
   Future<void> _devSkip() async {

@@ -5,6 +5,8 @@
 /// leaderboard retrieval. Exposed as a Riverpod provider for DI.
 library;
 
+import 'dart:io';
+
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -28,6 +30,26 @@ const apiBaseUrl = String.fromEnvironment(
   'API_URL',
   defaultValue: 'https://destitute-living-bullpen.ngrok-free.dev',
 );
+
+/// True when [e] means the backend could not be reached at all — no network,
+/// DNS failure, connection refused, or a timeout — as opposed to the server
+/// answering with an HTTP error. Callers use this to decide whether an
+/// already-authenticated user should fall back to their cached profile and
+/// continue offline (issue #19) rather than being sent back to login.
+bool isServerUnreachable(Object e) {
+  if (e is! DioException) return false;
+  switch (e.type) {
+    case DioExceptionType.connectionError:
+    case DioExceptionType.connectionTimeout:
+    case DioExceptionType.sendTimeout:
+    case DioExceptionType.receiveTimeout:
+      return true;
+    case DioExceptionType.unknown:
+      return e.error is SocketException;
+    default:
+      return false;
+  }
+}
 
 /// Service class that encapsulates all HTTP communication with the backend.
 ///
