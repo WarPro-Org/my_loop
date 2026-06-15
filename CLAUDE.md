@@ -118,6 +118,22 @@ my_loop/
 
 ---
 
+## Pre-Check-in Skill Gate
+
+Before **committing** (check-in), run the skill(s) relevant to what the change touches.
+These are fast, local, write-time skills — catch issues before they reach a PR.
+
+| If the change touches… | Run before committing |
+|------------------------|-----------------------|
+| A disk-persisting / async-serialized service or its tests (`*queue*.dart`, `*cache*.dart`, WAL/offline queues, `mobile/test/**`) | `flutter-disk-concurrency-test` (stub `path_provider`, assert disk==memory + surviving set, prove the test fails without the fix) |
+
+> This table and the Pre-PR table below are **auto-maintained**: when `/update-session`
+> extracts a new skill, it adds a row here (or in the Pre-PR table if it's a review-time
+> concern). Keep the set of gate tables small (Pre-Check-in, Pre-PR) — every skill should
+> fall under one.
+
+---
+
 ## Pre-PR Skill Gate
 
 Before opening **or** merging a PR, run the skill(s) relevant to what the PR touches.
@@ -135,6 +151,7 @@ chosen from MyLoop's documented failure classes in `architecturalIssues_11th_Jun
 | Auth, anti-cheat, client-supplied coordinates, rate limits, secrets | `security-review` |
 | SignalR / real-time / caches / offline queues | `latency-critical-systems` |
 | Flutter / Dart code or Riverpod state | `dart-flutter-patterns`, `flutter-dart-code-review` |
+| Background GPS / `location_service.dart` / `AndroidManifest.xml` / iOS `Info.plist` | `mobile-background-location` (verify foreground-service perms + iOS `UIBackgroundModes`) |
 | Error/exception handling or offline durability | `error-handling` |
 | **Always — final gate** | `verification-loop` (tests green) + the PR-review skill |
 
