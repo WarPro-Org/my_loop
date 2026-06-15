@@ -18,10 +18,12 @@ class LoopDetector {
   /// Maximum distance (meters) between two points to consider a loop closed.
   static const double closureThresholdMeters = 50.0;
 
-  /// Counts the number of distinct closed loops in the given path.
-  ///
-  /// Uses the same algorithm as the server-side ExtractLoops:
-  /// for each point, checks if it's close to any earlier non-adjacent point.
+  /// A fast, proximity-only estimate of how many closed loops the path has,
+  /// used as a live trigger/indicator during a walk. It detects closure
+  /// (a point near an earlier non-adjacent point) but does NOT area-validate or
+  /// de-duplicate, so it over-counts out-and-back and revisited paths. The
+  /// authoritative count comes from the server preview (area-validated +
+  /// de-duplicated) and replaces this once it returns (issue #21).
   static int countLoops(List<List<double>> path) {
     if (path.length < minLoopPoints) return 0;
 

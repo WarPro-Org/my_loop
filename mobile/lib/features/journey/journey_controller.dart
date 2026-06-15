@@ -168,6 +168,7 @@ class JourneyController extends Notifier<JourneyState> {
       previewBoundaries: const [],
       claimedHexBoundaries: const [],
       claimedCount: 0,
+      loopCount: 0,
       claimedMeta: const [],
     );
     return path;
@@ -340,11 +341,14 @@ class JourneyController extends Notifier<JourneyState> {
     if (_pointsSinceLastCheck < _loopCheckInterval) return;
     _pointsSinceLastCheck = 0;
 
-    final loopCount = LoopDetector.countLoops(path);
-    if (loopCount != _lastLoopCount) {
-      _lastLoopCount = loopCount;
-      state = state.copyWith(loopCount: loopCount);
-      if (loopCount > 0) {
+    // The client closure check is only a TRIGGER for the server preview, not
+    // the displayed count: the server returns the authoritative, area-validated
+    // and de-duplicated loopCount, which avoids the over-count this used to
+    // show live (issue #21). state.loopCount is set only from the preview.
+    final estimate = LoopDetector.countLoops(path);
+    if (estimate != _lastLoopCount) {
+      _lastLoopCount = estimate;
+      if (estimate > 0) {
         _fetchPreview(List.from(path));
       }
     }
@@ -364,9 +368,15 @@ class JourneyController extends Notifier<JourneyState> {
       final cappedPath = path.length > AppConstants.maxPreviewPathPoints
           ? path.sublist(path.length - AppConstants.maxPreviewPathPoints)
           : path;
-      final boundaries = await api.previewClaim(path: cappedPath);
-      if (boundaries.isNotEmpty && state.status == JourneyStatus.tracking) {
-        state = state.copyWith(previewBoundaries: boundaries);
+      final preview = await api.previewClaim(path: cappedPath);
+      if (state.status == JourneyStatus.tracking) {
+        // The server's loop count is authoritative (area-validated +
+        // de-duplicated), so it overrides the client's raw closure estimate
+        // shown live during the walk (issue #21).
+        state = state.copyWith(
+          previewBoundaries: preview.boundaries,
+          loopCount: preview.loopCount,
+        );
       }
     } catch (_) {
       // Preview is best-effort

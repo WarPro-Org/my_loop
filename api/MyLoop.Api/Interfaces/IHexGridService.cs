@@ -14,6 +14,13 @@ public interface IHexGridService
     List<HexCell> ComputeCapturedCells(double[][] path);
 
     /// <summary>
+    /// Like <see cref="ComputeCapturedCells"/>, but also returns the
+    /// authoritative number of distinct loops the path encloses — area-validated
+    /// and de-duplicated the same way the cells are filled (issue #21).
+    /// </summary>
+    CapturedTerritory ComputeCapturedTerritory(double[][] path);
+
+    /// <summary>
     /// Gets the center coordinate of an H3 cell.
     /// </summary>
     GeoCoordinate GetCellCenter(long cellId);

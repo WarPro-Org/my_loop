@@ -23,15 +23,20 @@ public class HexGridService : IHexGridService
     }
 
     public List<HexCell> ComputeCapturedCells(double[][] path)
+        => ComputeCapturedTerritory(path).Cells;
+
+    public CapturedTerritory ComputeCapturedTerritory(double[][] path)
     {
         var allCells = new Dictionary<long, double[][]>();
 
         AddTrailCells(path, allCells);
-        AddLoopFillCells(path, allCells);
+        var loopCount = AddLoopFillCells(path, allCells);
 
-        return allCells
+        var cells = allCells
             .Select(p => new HexCell { CellId = p.Key, Boundary = p.Value })
             .ToList();
+
+        return new CapturedTerritory(cells, loopCount);
     }
 
     public List<HexCell> GetTrailCells(double[][] points)
@@ -120,16 +125,23 @@ public class HexGridService : IHexGridService
     // Loop detection and interior fill
     // ──────────────────────────────────────────────────────────────────────────
 
-    private void AddLoopFillCells(double[][] path, Dictionary<long, double[][]> cells)
+    /// <summary>
+    /// Fills the interiors of the path's valid, de-duplicated loops into
+    /// <paramref name="cells"/> and returns how many distinct loops were filled.
+    /// This count — area-validated and de-duplicated, not the raw closure count —
+    /// is the authoritative number of loops the user actually made (issue #21).
+    /// </summary>
+    private int AddLoopFillCells(double[][] path, Dictionary<long, double[][]> cells)
     {
         var loops = ExtractLoops(path);
-        if (loops.Count == 0) return;
+        if (loops.Count == 0) return 0;
 
         var polygons = BuildValidPolygons(loops);
-        if (polygons.Count == 0) return;
+        if (polygons.Count == 0) return 0;
 
         var unique = DeduplicatePolygons(polygons);
         FillPolygonInteriors(unique, cells);
+        return unique.Count;
     }
 
     private List<Geometry> BuildValidPolygons(List<double[][]> loops)

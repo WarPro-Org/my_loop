@@ -51,6 +51,28 @@ bool isServerUnreachable(Object e) {
   }
 }
 
+/// Result of a claim preview: the hex boundaries to draw, plus the server's
+/// authoritative loop count (area-validated + de-duplicated) for display (#21).
+class PreviewResult {
+  final List<List<List<double>>> boundaries;
+  final int loopCount;
+
+  const PreviewResult({required this.boundaries, required this.loopCount});
+
+  /// Parses the `/api/claims/preview` response. A missing `loopCount` defaults
+  /// to 0 (e.g. an older server), and missing/empty boundaries to none. Pure —
+  /// unit-testable without a live HTTP call.
+  factory PreviewResult.fromJson(Map<String, dynamic> json) {
+    final boundaries = ((json['boundaries'] as List?) ?? const [])
+        .map((b) => (b as List)
+            .map((p) => (p as List).map((n) => (n as num).toDouble()).toList())
+            .toList())
+        .toList();
+    final loopCount = (json['loopCount'] as num?)?.toInt() ?? 0;
+    return PreviewResult(boundaries: boundaries, loopCount: loopCount);
+  }
+}
+
 /// Service class that encapsulates all HTTP communication with the backend.
 ///
 /// Uses [Dio] with a configurable base URL (defaults to Android emulator
@@ -376,19 +398,17 @@ class ApiService {
 
   /// Preview which hexes a path would capture — no DB writes.
   /// Called during a walk when a loop is detected to show live hex fills.
-  Future<List<List<List<double>>>> previewClaim({
+  ///
+  /// Returns the hex boundaries plus the server's authoritative loop count
+  /// (area-validated + de-duplicated), which the app shows instead of its own
+  /// raw closure count (issue #21).
+  Future<PreviewResult> previewClaim({
     required List<List<double>> path,
   }) async {
     final response = await _dio.post('/api/claims/preview', data: {
       'path': path,
     });
-    final data = response.data as Map<String, dynamic>;
-    final boundaries = data['boundaries'] as List;
-    return boundaries
-        .map((b) => (b as List)
-            .map((p) => (p as List).map((n) => (n as num).toDouble()).toList())
-            .toList())
-        .toList();
+    return PreviewResult.fromJson(response.data as Map<String, dynamic>);
   }
 
   // --- Missions & XP ---

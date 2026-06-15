@@ -180,23 +180,25 @@ public class ClaimsController : ControllerBase
     public IActionResult PreviewClaim([FromBody] PreviewRequest request)
     {
         if (request.Path.Length < GameConstants.MinPointsForPolygon)
-            return Ok(new { boundaries = Array.Empty<double[][]>() });
+            return Ok(new { boundaries = Array.Empty<double[][]>(), loopCount = 0 });
 
         if (request.Path.Length > GameConstants.MaxPreviewPathLength)
             return BadRequest("Path too long for preview");
 
         if (!ValidatePathCoordinates(request.Path))
-            return Ok(new { boundaries = Array.Empty<double[][]>() });
+            return Ok(new { boundaries = Array.Empty<double[][]>(), loopCount = 0 });
 
         try
         {
-            var cells = _hexGridService.ComputeCapturedCells(request.Path);
-            var boundaries = cells.Select(c => c.Boundary).ToArray();
-            return Ok(new { boundaries });
+            var territory = _hexGridService.ComputeCapturedTerritory(request.Path);
+            var boundaries = territory.Cells.Select(c => c.Boundary).ToArray();
+            // loopCount is the authoritative, area-validated/de-duplicated count
+            // the app should show, replacing the client's raw closure count (#21).
+            return Ok(new { boundaries, loopCount = territory.LoopCount });
         }
         catch (Exception)
         {
-            return Ok(new { boundaries = Array.Empty<double[][]>() });
+            return Ok(new { boundaries = Array.Empty<double[][]>(), loopCount = 0 });
         }
     }
 
