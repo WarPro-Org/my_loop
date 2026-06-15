@@ -43,10 +43,10 @@ public static class RequestPipelineExtensions
     private static void EnrichWithCaller(IDiagnosticContext diagnosticContext, HttpContext httpContext)
     {
         var firebaseUid =
-            httpContext.User.FindFirst("user_id")?.Value
-            ?? httpContext.User.FindFirst("sub")?.Value;
+            httpContext.User.FindFirst(FirebaseClaims.UserId)?.Value
+            ?? httpContext.User.FindFirst(FirebaseClaims.Subject)?.Value;
         if (!string.IsNullOrEmpty(firebaseUid))
-            diagnosticContext.Set("FirebaseUid", firebaseUid);
+            diagnosticContext.Set(FirebaseClaims.EnrichedUidProperty, firebaseUid);
     }
 
     private static LogEventLevel ResolveLogLevel(HttpContext httpContext, double elapsed, Exception? ex)

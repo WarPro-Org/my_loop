@@ -23,8 +23,8 @@ public static class RateLimitingExtensions
             return RateLimitPartition.GetNoLimiter("hubs");
 
         var partitionKey =
-            httpContext.User?.FindFirst("user_id")?.Value
-            ?? httpContext.User?.FindFirst("sub")?.Value
+            httpContext.User?.FindFirst(FirebaseClaims.UserId)?.Value
+            ?? httpContext.User?.FindFirst(FirebaseClaims.Subject)?.Value
             ?? httpContext.Connection.RemoteIpAddress?.ToString()
             ?? "anonymous";
 

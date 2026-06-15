@@ -26,7 +26,8 @@ public class LegalController : ControllerBase
 
     private IActionResult HtmlPage(string fileName)
     {
-        var path = Path.Combine(_environment.ContentRootPath, "wwwroot", LegalDirectory, fileName);
+        var webRoot = _environment.WebRootPath ?? Path.Combine(_environment.ContentRootPath, "wwwroot");
+        var path = Path.Combine(webRoot, LegalDirectory, fileName);
         if (!System.IO.File.Exists(path))
             return NotFound();
         return Content(System.IO.File.ReadAllText(path), "text/html");
