@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
+import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
@@ -122,6 +123,7 @@ class ProfileScreen extends ConsumerWidget {
               final uid = profile.userId;
               if (uid == null) return;
               await ProfileCache.clear();
+              await GameStateCache.clear();
               try {
                 await api.deleteAccount(uid);
                 await FirebaseAuth.instance.currentUser?.delete();
