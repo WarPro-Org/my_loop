@@ -127,10 +127,11 @@ These are fast, local, write-time skills — catch issues before they reach a PR
 |------------------------|-----------------------|
 | A disk-persisting / async-serialized service or its tests (`*queue*.dart`, `*cache*.dart`, WAL/offline queues, `mobile/test/**`) | `flutter-disk-concurrency-test` (stub `path_provider`, assert disk==memory + surviving set, prove the test fails without the fix) |
 
-> This table and the Pre-PR table below are **auto-maintained**: when `/update-session`
-> extracts a new skill, it adds a row here (or in the Pre-PR table if it's a review-time
-> concern). Keep the set of gate tables small (Pre-Check-in, Pre-PR) — every skill should
-> fall under one.
+> These two gate tables are **intended to be auto-maintained**: once the `/update-session`
+> tooling lands in this repo, extracting a new skill should append a row here (or to the
+> Pre-PR table if it's a review-time concern). Until that companion change merges, add rows
+> by hand. Keep the set of gate tables small (Pre-Check-in, Pre-PR) — every skill should
+> fall under exactly one.
 
 ---
 
