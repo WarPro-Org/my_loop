@@ -71,6 +71,34 @@ public class PathValidationServiceTests
     }
 
     [Fact]
+    public void Sustained_vehicle_speed_batch_is_rejected()
+    {
+        // Regression for issue #37: a car/metro travelling ~40 km/h produces ~55.6m hops
+        // every 5s (≈11.1 m/s). Each hop is below the per-hop ceiling
+        // (8.33*5 + 30 = 71.65m), so the per-hop gate alone accepts it — exactly the bug.
+        // The window-average gate (avg ≈ 11.1 m/s > 9.0) must reject it.
+        var t0 = new DateTime(2026, 6, 11, 9, 0, 0, DateTimeKind.Utc);
+        var points = new List<(double, double, DateTime)> { P(12.9000, 77.5000, t0) };
+        for (var i = 1; i <= 12; i++)
+            points.Add(P(12.9000 + i * 0.0005, 77.5000, t0.AddSeconds(i * 5))); // ~55.6m/hop
+
+        Assert.NotNull(Service().ValidateConsecutivePoints(points));
+    }
+
+    [Fact]
+    public void Fast_run_average_is_accepted()
+    {
+        // Guards against false positives: a fast run (~5 m/s, ~25m hops every 5s) is well
+        // under the sustained-speed gate and must still be accepted.
+        var t0 = new DateTime(2026, 6, 11, 9, 0, 0, DateTimeKind.Utc);
+        var points = new List<(double, double, DateTime)> { P(12.9000, 77.5000, t0) };
+        for (var i = 1; i <= 12; i++)
+            points.Add(P(12.9000 + i * 0.000225, 77.5000, t0.AddSeconds(i * 5))); // ~25m/hop ≈ 5 m/s
+
+        Assert.Null(Service().ValidateConsecutivePoints(points));
+    }
+
+    [Fact]
     public void Occasional_gps_jump_within_tolerance_is_accepted()
     {
         var t0 = new DateTime(2026, 6, 11, 9, 0, 0, DateTimeKind.Utc);
