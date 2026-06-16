@@ -78,8 +78,8 @@ public class TerritoryHub : Hub
         // INTERNAL Guid, so we must map UID -> internal id (same mapping the REST layer
         // uses, CurrentUser.cs) before comparing — comparing the raw UID claim against the
         // Guid arg would reject every legitimate join.
-        var firebaseUid = Context.User.FindFirst("user_id")?.Value
-            ?? Context.User.FindFirst("sub")?.Value
+        var firebaseUid = Context.User.FindFirst(Constants.FirebaseClaims.UserId)?.Value
+            ?? Context.User.FindFirst(Constants.FirebaseClaims.Subject)?.Value
             ?? Context.User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
         if (string.IsNullOrEmpty(firebaseUid))

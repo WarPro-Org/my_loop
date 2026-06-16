@@ -1,0 +1,46 @@
+using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
+using MyLoop.Api.Data;
+using MyLoop.Api.Services;
+
+namespace MyLoop.Api.Configuration;
+
+/// <summary>
+/// Application service registrations, grouped by concern (SRP). Each method returns the service
+/// collection for fluent chaining from Program.cs.
+/// </summary>
+public static class ServiceRegistrationExtensions
+{
+    public static IServiceCollection AddMyLoopDatabase(this IServiceCollection services, IConfiguration configuration) =>
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+
+    /// <summary>Registers domain services, identity resolution, the geocoding client, and the decay worker.</summary>
+    public static IServiceCollection AddMyLoopServices(this IServiceCollection services)
+    {
+        services.AddScoped<IValidationService, ValidationService>();
+        services.AddScoped<IGeoService, GeoService>();
+        services.AddScoped<IHexGridService, HexGridService>();
+        services.AddScoped<ITerritoryService, TerritoryService>();
+        services.AddScoped<IUserService, UserService>();
+        services.AddScoped<ILeaderboardService, LeaderboardService>();
+        services.AddScoped<ITerritoryNotifier, TerritoryNotifier>();
+        services.AddScoped<IPathValidationService, PathValidationService>();
+        services.AddScoped<IPushNotificationService, PushNotificationService>();
+        services.AddScoped<IMissionService, MissionService>();
+        services.AddScoped<IAchievementService, AchievementService>();
+
+        services.AddSingleton<GeocodingService>();
+        // Bound external geocoding latency: Nominatim is best-effort and the service already falls
+        // back gracefully, so cap each request well below the 100s HttpClient default to avoid
+        // tying up request threads when the upstream is slow or unreachable.
+        services.AddHttpClient<GeocodingService>(c =>
+            c.Timeout = TimeSpan.FromSeconds(InfrastructureDefaults.GeocodingTimeoutSeconds));
+        services.AddHostedService<DecayCleanupService>();
+
+        services.AddHttpContextAccessor();
+        services.AddMemoryCache();
+        services.AddScoped<ICurrentUser, CurrentUser>();
+        return services;
+    }
+}

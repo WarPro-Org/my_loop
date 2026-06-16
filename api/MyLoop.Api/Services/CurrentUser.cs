@@ -31,8 +31,8 @@ public class CurrentUser : ICurrentUser
 
             // Firebase puts the uid in "user_id"; "sub" is the same value and (with default
             // inbound claim mapping) may surface as ClaimTypes.NameIdentifier.
-            return principal.FindFirst("user_id")?.Value
-                ?? principal.FindFirst("sub")?.Value
+            return principal.FindFirst(Constants.FirebaseClaims.UserId)?.Value
+                ?? principal.FindFirst(Constants.FirebaseClaims.Subject)?.Value
                 ?? principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
         }
     }
