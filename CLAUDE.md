@@ -145,7 +145,9 @@ chosen from MyLoop's documented failure classes in `architecturalIssues_11th_Jun
 
 | If the PR touches… | Run before opening/merging |
 |--------------------|----------------------------|
+| **Any production C# or Dart code** | `coding-standards` (function size / no magic values / naming / comments / logging / exceptions) |
 | .NET API code (Controllers / Services / Data) | `dotnet-patterns`, `csharp-testing` |
+| Startup / DI / pipeline / `Program.cs` / `Configuration/*Extensions.cs` / Controllers | `webapi-standards` (keep `Program.cs` a thin composition root; group registrations; Options pattern; thin controllers) |
 | DB schema / EF migrations / hex counts | `database-migrations` (verify atomicity + explicit transactions) |
 | API endpoints or request/response shapes | `api-design` |
 | **Anything crossing .NET ↔ Flutter** (DTOs, SignalR payloads, IDs, game constants) | `api-design` + **manually confirm field names, types (H3 CellId, UserId), and constants match on both sides** |
@@ -153,6 +155,7 @@ chosen from MyLoop's documented failure classes in `architecturalIssues_11th_Jun
 | SignalR / real-time / caches / offline queues | `latency-critical-systems` |
 | Flutter / Dart code or Riverpod state | `dart-flutter-patterns`, `flutter-dart-code-review` |
 | Background GPS / `location_service.dart` / `AndroidManifest.xml` / iOS `Info.plist` | `mobile-background-location` (verify foreground-service perms + iOS `UIBackgroundModes`) |
+| **iOS-facing change** — auth/sign-in, location, push, permissions, data collected, account deletion, purchases, new SDK, `Info.plist` / `Runner.xcodeproj` / `PrivacyInfo.xcprivacy` | `app-store-compliance` (verify no App Store Review Guideline violation: SiwA 4.8, location 5.1.1/2.5.4, account deletion 5.1.1(v), privacy manifest) |
 | Error/exception handling or offline durability | `error-handling` |
 | **Always — final gate** | `verification-loop` (tests green) + the PR-review skill |
 
