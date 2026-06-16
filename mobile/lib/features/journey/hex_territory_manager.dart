@@ -6,6 +6,7 @@ library;
 
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 
@@ -24,18 +25,37 @@ class HexTerritoryManager {
         _userId = userId;
 
   /// Loads ALL hexes owned by this user — no viewport limit.
+  ///
+  /// On a successful fetch the set is cached to disk; when the backend is
+  /// unreachable (offline) we fall back to that cache so the user's own hexes
+  /// still render on the Start Journey map instead of vanishing (issue #33).
   Future<void> loadUserOwnHexes() async {
     if (_userId == null) return;
     try {
       final cells = await _api.getUserTerritories(_userId);
-      userOwnHexBoundaries = cells.map((c) => c.boundary).toList();
-      userOwnDecayValues = cells.map((c) => c.decayProgress).toList();
-      userOwnCellIds = cells.map((c) => c.cellId).toSet();
-      allCells = [
-        ...allCells.where((c) => c.ownerId != _userId),
-        ...cells,
-      ];
-    } catch (_) {}
+      _applyUserOwnCells(cells);
+      await TerritoryCache.save(_userId, cells);
+    } catch (_) {
+      // Offline / fetch failed. Restore the last cached own-hexes, but only if
+      // we don't already have fresher data loaded this session (a viewport
+      // load may have already populated owned cells).
+      if (userOwnCellIds.isEmpty) {
+        final cached = await TerritoryCache.load(_userId);
+        if (cached != null && cached.isNotEmpty) _applyUserOwnCells(cached);
+      }
+    }
+  }
+
+  /// Replaces the user-owned hex state with [cells] and merges them into the
+  /// shared [allCells] cache (newest data wins).
+  void _applyUserOwnCells(List<TerritoryCell> cells) {
+    userOwnHexBoundaries = cells.map((c) => c.boundary).toList();
+    userOwnDecayValues = cells.map((c) => c.decayProgress).toList();
+    userOwnCellIds = cells.map((c) => c.cellId).toSet();
+    allCells = [
+      ...allCells.where((c) => c.ownerId != _userId),
+      ...cells,
+    ];
   }
 
   /// Loads hexes in a wide area around [lat], [lng].

@@ -63,4 +63,21 @@ class TerritoryCell {
       decayProgress: (json['decayProgress'] as num?)?.toDouble() ?? 0.0,
     );
   }
+
+  /// Serializes this cell back to the same JSON shape [fromJson] reads.
+  ///
+  /// Used to persist the user's own territories to disk so they can render on
+  /// the Start Journey map while offline (issue #33). The key names and types
+  /// mirror the API payload so a cached cell round-trips through [fromJson]
+  /// identically to a freshly fetched one.
+  Map<String, dynamic> toJson() => {
+        'cellId': cellId,
+        'ownerId': ownerId,
+        'ownerColor': ownerColor,
+        'ownerName': ownerName,
+        'boundary': boundary,
+        'cooldownExpiresAtUtc': cooldownExpiresAtUtc?.toIso8601String(),
+        'parentCellId': parentCellId,
+        'decayProgress': decayProgress,
+      };
 }
