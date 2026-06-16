@@ -80,7 +80,7 @@ public class PathValidationServiceTests
         var t0 = new DateTime(2026, 6, 11, 9, 0, 0, DateTimeKind.Utc);
         var points = new List<(double, double, DateTime)> { P(12.9000, 77.5000, t0) };
         for (var i = 1; i <= 12; i++)
-            points.Add(P(12.9000 + i * 0.0005, 77.5000, t0.AddSeconds(i * 5))); // ~55.6m/hop
+            points.Add(P(12.9000 + i * 0.0005, 77.5000, t0.AddSeconds(i * 5.0))); // ~55.6m/hop
 
         Assert.NotNull(Service().ValidateConsecutivePoints(points));
     }
@@ -93,7 +93,7 @@ public class PathValidationServiceTests
         var t0 = new DateTime(2026, 6, 11, 9, 0, 0, DateTimeKind.Utc);
         var points = new List<(double, double, DateTime)> { P(12.9000, 77.5000, t0) };
         for (var i = 1; i <= 12; i++)
-            points.Add(P(12.9000 + i * 0.000225, 77.5000, t0.AddSeconds(i * 5))); // ~25m/hop ≈ 5 m/s
+            points.Add(P(12.9000 + i * 0.000225, 77.5000, t0.AddSeconds(i * 5.0))); // ~25m/hop ≈ 5 m/s
 
         Assert.Null(Service().ValidateConsecutivePoints(points));
     }
