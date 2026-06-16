@@ -1119,7 +1119,7 @@ class _LiveIndicatorState extends State<_LiveIndicator>
 class _BottomControls extends StatefulWidget {
   final JourneyState journey;
   final bool isSubmitting;
-  final VoidCallback onStartJourney;
+  final Future<void> Function() onStartJourney;
   final VoidCallback onStopCapture;
 
   const _BottomControls({
@@ -1136,14 +1136,17 @@ class _BottomControls extends StatefulWidget {
 class _BottomControlsState extends State<_BottomControls> {
   bool _starting = false;
 
-  void _handleStart() {
+  Future<void> _handleStart() async {
     if (_starting) return;
     setState(() => _starting = true);
-    widget.onStartJourney();
-    // Reset after a short debounce — startJourney is synchronous
-    Future.delayed(const Duration(milliseconds: 600), () {
+    // Await the full start sequence: it now probes server reachability first
+    // (issue #35), which can take up to the reachability timeout when offline.
+    // Keep the button disabled until it resolves to prevent double-starts.
+    try {
+      await widget.onStartJourney();
+    } finally {
       if (mounted) setState(() => _starting = false);
-    });
+    }
   }
 
   @override

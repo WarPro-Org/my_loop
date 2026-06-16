@@ -129,6 +129,16 @@ class JourneyController extends Notifier<JourneyState> {
   Future<void> startJourney() async {
     final locationService = ref.read(locationServiceProvider);
 
+    // A journey is meaningless offline: hex capture is server-validated and the
+    // user would see no preview, no claims, and no feedback. Block at the start
+    // and tell them why (issue #35). Mid-journey drops are still tolerated by
+    // the persisted step-claim queue, which drains on reconnect.
+    final api = ref.read(apiServiceProvider);
+    if (!await api.isServerReachable()) {
+      state = state.copyWith(error: AppConstants.offlineStartJourneyMessage);
+      return;
+    }
+
     try {
       final hasPermission = await locationService.requestPermission();
       if (!hasPermission) {

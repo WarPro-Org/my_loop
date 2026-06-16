@@ -10,6 +10,7 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
@@ -23,6 +24,10 @@ import 'package:myloop/shared/services/step_claim_queue.dart';
 import 'package:myloop/shared/services/trace_context.dart';
 
 final _log = Logger('API');
+
+/// Anonymous liveness endpoint on the backend (`HealthController`). Used by the
+/// reachability probe — no auth, cheap, safe to hit before every journey start.
+const _healthCheckPath = '/';
 
 /// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
 /// Defaults to ngrok tunnel for mobile testing over cellular.
@@ -101,6 +106,32 @@ class ApiService {
         handler.next(options);
       },
     ));
+  }
+
+  /// Returns true if the backend is reachable right now.
+  ///
+  /// Hits the anonymous health endpoint with a short timeout. Used to gate
+  /// actions that are meaningless offline — chiefly starting a journey, since
+  /// hex capture is server-validated (anti-cheat + claim authority) and a walk
+  /// started with no server gives the user no preview, no claims, and no
+  /// feedback (issue #35). A server that answers with an HTTP error still
+  /// counts as reachable; only a true network failure returns false. See
+  /// [isServerUnreachable].
+  Future<bool> isServerReachable() async {
+    final timeout = const Duration(
+      seconds: AppConstants.serverReachabilityTimeoutSeconds,
+    );
+    try {
+      await _dio.get(
+        _healthCheckPath,
+        options: Options(receiveTimeout: timeout, sendTimeout: timeout),
+      );
+      return true;
+    } on DioException catch (e) {
+      if (isServerUnreachable(e)) return false;
+      // Server answered (even an error status) → it is reachable.
+      return true;
+    }
   }
 
   /// Registers a new user account on the backend.
