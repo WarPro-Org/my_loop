@@ -73,7 +73,10 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
           bonusCount = (result['cellCount'] as num?)?.toInt() ?? 0;
           stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
           _renderCapturedHexes(result);
-          _optimisticHexUpdate(bonusCount);
+          // The bonus claim is reflected by the server's UserStatsDelta push
+          // (consumed live by userProfileProvider) and reconciled authoritatively
+          // by _refreshUserData below — no local optimistic add, which would
+          // double-count the bonus on top of the pushed value (issue #30).
         }
       }
 
@@ -110,12 +113,6 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
             .toList())
         .toList();
     _mapKey.currentState?.showCapturedHexes(boundaries);
-  }
-
-  void _optimisticHexUpdate(int capturedCount) {
-    if (!mounted || capturedCount <= 0) return;
-    final profile = ref.read(userProfileProvider);
-    ref.read(userProfileProvider.notifier).updateStats(hexCount: profile.hexCount + capturedCount);
   }
 
   Future<void> _refreshUserData(dynamic profile, ApiService api) async {
