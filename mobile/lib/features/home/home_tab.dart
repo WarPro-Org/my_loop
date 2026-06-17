@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/home/home_screen.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/models/achievement.dart';
@@ -1091,6 +1092,10 @@ class _RankSheetState extends State<_RankSheet> {
   int _countryRank = 0;
   int _worldRank = 0;
   bool _loading = true;
+  // True when the country/world ranks couldn't be fetched because the backend
+  // was unreachable. We then show an offline note instead of a misleading "—"
+  // that looks like the user is simply unranked (issue #36).
+  bool _offline = false;
 
   @override
   void initState() {
@@ -1115,10 +1120,16 @@ class _RankSheetState extends State<_RankSheet> {
           _countryRank = results[0].myRank ?? 0;
           _worldRank = results[1].myRank ?? 0;
           _loading = false;
+          _offline = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _offline = isServerUnreachable(e);
+        });
+      }
     }
   }
 
@@ -1157,8 +1168,12 @@ class _RankSheetState extends State<_RankSheet> {
           Text('Your Ranking', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
           const SizedBox(height: 12),
           _RankOption(scope: 'City', rank: rank, emoji: '🏙️'),
-          _RankOption(scope: 'Country', rank: _loading ? -1 : _countryRank, emoji: '🌍'),
-          _RankOption(scope: 'World', rank: _loading ? -1 : _worldRank, emoji: '🌐'),
+          if (_offline)
+            const _RankOfflineNote()
+          else ...[
+            _RankOption(scope: 'Country', rank: _loading ? -1 : _countryRank, emoji: '🌍'),
+            _RankOption(scope: 'World', rank: _loading ? -1 : _worldRank, emoji: '🌐'),
+          ],
           const SizedBox(height: 16),
         ],
       ),
@@ -1196,6 +1211,40 @@ class _RankOption extends StatelessWidget {
                   rank > 0 ? '#$rank' : '—',
                   style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: AppColors.primary),
                 ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Inline offline note shown in the rank sheet in place of the Country/World
+/// rows when those ranks couldn't be fetched (issue #36). The City rank still
+/// renders from the cached profile, so only the network-backed scopes are
+/// replaced.
+class _RankOfflineNote extends StatelessWidget {
+  const _RankOfflineNote();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: AppColors.snow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.greyLight, width: 2),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.cloud_off, size: 22, color: AppColors.grey),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              AppConstants.offlineRankingMessage,
+              style: TextStyle(color: AppColors.grey, fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
       ),
     );

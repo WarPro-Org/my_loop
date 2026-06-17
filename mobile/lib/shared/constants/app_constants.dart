@@ -50,4 +50,13 @@ class AppConstants {
   /// is nothing to start offline — see issue #35.
   static const String offlineStartJourneyMessage =
       'No internet connection. You need to be online to start a journey and capture hexes.';
+
+  // --- Offline messaging (issue #36) ---
+  // Shown when a modal/screen cannot reach the backend, so the user sees an
+  // explicit "you're offline" state instead of a misleading empty/zero one.
+  static const String offlineNoticeTitle = "You're offline";
+  static const String offlineWalkHistoryMessage =
+      'Connect to the internet to load your walk history.';
+  static const String offlineRankingMessage =
+      'Connect to the internet to see your country and world ranking.';
 }
