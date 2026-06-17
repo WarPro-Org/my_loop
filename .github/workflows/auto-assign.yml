@@ -12,7 +12,9 @@ jobs:
       pull-requests: write
     steps:
     - name: 'Auto-assign issue'
-      uses: pozil/auto-assign-issue@v1
+      # Pinned to a full commit SHA (v1) so a retagged/compromised release
+      # cannot run with issues:write + pull-requests:write. Bump deliberately.
+      uses: pozil/auto-assign-issue@d11e715efc663fe323c3d8d4d3cbbfdddd539baf # v1
       with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           assignees: ProManXi
