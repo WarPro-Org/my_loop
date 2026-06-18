@@ -86,12 +86,15 @@ class PreviewResult {
 class ApiService {
   final Dio _dio;
 
-  ApiService({String? baseUrl})
-      : _dio = Dio(BaseOptions(
-          baseUrl: baseUrl ?? apiBaseUrl,
-          connectTimeout: const Duration(seconds: 10),
-          receiveTimeout: const Duration(seconds: 10),
-        )) {
+  /// [dio] is injectable for tests (e.g. to drive a probe failure); production
+  /// callers omit it and get the standard timeout-configured client.
+  ApiService({String? baseUrl, Dio? dio})
+      : _dio = dio ??
+            Dio(BaseOptions(
+              baseUrl: baseUrl ?? apiBaseUrl,
+              connectTimeout: const Duration(seconds: 10),
+              receiveTimeout: const Duration(seconds: 10),
+            )) {
     _dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         // W3C trace context — the backend adopts this as the request trace id,
@@ -131,6 +134,15 @@ class ApiService {
       if (isServerUnreachable(e)) return false;
       // Server answered (even an error status) → it is reachable.
       return true;
+    } catch (e) {
+      // A non-Dio throw escapes the catch above — most plausibly the request
+      // interceptor's offline `getIdToken()` refresh raising a
+      // FirebaseAuthException when the cached token is expired and there is no
+      // network. Treat the probe as failed-closed (unreachable) so the caller
+      // shows the offline message instead of an unhandled error crashing the
+      // journey-start flow. Logged so a genuine bug here isn't masked as offline.
+      _log.warning('isServerReachable probe failed with a non-Dio error', e);
+      return false;
     }
   }
 
