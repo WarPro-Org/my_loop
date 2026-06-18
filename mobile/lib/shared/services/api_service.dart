@@ -8,6 +8,7 @@ library;
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
@@ -20,6 +21,7 @@ import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/models/user.dart';
 import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/batch_drain_service.dart';
+import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
 import 'package:myloop/shared/services/trace_context.dart';
 
@@ -100,6 +102,13 @@ class ApiService {
         // W3C trace context — the backend adopts this as the request trace id,
         // so mobile actions, server logs, and crash reports share one id.
         options.headers['traceparent'] = TraceContext.newTraceparent();
+
+        // Mock walk simulator (#29): in debug builds, while the simulator is on,
+        // tag the request so the backend splits its logs into MockLogs/. The flag
+        // marks logging only — no server game logic branches on it.
+        if (kDebugMode && MockWalkMode.active) {
+          options.headers[MockWalkConstants.requestHeader] = MockWalkConstants.requestHeaderValue;
+        }
 
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {

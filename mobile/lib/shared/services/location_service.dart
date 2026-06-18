@@ -17,6 +17,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:logging/logging.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
+import 'package:myloop/shared/services/mock/mock_location_service.dart';
+import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 
 final _log = Logger('LocationService');
 
@@ -170,8 +172,18 @@ class LocationService {
   }
 }
 
-/// Provides a singleton [LocationService] instance.
+/// Provides the active [LocationService] — the real GPS service in normal use, or
+/// the injectable [MockLocationService] when the mock walk simulator is enabled in a
+/// debug build (#29). The `kDebugMode` guard makes the mock impossible to reach in a
+/// release build. Everything downstream (journey controller, WAL queue, batch drain,
+/// anti-cheat, DB) is identical for both — that is the point of injecting here.
 final locationServiceProvider = Provider<LocationService>((ref) {
+  if (kDebugMode) {
+    final mockConfig = ref.watch(mockWalkConfigProvider);
+    if (mockConfig.enabled) {
+      return MockLocationService(mockConfig);
+    }
+  }
   final service = LocationService();
   ref.onDispose(() => service.dispose());
   return service;

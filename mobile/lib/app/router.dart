@@ -1,8 +1,10 @@
 ﻿/// MyLoop - Application Routing Configuration
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:myloop/features/dev/mock_walk_screen.dart';
 import 'package:myloop/features/auth/login_screen.dart';
 import 'package:myloop/features/auth/avatar_picker_screen.dart';
 import 'package:myloop/features/auth/local_signup_screen.dart';
@@ -56,6 +58,9 @@ final router = GoRouter(
     GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
 
     GoRoute(path: '/journey', builder: (context, state) => const JourneyScreen()),
+    // Debug-only mock walk simulator (#29) — excluded from release builds.
+    if (kDebugMode)
+      GoRoute(path: '/dev/mock-walk', builder: (context, state) => const MockWalkScreen()),
     GoRoute(path: '/walk-history', builder: (context, state) => const WalkHistoryScreen()),
     GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen()),
     GoRoute(

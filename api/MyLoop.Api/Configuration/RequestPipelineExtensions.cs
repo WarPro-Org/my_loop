@@ -19,6 +19,16 @@ public static class RequestPipelineExtensions
         // every request log line — including the summary below — carries it.
         app.UseMiddleware<TraceContextMiddleware>();
 
+        // Tag requests from the mock walk simulator (#29) so their logs split off to MockLogs/.
+        // Must wrap the request-logging middleware below so the per-request summary is tagged too.
+        // Registered ONLY outside Production: the header is honoured only in dev/staging, mirroring
+        // the client's kDebugMode guard. This denies a tampered release client the ability to divert
+        // its own request logs (e.g. anti-cheat rejections) away from the monitored real-logs sink.
+        if (!app.Environment.IsProduction())
+        {
+            app.UseMiddleware<MockLogContextMiddleware>();
+        }
+
         // One tidy summary line per request (method, path, status, elapsed ms) enriched with the
         // caller's Firebase uid. Long-lived SignalR traffic and the health/static endpoints are
         // dropped to Verbose so they don't flood the Information-level stream.
