@@ -39,4 +39,15 @@ class AppConstants {
 
   // --- Celebration ---
   static const int celebrationDelayMs = 800;
+
+  // --- Connectivity ---
+  /// Timeout for the pre-journey server reachability probe. Kept short so the
+  /// offline gate fails fast instead of waiting out the full request timeout.
+  static const int serverReachabilityTimeoutSeconds = 5;
+
+  /// Shown when a user tries to start a journey with no server connection.
+  /// Hex capture is server-validated (anti-cheat + claim authority), so there
+  /// is nothing to start offline — see issue #35.
+  static const String offlineStartJourneyMessage =
+      'No internet connection. You need to be online to start a journey and capture hexes.';
 }
