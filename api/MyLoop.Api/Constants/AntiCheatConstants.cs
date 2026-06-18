@@ -8,6 +8,23 @@ public static class AntiCheatConstants
     /// <summary>Max speed in m/s (30 km/h — fast jogging).</summary>
     public const double MaxSpeedMetersPerSecond = 8.33;
 
+    /// <summary>
+    /// Max sustained <b>average</b> speed (m/s) across a batch window (~32 km/h).
+    /// The per-hop drift margin lets steady vehicle travel (~50 km/h) slip past the
+    /// per-hop gate (issue #37); averaging hop distances over the whole window cancels
+    /// GPS noise, and no human gait (walk/run/sprint/cycle) sustains this — so it
+    /// catches cars/metros without false-positiving real walkers.
+    /// <para>
+    /// NOTE: this is intentionally <b>higher</b> than the nominal per-hop
+    /// <see cref="MaxSpeedMetersPerSecond"/> (8.33) — not a bug. The per-hop gate's
+    /// <i>effective</i> ceiling is ~12 m/s (<see cref="MaxDistanceBetweenPointsMeters"/> = 60 m
+    /// over a ~5 s hop), so 9.0 m/s is in fact stricter than the per-hop gate in practice while
+    /// still clearing the fastest human gait over a noisy window. Do NOT "fix" the apparent
+    /// inversion by lowering this toward 8.33 — that reintroduces false positives for fast runners.
+    /// </para>
+    /// </summary>
+    public const double MaxAverageSpeedMetersPerSecond = 9.0;
+
     /// <summary>GPS sampling interval in seconds (client sends a point every ~5s).</summary>
     public const double GpsSamplingIntervalSeconds = 5.0;
 

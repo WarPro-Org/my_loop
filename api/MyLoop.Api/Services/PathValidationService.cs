@@ -135,6 +135,7 @@ public class PathValidationService : IPathValidationService
         const double gpsDriftMarginMeters = 30.0;
 
         var violations = 0;
+        var totalDistanceMeters = 0.0;
         for (var i = 1; i < points.Count; i++)
         {
             var prev = points[i - 1];
@@ -142,6 +143,7 @@ public class PathValidationService : IPathValidationService
 
             var distanceMeters = HaversineDistance(
                 [prev.Lat, prev.Lng], [curr.Lat, curr.Lng]);
+            totalDistanceMeters += distanceMeters;
 
             var elapsedSeconds = (curr.CapturedAt - prev.CapturedAt).TotalSeconds;
             // Missing/disordered timestamps → fall back to the nominal sampling cadence
@@ -163,6 +165,25 @@ public class PathValidationService : IPathValidationService
                 "Batch rejected: {Rate:P1} implausible-speed hops ({Count}/{Total})",
                 violationRate, violations, points.Count - 1);
             return "Movement speed exceeds physical limits";
+        }
+
+        // Sustained-speed gate (issue #37): the per-hop drift margin alone lets steady
+        // vehicle travel (~50 km/h) through, because each hop stays under the inflated
+        // per-hop ceiling. Averaging hop distances over the whole window cancels GPS
+        // noise, so a sustained average above human gait reliably flags cars/metros.
+        // Skip when total elapsed ≤ 0 (missing/disordered timestamps) — same fallback
+        // rationale as the per-hop loop above.
+        var totalElapsedSeconds = (points[^1].CapturedAt - points[0].CapturedAt).TotalSeconds;
+        if (totalElapsedSeconds > 0)
+        {
+            var averageSpeed = totalDistanceMeters / totalElapsedSeconds;
+            if (averageSpeed > AntiCheatConstants.MaxAverageSpeedMetersPerSecond)
+            {
+                _logger.LogWarning(
+                    "Batch rejected: sustained average speed {Speed:F1} m/s over {Seconds:F0}s exceeds limit",
+                    averageSpeed, totalElapsedSeconds);
+                return "Movement speed exceeds physical limits";
+            }
         }
 
         return null;
