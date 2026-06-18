@@ -9,6 +9,9 @@ import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
+import 'package:logging/logging.dart';
+
+final _log = Logger('HexTerritory');
 
 class HexTerritoryManager {
   final ApiService _api;
@@ -35,10 +38,20 @@ class HexTerritoryManager {
       final cells = await _api.getUserTerritories(_userId);
       _applyUserOwnCells(cells);
       await TerritoryCache.save(_userId, cells);
-    } catch (_) {
-      // Offline / fetch failed. Restore the last cached own-hexes, but only if
-      // we don't already have fresher data loaded this session (a viewport
-      // load may have already populated owned cells).
+    } catch (e) {
+      // A reachable server that still failed (5xx, or a malformed payload that
+      // breaks the `as List`/`fromJson` decode) is a real bug, not an offline
+      // state — surface it loudly instead of masking it behind stale cache.
+      // Kept as a catch-all (not `on Exception`) so a decode `TypeError`, which
+      // is an Error rather than an Exception, is logged here too rather than
+      // escaping as an unhandled async error to callers that don't await/catch.
+      if (!isServerUnreachable(e)) {
+        _log.warning('loadUserOwnHexes failed (server reachable)', e);
+        return;
+      }
+      // Offline. Restore the last cached own-hexes, but only if we don't already
+      // have fresher data loaded this session (a viewport load may have already
+      // populated owned cells).
       if (userOwnCellIds.isEmpty) {
         final cached = await TerritoryCache.load(_userId);
         if (cached != null && cached.isNotEmpty) _applyUserOwnCells(cached);

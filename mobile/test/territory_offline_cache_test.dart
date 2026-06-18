@@ -73,6 +73,17 @@ DioException _offline() => DioException(
       type: DioExceptionType.connectionError,
     );
 
+/// A reachable server that answered with an error (e.g. HTTP 500) — distinct
+/// from being offline.
+DioException _serverError() => DioException(
+      requestOptions: RequestOptions(path: '/api/territories/user/user-1'),
+      type: DioExceptionType.badResponse,
+      response: Response(
+        requestOptions: RequestOptions(path: '/api/territories/user/user-1'),
+        statusCode: 500,
+      ),
+    );
+
 void main() {
   group('TerritoryCache codec', () {
     test('round-trips cells bound to their user id', () {
@@ -181,6 +192,24 @@ void main() {
       // no owned hexes (issue #33). The fix restores the cached set.
       expect(mgr.userOwnCellIds, {1, 2, 3});
       expect(mgr.userOwnHexBoundaries.length, 3);
+    });
+
+    test('reachable server error does NOT fall back to stale cache', () async {
+      // Seed the cache as a previous online session would have.
+      await TerritoryCache.save('user-1', [_cell(1), _cell(2), _cell(3)]);
+
+      final mgr = HexTerritoryManager(
+        api: _FakeApi(result: const [], error: _serverError()),
+        userId: 'user-1',
+      );
+
+      await mgr.loadUserOwnHexes();
+
+      // A 5xx is a real failure, not offline — masking it with stale cache would
+      // be indistinguishable from being offline. Owned hexes must stay empty so
+      // the error surfaces (logged) instead of silently showing stale data.
+      expect(mgr.userOwnCellIds, isEmpty);
+      expect(mgr.userOwnHexBoundaries, isEmpty);
     });
 
     test('offline with no cache leaves owned hexes empty (no crash)', () async {
