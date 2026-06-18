@@ -26,12 +26,12 @@ class OfflineNotice extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off, size: 56, color: AppColors.greyLight),
+            const Icon(Icons.cloud_off, size: 56, color: AppColors.greyLight),
             const SizedBox(height: 16),
             Text(
               title,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                   color: AppColors.grey,
                   fontSize: 16,
                   fontWeight: FontWeight.w700),
@@ -40,7 +40,7 @@ class OfflineNotice extends StatelessWidget {
             Text(
               message,
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.grey, fontSize: 13),
+              style: const TextStyle(color: AppColors.grey, fontSize: 13),
             ),
           ],
         ),

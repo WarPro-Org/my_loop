@@ -1237,12 +1237,12 @@ class _RankOfflineNote extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(Icons.cloud_off, size: 22, color: AppColors.grey),
+          const Icon(Icons.cloud_off, size: 22, color: AppColors.grey),
           const SizedBox(width: 12),
           Expanded(
             child: Text(
               AppConstants.offlineRankingMessage,
-              style: TextStyle(color: AppColors.grey, fontSize: 13, fontWeight: FontWeight.w600),
+              style: const TextStyle(color: AppColors.grey, fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
         ],
