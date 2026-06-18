@@ -4,8 +4,10 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/widgets/offline_notice.dart';
 
 class WalkHistoryScreen extends ConsumerStatefulWidget {
   const WalkHistoryScreen({super.key});
@@ -19,6 +21,10 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
   bool _loading = true;
   bool _hasMore = true;
   int _page = 1;
+  // True when the last load failed because the backend was unreachable, so we
+  // can show an explicit offline notice instead of the "No walks yet" empty
+  // state, which falsely implies the user has never walked (issue #36).
+  bool _offline = false;
 
   @override
   void initState() {
@@ -38,9 +44,15 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
         _claims.addAll(results);
         _hasMore = results.length == 20;
         _loading = false;
+        _offline = false;
       });
     } catch (e) {
-      setState(() => _loading = false);
+      setState(() {
+        _loading = false;
+        // Only surface the offline state when we have nothing else to show;
+        // a failed page-2 fetch shouldn't replace already-loaded history.
+        _offline = _claims.isEmpty && isServerUnreachable(e);
+      });
     }
   }
 
@@ -59,9 +71,14 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
       ),
       body: _claims.isEmpty && _loading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
-          : _claims.isEmpty
-              ? _buildEmpty()
-              : _buildList(),
+          : _claims.isEmpty && _offline
+              ? const OfflineNotice(
+                  title: AppConstants.offlineNoticeTitle,
+                  message: AppConstants.offlineWalkHistoryMessage,
+                )
+              : _claims.isEmpty
+                  ? _buildEmpty()
+                  : _buildList(),
     );
   }
 
