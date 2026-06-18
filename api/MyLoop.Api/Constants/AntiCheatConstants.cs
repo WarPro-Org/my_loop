@@ -14,6 +14,14 @@ public static class AntiCheatConstants
     /// per-hop gate (issue #37); averaging hop distances over the whole window cancels
     /// GPS noise, and no human gait (walk/run/sprint/cycle) sustains this — so it
     /// catches cars/metros without false-positiving real walkers.
+    /// <para>
+    /// NOTE: this is intentionally <b>higher</b> than the nominal per-hop
+    /// <see cref="MaxSpeedMetersPerSecond"/> (8.33) — not a bug. The per-hop gate's
+    /// <i>effective</i> ceiling is ~12 m/s (<see cref="MaxDistanceBetweenPointsMeters"/> = 60 m
+    /// over a ~5 s hop), so 9.0 m/s is in fact stricter than the per-hop gate in practice while
+    /// still clearing the fastest human gait over a noisy window. Do NOT "fix" the apparent
+    /// inversion by lowering this toward 8.33 — that reintroduces false positives for fast runners.
+    /// </para>
     /// </summary>
     public const double MaxAverageSpeedMetersPerSecond = 9.0;
 
