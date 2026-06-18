@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/territory_realtime_service.dart';
 
 /// Immutable snapshot of the current user's profile.
 class UserProfile {
@@ -55,7 +56,29 @@ class UserProfile {
 /// Notifier that manages user profile state.
 class UserProfileNotifier extends Notifier<UserProfile> {
   @override
-  UserProfile build() => const UserProfile();
+  UserProfile build() {
+    // Keep the displayed profile in sync with server-authoritative stat pushes.
+    // The server emits a UserStatsDelta over SignalR on every capture/steal/victim
+    // event (e.g. each batch-step claim while walking). Without consuming it here
+    // the hex count shown on the Map and Home stays frozen at its pre-walk value
+    // mid-walk and only reconciles after the post-walk refresh — so the Map count
+    // diverged from the real (server) count while tracking (issue #30).
+    final realtime = ref.read(territoryRealtimeProvider);
+    final sub = realtime.onUserStats.listen(_applyStatsDelta);
+    ref.onDispose(sub.cancel);
+    return const UserProfile();
+  }
+
+  /// Applies a live server stat push to the in-memory profile. Only the fields
+  /// the delta carries are touched; identity (userId/avatar/color/name) and rank
+  /// (sourced from the leaderboard, not pushed here) are preserved.
+  void _applyStatsDelta(UserStatsDelta delta) {
+    state = state.copyWith(
+      hexCount: delta.hexCount,
+      streak: delta.streak,
+      distanceKm: delta.distanceKm,
+    );
+  }
 
   /// Updates avatar and color together.
   void updateAvatarAndColor(int avatarId, String color) {
