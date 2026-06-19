@@ -143,6 +143,9 @@ class MockWalkConfigNotifier extends Notifier<MockWalkConfig> {
   MockWalkConfig build() {
     final initial = const MockWalkConfig();
     MockWalkMode.active = initial.enabled;
+    // Fail safe: if this provider is disposed (e.g. across a hot restart) the global
+    // must not keep tagging requests as mock — reset it so it can never lag the config.
+    ref.onDispose(() => MockWalkMode.active = false);
     return initial;
   }
 
