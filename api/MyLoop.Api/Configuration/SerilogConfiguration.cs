@@ -24,12 +24,19 @@ public static class SerilogConfiguration
             // container, CWD is often "/" which isn't writable, and Serilog swallows the open
             // failure to SelfLog — the durable log would silently write nowhere. Allow ops to
             // override the directory (e.g. /var/log/myloop) via "Serilog:LogDirectory".
+            // The directory/file-name constants are wrapped in Path.GetFileName so the second
+            // Path.Combine argument is provably relative: a rooted value would otherwise silently
+            // discard the content-root prefix (and writes would land outside the app dir).
             var logDirectory = context.Configuration["Serilog:LogDirectory"]
-                ?? Path.Combine(context.HostingEnvironment.ContentRootPath, InfrastructureDefaults.LogDirectoryName);
+                ?? Path.Combine(
+                    context.HostingEnvironment.ContentRootPath,
+                    Path.GetFileName(InfrastructureDefaults.LogDirectoryName));
             // Mock-simulator logs (#29) live in a sibling directory so beta logs stay free of
             // synthetic-walk noise; ops can relocate them independently of the real logs.
             var mockLogDirectory = context.Configuration["Serilog:MockLogDirectory"]
-                ?? Path.Combine(context.HostingEnvironment.ContentRootPath, InfrastructureDefaults.MockLogDirectoryName);
+                ?? Path.Combine(
+                    context.HostingEnvironment.ContentRootPath,
+                    Path.GetFileName(InfrastructureDefaults.MockLogDirectoryName));
 
             var seqUrl = context.Configuration["Seq:ServerUrl"];
 
@@ -47,7 +54,7 @@ public static class SerilogConfiguration
                             outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {Message:lj}{NewLine}{Exception}")
                         .WriteTo.File(
                             formatter: new CompactJsonFormatter(),
-                            path: Path.Combine(logDirectory, InfrastructureDefaults.LogFileNamePattern),
+                            path: Path.Combine(logDirectory, Path.GetFileName(InfrastructureDefaults.LogFileNamePattern)),
                             rollingInterval: RollingInterval.Day,
                             retainedFileCountLimit: InfrastructureDefaults.LogRetainedFileCountLimit,
                             fileSizeLimitBytes: InfrastructureDefaults.LogFileSizeLimitBytes,
@@ -63,7 +70,7 @@ public static class SerilogConfiguration
                     .Filter.ByIncludingOnly(IsMockEvent)
                     .WriteTo.File(
                         formatter: new CompactJsonFormatter(),
-                        path: Path.Combine(mockLogDirectory, InfrastructureDefaults.MockLogFileNamePattern),
+                        path: Path.Combine(mockLogDirectory, Path.GetFileName(InfrastructureDefaults.MockLogFileNamePattern)),
                         rollingInterval: RollingInterval.Day,
                         retainedFileCountLimit: InfrastructureDefaults.LogRetainedFileCountLimit,
                         fileSizeLimitBytes: InfrastructureDefaults.LogFileSizeLimitBytes,
