@@ -143,6 +143,10 @@ public class TerritoryService : ITerritoryService
             {
                 Id = claim.Id,
                 CellCount = claim.CellCount,
+                // transfers excludes cells the user already owned (AssignCells skips them),
+                // so this is the bonus the client adds to its live count, with no double
+                // count of trail hexes already claimed during the walk (#55).
+                NewlyClaimedCount = transfers.Count,
                 AreaM2 = claim.AreaM2,
                 StolenFromOthers = transfers.Count(t => t.FromUserId != null),
                 Boundaries = boundaries,

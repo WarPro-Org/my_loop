@@ -70,7 +70,11 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         final profile = ref.read(userProfileProvider);
         if (profile.userId != null) {
           final result = await api.submitClaim(userId: profile.userId!, path: path);
-          bonusCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+          // Use newlyClaimedCount (hexes this loop claim actually added — interior fill +
+          // steals), NOT cellCount (total enclosed cells, which includes the trail hexes
+          // already counted in claimedCount during the walk). Adding cellCount here
+          // over-counts the capture celebration by the trail length (issue #55).
+          bonusCount = (result['newlyClaimedCount'] as num?)?.toInt() ?? 0;
           stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
           _renderCapturedHexes(result);
           // The bonus claim is reflected by the server's UserStatsDelta push
