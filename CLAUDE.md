@@ -155,6 +155,7 @@ chosen from MyLoop's documented failure classes in `architecturalIssues_11th_Jun
 | SignalR / real-time / caches / offline queues | `latency-critical-systems` |
 | Flutter / Dart code or Riverpod state | `dart-flutter-patterns`, `flutter-dart-code-review` |
 | Background GPS / `location_service.dart` / `AndroidManifest.xml` / iOS `Info.plist` | `mobile-background-location` (verify foreground-service perms + iOS `UIBackgroundModes`) |
+| **A mock/simulated/replayed GPS source or any client that submits walk paths** (`*mock*walk*`, `MockLocationService`, GPX/path replay, synthetic-path tests) | `mock-gps-anticheat` (jitter for bearing std-dev > 2°, real-time pacing, retained-point density ≥ minLoopPoints/minGpsPointsPerClaim, loop closure; environment-gate + logging-only for any honored mock flag) |
 | **iOS-facing change** — auth/sign-in, location, push, permissions, data collected, account deletion, purchases, new SDK, `Info.plist` / `Runner.xcodeproj` / `PrivacyInfo.xcprivacy` | `app-store-compliance` (verify no App Store Review Guideline violation: SiwA 4.8, location 5.1.1/2.5.4, account deletion 5.1.1(v), privacy manifest) |
 | Error/exception handling or offline durability | `error-handling` |
 | **Always — final gate** | `verification-loop` (tests green) + the PR-review skill |
