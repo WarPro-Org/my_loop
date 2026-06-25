@@ -111,4 +111,69 @@ public class PathValidationServiceTests
 
         Assert.Null(Service().ValidateConsecutivePoints(points));
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // Smoothness gate for batch-step windows (issue #52). Before the fix the
+    // batch-step path ran ValidateConsecutivePoints (speed) but never a smoothness
+    // gate, so a synthetic dead-straight spoof path was accepted on the live claim path.
+    // ──────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Straight_line_batch_is_rejected_as_too_smooth()
+    {
+        // 12 dead-straight north hops: every bearing change is 0° → stdDev 0 < MinBearingStdDev.
+        var points = new List<(double, double)>();
+        for (var i = 0; i < 12; i++)
+            points.Add((12.9000 + i * 0.0001, 77.5000));
+
+        Assert.NotNull(Service().ValidateSmoothness(points));
+    }
+
+    [Fact]
+    public void Jittered_walking_batch_passes_smoothness()
+    {
+        // A real walk wanders with IRREGULAR jitter: bearing-change magnitudes vary, so their
+        // stdDev (≈17.8°) sits well above the 2° floor and the batch is accepted. (Note a
+        // *regular* zigzag would have near-constant change magnitude → stdDev ≈ 0 → rejected;
+        // the gate measures variability, not raw turning.)
+        var points = NaturalWalkPoints;
+
+        Assert.Null(Service().ValidateSmoothness(points));
+    }
+
+    /// <summary>
+    /// Northward track with irregular per-hop lat/lng jitter (seeded, deterministic).
+    /// bearing-change stdDev ≈ 17.8° — comfortably above MinBearingStdDev.
+    /// </summary>
+    private static readonly List<(double, double)> NaturalWalkPoints =
+    [
+        (12.900000, 77.500000),
+        (12.900111, 77.499905),
+        (12.900193, 77.499850),
+        (12.900312, 77.499885),
+        (12.900443, 77.499802),
+        (12.900537, 77.499708),
+        (12.900615, 77.499709),
+        (12.900677, 77.499649),
+        (12.900789, 77.499658),
+        (12.900866, 77.499676),
+        (12.900991, 77.499577),
+        (12.901116, 77.499617),
+        (12.901203, 77.499548),
+        (12.901339, 77.499515),
+    ];
+
+    [Fact]
+    public void Short_batch_skips_smoothness()
+    {
+        // Fewer than the analysis minimum (10 points): no verdict, accept — matches the
+        // loop-claim path's behaviour. Cross-batch smoothness is out of scope for #52.
+        var points = new List<(double, double)>
+        {
+            (12.9000, 77.5000), (12.9001, 77.5000), (12.9002, 77.5000),
+            (12.9003, 77.5000), (12.9004, 77.5000),
+        };
+
+        Assert.Null(Service().ValidateSmoothness(points));
+    }
 }
