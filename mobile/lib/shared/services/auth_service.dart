@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
+import 'package:myloop/shared/services/territory_cache.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Authentication Service
@@ -145,11 +146,12 @@ class AuthService {
   /// After this call, [authStateChanges] emits `null`, triggering navigation
   /// back to the login screen via the auth state listener.
   Future<void> signOut() async {
-    // Drop the cached offline profile so the next user can't inherit this
-    // session on a later offline launch (issue #19), and the cached home cards
-    // so they can't inherit the previous user's missions/exploration (#34).
+    // Drop the cached offline profile, home cards, and territories so the next
+    // user can't inherit this session on a later offline launch — profile/session
+    // (#19), missions/exploration cards (#34), and own-hex territories (#33).
     await ProfileCache.clear();
     await GameStateCache.clear();
+    await TerritoryCache.clear();
     // Only attempt Google sign-out if we previously initialized the SDK.
     if (_googleInitialized) {
       await GoogleSignIn.instance.signOut();

@@ -10,6 +10,7 @@ import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
+import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
@@ -124,6 +125,7 @@ class ProfileScreen extends ConsumerWidget {
               if (uid == null) return;
               await ProfileCache.clear();
               await GameStateCache.clear();
+              await TerritoryCache.clear();
               try {
                 await api.deleteAccount(uid);
                 await FirebaseAuth.instance.currentUser?.delete();
