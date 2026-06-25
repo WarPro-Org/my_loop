@@ -203,7 +203,7 @@ public class TerritoryService : ITerritoryService
             Id = claimId,
             UserId = userId,
             CellCount = cells.Count,
-            AreaM2 = cells.Count * 4234.0,
+            AreaM2 = cells.Count * GameConstants.CellAreaSquareMeters,
         };
         trailClaim.SetPolygon(points);
         _db.Claims.Add(trailClaim);
@@ -373,7 +373,7 @@ public class TerritoryService : ITerritoryService
             Id = claimId,
             UserId = userId,
             CellCount = 1,
-            AreaM2 = 4234, // ~4,234 m² per H3 res-11 hex
+            AreaM2 = GameConstants.CellAreaSquareMeters, // one res-11 hex (~2,150 m²)
         };
         claim.SetPolygon([[lat, lng]]);
         _db.Claims.Add(claim);
@@ -654,7 +654,7 @@ public class TerritoryService : ITerritoryService
                     Id = claimId,
                     UserId = userId,
                     CellCount = totalClaimedThisBatch,
-                    AreaM2 = totalClaimedThisBatch * 4234, // ~4,234 m² per H3 res-11 hex
+                    AreaM2 = totalClaimedThisBatch * GameConstants.CellAreaSquareMeters, // ~2,150 m² per H3 res-11 hex
                 };
                 claim.SetPolygon(pathPoints);
                 _db.Claims.Add(claim);
