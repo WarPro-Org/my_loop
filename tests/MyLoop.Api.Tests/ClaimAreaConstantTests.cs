@@ -69,6 +69,10 @@ public class ClaimAreaConstantTests : IAsyncLifetime
         var notifier = new Mock<ITerritoryNotifier> { DefaultValue = DefaultValue.Empty };
         var push = new Mock<IPushNotificationService> { DefaultValue = DefaultValue.Empty };
         var missions = new Mock<IMissionService> { DefaultValue = DefaultValue.Empty };
+        // ProcessStepClaim dereferences the AwardXp result for the response DTO
+        // (LeveledUp/NewLevel), so an unstubbed null would throw before the assert.
+        missions.Setup(m => m.AwardXp(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<string>()))
+            .ReturnsAsync(new XpGainResult { TotalXp = 0, Level = 1, LeveledUp = false });
         var achievements = new Mock<IAchievementService> { DefaultValue = DefaultValue.Empty };
 
         return new TerritoryService(

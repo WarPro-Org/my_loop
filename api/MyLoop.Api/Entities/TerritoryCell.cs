@@ -4,7 +4,7 @@ using System.Text.Json;
 
 /// <summary>
 /// Represents a single hexagonal territory cell on the game map.
-/// Each cell corresponds to one H3 resolution-10 hexagon (~65m wide, ~4,234 m² area).
+/// Each cell corresponds to one H3 resolution-11 hexagon (edge ~29m, ~2,150 m² area).
 /// The <see cref="CellId"/> is a 64-bit H3 index that uniquely identifies a hexagon on Earth.
 /// Ownership follows a "last-writer-wins" model — whoever claims it most recently owns it.
 /// </summary>
