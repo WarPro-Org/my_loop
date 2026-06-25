@@ -160,6 +160,17 @@ public class ClaimsController : ControllerBase
             return BadRequest(new { error = $"Anti-cheat: {speedError}" });
         }
 
+        // Anti-cheat: reject batches whose bearing changes are unnaturally smooth (synthetic
+        // straight-line / regular spoof paths). The loop-claim path already applies this gate;
+        // the live batch-step path skipped it (#52). Short batches are tolerated by the gate.
+        var smoothnessError = _pathValidation.ValidateSmoothness(
+            request.Points.Select(p => (p.Lat, p.Lng)).ToList());
+        if (smoothnessError != null)
+        {
+            _logger.LogWarning("Batch-step rejected for user {UserId}: {Reason}", callerId, smoothnessError);
+            return BadRequest(new { error = $"Anti-cheat: {smoothnessError}" });
+        }
+
         try
         {
             var result = await _territoryService.ProcessBatchStepClaim(
