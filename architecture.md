@@ -96,8 +96,6 @@ Complete documentation of all API endpoints, SignalR hubs, WebSocket channels, a
 | Endpoint | Method | Auth | Request Body | Response | Flutter Caller |
 |----------|--------|------|--------------|----------|-----------------|
 | `/api/claims` | `POST` | ✅ Yes | `{userId, path: [[lat,lng]...]}` | `{id, cellCount, areaM2, createdAt}` | `apiService.submitClaim()` |
-| `/api/claims/trail` | `POST` | ✅ Yes | `{userId, points: [[lat,lng]...]}` | `{claimedCells: [{cellId, boundary, wasStolen, ...}], newCellCount, stolenCount}` | `apiService.claimTrail()` |
-| `/api/claims/step` | `POST` | ✅ Yes | `{userId, lat, lng}` | `{claimed, cellId?, boundary?, wasStolen?, xpGained, leveledUp?, achievements?}` | `apiService.claimStep()` |
 | `/api/claims/batch-step` | `POST` | ✅ Yes | `{userId, localDate, points: [{lat,lng}...]}` | `{results: [], stats: {hexCount, totalCaptured, totalStolen, ...}, xp: {...}, missions: [], achievements: []}` | `apiService.claimBatchStep()` |
 | `/api/claims/preview` | `POST` | ✅ Yes | `{path: [[lat,lng]...]}` | `{boundaries: [[[lat,lng]...]...]}` | `apiService.previewClaim()` |
 
@@ -199,7 +197,7 @@ Complete documentation of all API endpoints, SignalR hubs, WebSocket channels, a
 | `xpSliceProvider` | `xp_slice.dart` | `NotifierProvider` | `XpState {totalXp, level, progressXp, progressPercent, ...}` | API + SignalR XpDelta | XP bar, level-up celebration |
 | `missionsSliceProvider` | `missions_slice.dart` | `NotifierProvider` | `MissionsState {missions: [], completed: int, ...}` | API `/api/missions/{userId}` + SignalR MissionDelta | Daily missions list |
 | `achievementsSliceProvider` | `achievements_slice.dart` | `NotifierProvider` | `AchievementsState {achievements: [], isLoaded, ...}` | API `/api/achievements/{userId}` + SignalR AchievementDelta | Achievements screen |
-| `journeyControllerProvider` | `journey_controller.dart` | `NotifierProvider` | `JourneyState {status, path, distanceMeters, claimedCount, xpGainedThisWalk, ...}` | `LocationService` + API `/api/claims/step` or `/api/claims/batch-step` | Journey (walk) screen |
+| `journeyControllerProvider` | `journey_controller.dart` | `NotifierProvider` | `JourneyState {status, path, distanceMeters, claimedCount, xpGainedThisWalk, ...}` | `LocationService` + API `/api/claims/batch-step` | Journey (walk) screen |
 | `homeTabLoadedProvider` | `home_tab.dart` | `NotifierProvider` | `bool` | Set on home tab init | Controls data loading trigger |
 
 #### Feature-Specific Providers
