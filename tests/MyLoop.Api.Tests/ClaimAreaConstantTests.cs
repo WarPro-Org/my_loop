@@ -74,6 +74,10 @@ public class ClaimAreaConstantTests : IAsyncLifetime
         missions.Setup(m => m.AwardXp(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<string>()))
             .ReturnsAsync(new XpGainResult { TotalXp = 0, Level = 1, LeveledUp = false });
         var achievements = new Mock<IAchievementService> { DefaultValue = DefaultValue.Empty };
+        // ProcessStepClaim derefs the CheckAndUnlock result in its response DTO; the
+        // DefaultValue.Empty mock returns null for Task<List<T>>, so stub an empty list.
+        achievements.Setup(a => a.CheckAndUnlock(It.IsAny<Guid>()))
+            .ReturnsAsync(new List<AchievementUnlock>());
 
         return new TerritoryService(
             db, hex.Object, geo.Object, notifier.Object, pathValidator.Object,

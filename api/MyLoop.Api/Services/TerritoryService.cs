@@ -432,9 +432,13 @@ public class TerritoryService : ITerritoryService
         // Check achievements (adds XP + unlocks to change tracker, no save)
         var newAchievements = await _achievementService.CheckAndUnlock(userId);
 
-        // Award capture XP (this calls SaveChangesAsync once for everything)
+        // Award capture XP + mission/achievement XP changes
         var xpResult = await _missionService.AwardXp(userId, xpAmount, "hex_capture");
 
+        // Persist the claim explicitly rather than relying on AwardXp's internal save —
+        // matches ProcessClaim/ProcessTrailClaim/ProcessBatchStepClaim and keeps territory
+        // persistence independent of the mission service.
+        await _db.SaveChangesAsync();
         await transaction.CommitAsync();
 
         // ── Real-time push notifications (fire-and-forget, AFTER commit) ──
