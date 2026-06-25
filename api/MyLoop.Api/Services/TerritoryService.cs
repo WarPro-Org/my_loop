@@ -93,7 +93,11 @@ public class TerritoryService : ITerritoryService
             _db.Claims.Add(claim);
 
             var totalDistance = _geo.CalculatePathDistance(path);
-            await UpdateUserStats(userId, transfers, totalDistance);
+            // Distance stats are owned by the live batch-step path (#54). The loop claim
+            // only fills interior hexes and awards the one-time distance XP computed below;
+            // it must not re-add DistanceKm or WalkDistance mission progress, which the
+            // batch-step drain already accumulated during the walk.
+            await UpdateUserStats(userId, transfers);
 
             // Record exploration for all captured cells (single batched upsert)
             var newExplorations = await RecordExplorationBatch(userId, cells.Select(c => c.CellId));
@@ -113,7 +117,8 @@ public class TerritoryService : ITerritoryService
             if (stolenCells > 0)
                 await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells);
             await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, newCells + stolenCells);
-            await _missionService.RecordProgress(userId, MissionType.WalkDistance, (int)totalDistance);
+            // WalkDistance mission progress is recorded by the live batch-step path (#54),
+            // not here, to avoid double-counting this walk's distance.
             if (newExplorations > 0)
                 await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
 
@@ -1258,7 +1263,7 @@ public class TerritoryService : ITerritoryService
             hexLocation.City, hexLocation.State, hexLocation.Country, hexLocation.Continent);
     }
 
-    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers, double totalDistance)
+    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers)
     {
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return;
@@ -1267,7 +1272,10 @@ public class TerritoryService : ITerritoryService
         var stolenCells = transfers.Count(t => t.FromUserId != null);
         user.HexCount += newCells + stolenCells;
         user.TotalHexesCaptured += newCells + stolenCells;
-        user.DistanceKm += totalDistance / 1000.0;
+        // NOTE: DistanceKm is intentionally NOT updated here. The live batch-step claim
+        // path is the single source of truth for walked distance (#54) — it accumulated
+        // this walk's full GPS distance before this loop-claim runs, so re-adding it here
+        // would double-count distance on every walk-and-loop journey.
 
         UpdateStreak(user);
         await DecrementVictimHexCounts(userId, transfers);
