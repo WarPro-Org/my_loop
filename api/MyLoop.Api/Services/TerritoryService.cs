@@ -66,6 +66,14 @@ public class TerritoryService : ITerritoryService
         // Serializable isolation + per-user advisory lock + bounded retry. This makes two
         // concurrent claims over the same hex deterministic (exactly one owner) and the
         // per-day cap accurate (checked inside the transaction, not before it).
+        //
+        // The loop runs inside CreateExecutionStrategy because EnableRetryOnFailure forbids a
+        // direct BeginTransactionAsync and lets EF re-run the block on a transient connection drop
+        // (Neon cold start). Serialization conflicts are still handled by the inner loop; only
+        // connection-level transients fall through the bare catch to be retried by the strategy.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
         for (var attempt = 1; ; attempt++)
         {
             _db.ChangeTracker.Clear();
@@ -164,10 +172,22 @@ public class TerritoryService : ITerritoryService
             }
             catch
             {
-                await transaction.RollbackAsync();
+                // Preserve the original (possibly transient) exception for the execution strategy to
+                // classify — a rollback on a dropped connection would otherwise throw and mask it.
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogWarning(rollbackEx,
+                        "Rollback after a failed claim attempt for user {UserId} also failed; surfacing the original error",
+                        userId);
+                }
                 throw;
             }
         }
+        });
     }
 
     public async Task<BatchStepClaimResponse> ProcessBatchStepClaim(
@@ -189,7 +209,12 @@ public class TerritoryService : ITerritoryService
 
         var allCellIds = resolved.Select(r => r.Hex.CellId).Distinct().ToList();
 
-        // Serializable + per-user advisory lock + bounded retry (see ProcessClaim).
+        // Serializable + per-user advisory lock + bounded retry (see ProcessClaim). The loop runs
+        // inside CreateExecutionStrategy so EnableRetryOnFailure tolerates Neon cold-start
+        // connection drops; the inner loop still handles serialization conflicts.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
         for (var attempt = 1; ; attempt++)
         {
             _db.ChangeTracker.Clear();
@@ -471,10 +496,22 @@ public class TerritoryService : ITerritoryService
             }
             catch
             {
-                await transaction.RollbackAsync();
+                // Preserve the original (possibly transient) exception for the execution strategy to
+                // classify — a rollback on a dropped connection would otherwise throw and mask it.
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogWarning(rollbackEx,
+                        "Rollback after a failed batch-step attempt for user {UserId} also failed; surfacing the original error",
+                        userId);
+                }
                 throw;
             }
         }
+        });
     }
 
     public async Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
