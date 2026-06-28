@@ -107,12 +107,15 @@ public class DbRetryStrategyTests : IAsyncLifetime
     public async Task RefreshLeaderboard_runs_its_transaction_under_a_retrying_strategy()
     {
         var userId = Guid.NewGuid();
+        var claimId = Guid.NewGuid();
         await using (var seed = NewDb())
         {
             seed.Users.Add(new User { Id = userId, FirebaseUid = "uidL", DisplayName = "L", Color = "#222222" });
+            // TerritoryCell.ClaimId is a required FK to Claims, so seed the owning claim first.
+            seed.Claims.Add(new Claim { Id = claimId, UserId = userId, CellCount = 1, AreaM2 = 100.0 });
             seed.TerritoryCells.Add(new TerritoryCell
             {
-                CellId = TargetCell, OwnerId = userId, CenterLat = 12.9, CenterLng = 77.5,
+                CellId = TargetCell, OwnerId = userId, ClaimId = claimId, CenterLat = 12.9, CenterLng = 77.5,
                 ClaimedAt = DateTime.UtcNow, LastRefreshedAt = DateTime.UtcNow,
             });
             await seed.SaveChangesAsync();
