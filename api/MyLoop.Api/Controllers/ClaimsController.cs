@@ -69,62 +69,6 @@ public class ClaimsController : ControllerBase
     }
 
     /// <summary>
-    /// Real-time walk-through claim. Batches of GPS points are sent during a walk
-    /// and hexes the user physically touches are claimed immediately.
-    /// </summary>
-    [HttpPost("trail")]
-    public async Task<IActionResult> ClaimTrail([FromBody] TrailClaimRequest request)
-    {
-        var callerId = await _currentUser.TryGetUserIdAsync();
-        if (callerId is null) return Unauthorized();
-
-        if (request.Points.Length > GameConstants.MaxClaimPathPoints)
-            return BadRequest("Too many points");
-        if (!ValidatePathCoordinates(request.Points))
-            return BadRequest("Invalid GPS coordinates");
-
-        try
-        {
-            var result = await _territoryService.ProcessTrailClaim(callerId.Value, request.Points);
-
-            if (!result.Success)
-                return BadRequest(new { error = result.Error });
-
-            return Ok(result.Data);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Trail claim failed for user {UserId}", callerId);
-            return StatusCode(500, new { error = "Trail claim processing failed." });
-        }
-    }
-
-    /// <summary>
-    /// Single-point real-time claim. Each GPS tick sends one point —
-    /// if the user entered a new hex, it's claimed and the boundary returned.
-    /// </summary>
-    [HttpPost("step")]
-    public async Task<IActionResult> ClaimStep([FromBody] StepClaimRequest request)
-    {
-        var callerId = await _currentUser.TryGetUserIdAsync();
-        if (callerId is null) return Unauthorized();
-
-        if (request.Lat < -90 || request.Lat > 90 || request.Lng < -180 || request.Lng > 180)
-            return BadRequest("Invalid coordinates");
-
-        try
-        {
-            var result = await _territoryService.ProcessStepClaim(callerId.Value, request.Lat, request.Lng);
-            return Ok(result);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Step claim failed for user {UserId}", callerId);
-            return StatusCode(500, new { error = "Step claim failed." });
-        }
-    }
-
-    /// <summary>
     /// Batch step claim. Receives N GPS points captured during a walk
     /// (drained from the client's persistent write-ahead log) and processes
     /// them atomically.
@@ -158,6 +102,17 @@ public class ClaimsController : ControllerBase
         {
             _logger.LogWarning("Batch-step rejected for user {UserId}: {Reason}", callerId, speedError);
             return BadRequest(new { error = $"Anti-cheat: {speedError}" });
+        }
+
+        // Anti-cheat: reject batches whose bearing changes are unnaturally smooth (synthetic
+        // straight-line / regular spoof paths). The loop-claim path already applies this gate;
+        // the live batch-step path skipped it (#52). Short batches are tolerated by the gate.
+        var smoothnessError = _pathValidation.ValidateSmoothness(
+            request.Points.Select(p => (p.Lat, p.Lng)).ToList());
+        if (smoothnessError != null)
+        {
+            _logger.LogWarning("Batch-step rejected for user {UserId}: {Reason}", callerId, smoothnessError);
+            return BadRequest(new { error = $"Anti-cheat: {smoothnessError}" });
         }
 
         try

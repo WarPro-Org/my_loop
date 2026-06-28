@@ -8,18 +8,19 @@ library;
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/models/exploration_neighborhood.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
-import 'package:myloop/shared/models/trail_claim_response.dart';
 import 'package:myloop/shared/models/daily_mission.dart';
 import 'package:myloop/shared/models/achievement.dart';
 import 'package:myloop/shared/models/user.dart';
 import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/batch_drain_service.dart';
+import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
 import 'package:myloop/shared/services/trace_context.dart';
 
@@ -100,6 +101,13 @@ class ApiService {
         // W3C trace context — the backend adopts this as the request trace id,
         // so mobile actions, server logs, and crash reports share one id.
         options.headers['traceparent'] = TraceContext.newTraceparent();
+
+        // Mock walk simulator (#29): in debug builds, while the simulator is on,
+        // tag the request so the backend splits its logs into MockLogs/. The flag
+        // marks logging only — no server game logic branches on it.
+        if (kDebugMode && MockWalkMode.active) {
+          options.headers[MockWalkConstants.requestHeader] = MockWalkConstants.requestHeaderValue;
+        }
 
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
@@ -231,46 +239,6 @@ class ApiService {
       'path': path,
     });
     return response.data as Map<String, dynamic>;
-  }
-
-  /// Claims hexes the user physically walked through in real-time.
-  /// Sends a batch of GPS points; server computes H3 cells and claims them.
-  /// Returns the list of newly claimed hex boundaries for immediate rendering.
-  Future<TrailClaimResponse?> claimTrail({
-    required String userId,
-    required List<List<double>> points,
-  }) async {
-    try {
-      final response = await _dio.post('/api/claims/trail', data: {
-        'userId': userId,
-        'points': points,
-      });
-      final data = response.data as Map<String, dynamic>;
-      return TrailClaimResponse.fromJson(data);
-    } catch (_) {
-      return null; // Best-effort — don't block the walk
-    }
-  }
-
-  /// Single-point step claim — sends one GPS coordinate, server returns
-  /// the hex boundary if a new hex was entered. ~100ms round-trip.
-  Future<StepClaimResponse?> claimStep({
-    required String userId,
-    required double lat,
-    required double lng,
-  }) async {
-    try {
-      final response = await _dio.post('/api/claims/step', data: {
-        'userId': userId,
-        'lat': lat,
-        'lng': lng,
-      });
-      final data = response.data as Map<String, dynamic>;
-      return StepClaimResponse.fromJson(data);
-    } catch (e) {
-      _log.warning('Step claim failed', e);
-      return null; // Best-effort — don't interrupt the walk
-    }
   }
 
   /// Batch step claim — sends N queued GPS points in a single transaction.

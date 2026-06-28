@@ -1,5 +1,6 @@
 using MyLoop.Api.Constants;
 using Serilog;
+using Serilog.Events;
 using Serilog.Formatting.Compact;
 
 namespace MyLoop.Api.Configuration;
@@ -23,26 +24,64 @@ public static class SerilogConfiguration
             // container, CWD is often "/" which isn't writable, and Serilog swallows the open
             // failure to SelfLog — the durable log would silently write nowhere. Allow ops to
             // override the directory (e.g. /var/log/myloop) via "Serilog:LogDirectory".
+            // The directory/file-name constants are wrapped in Path.GetFileName so the second
+            // Path.Combine argument is provably relative: a rooted value would otherwise silently
+            // discard the content-root prefix (and writes would land outside the app dir).
             var logDirectory = context.Configuration["Serilog:LogDirectory"]
-                ?? Path.Combine(context.HostingEnvironment.ContentRootPath, InfrastructureDefaults.LogDirectoryName);
+                ?? Path.Combine(
+                    context.HostingEnvironment.ContentRootPath,
+                    Path.GetFileName(InfrastructureDefaults.LogDirectoryName));
+            // Mock-simulator logs (#29) live in a sibling directory so beta logs stay free of
+            // synthetic-walk noise; ops can relocate them independently of the real logs.
+            var mockLogDirectory = context.Configuration["Serilog:MockLogDirectory"]
+                ?? Path.Combine(
+                    context.HostingEnvironment.ContentRootPath,
+                    Path.GetFileName(InfrastructureDefaults.MockLogDirectoryName));
+
+            var seqUrl = context.Configuration["Seq:ServerUrl"];
 
             config
                 .ReadFrom.Configuration(context.Configuration)
                 .ReadFrom.Services(services)
                 .Enrich.FromLogContext()
-                .WriteTo.Console(
-                    outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {Message:lj}{NewLine}{Exception}")
-                .WriteTo.File(
-                    formatter: new CompactJsonFormatter(),
-                    path: Path.Combine(logDirectory, InfrastructureDefaults.LogFileNamePattern),
-                    rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: InfrastructureDefaults.LogRetainedFileCountLimit,
-                    fileSizeLimitBytes: InfrastructureDefaults.LogFileSizeLimitBytes,
-                    rollOnFileSizeLimit: true,
-                    shared: true);
+                // Real traffic — every event EXCEPT mock-simulator requests. Keeps the durable beta
+                // logs (and Seq) free of synthetic-walk noise (#29).
+                .WriteTo.Logger(real =>
+                {
+                    real
+                        .Filter.ByExcluding(IsMockEvent)
+                        .WriteTo.Console(
+                            outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {TraceId} {Message:lj}{NewLine}{Exception}")
+                        .WriteTo.File(
+                            formatter: new CompactJsonFormatter(),
+                            path: Path.Combine(logDirectory, Path.GetFileName(InfrastructureDefaults.LogFileNamePattern)),
+                            rollingInterval: RollingInterval.Day,
+                            retainedFileCountLimit: InfrastructureDefaults.LogRetainedFileCountLimit,
+                            fileSizeLimitBytes: InfrastructureDefaults.LogFileSizeLimitBytes,
+                            rollOnFileSizeLimit: true,
+                            shared: true);
 
-            var seqUrl = context.Configuration["Seq:ServerUrl"];
-            if (!string.IsNullOrWhiteSpace(seqUrl))
-                config.WriteTo.Seq(seqUrl);
+                    if (!string.IsNullOrWhiteSpace(seqUrl))
+                        real.WriteTo.Seq(seqUrl);
+                })
+                // Mock-simulator traffic — segregated rolling file, identical format, never mixed
+                // into the real logs above (#29).
+                .WriteTo.Logger(mock => mock
+                    .Filter.ByIncludingOnly(IsMockEvent)
+                    .WriteTo.File(
+                        formatter: new CompactJsonFormatter(),
+                        path: Path.Combine(mockLogDirectory, Path.GetFileName(InfrastructureDefaults.MockLogFileNamePattern)),
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileCountLimit: InfrastructureDefaults.LogRetainedFileCountLimit,
+                        fileSizeLimitBytes: InfrastructureDefaults.LogFileSizeLimitBytes,
+                        rollOnFileSizeLimit: true,
+                        shared: true));
         });
+
+    /// <summary>
+    /// A mock-simulator event is one tagged by <c>MockLogContextMiddleware</c> with the
+    /// <see cref="InfrastructureDefaults.MockLogContextProperty"/> property (#29).
+    /// </summary>
+    private static bool IsMockEvent(LogEvent logEvent) =>
+        logEvent.Properties.ContainsKey(InfrastructureDefaults.MockLogContextProperty);
 }

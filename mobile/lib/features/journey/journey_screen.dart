@@ -2,8 +2,10 @@
 library;
 
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -13,6 +15,7 @@ import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -70,7 +73,11 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         final profile = ref.read(userProfileProvider);
         if (profile.userId != null) {
           final result = await api.submitClaim(userId: profile.userId!, path: path);
-          bonusCount = (result['cellCount'] as num?)?.toInt() ?? 0;
+          // Use newlyClaimedCount (hexes this loop claim actually added — interior fill +
+          // steals), NOT cellCount (total enclosed cells, which includes the trail hexes
+          // already counted in claimedCount during the walk). Adding cellCount here
+          // over-counts the capture celebration by the trail length (issue #55).
+          bonusCount = (result['newlyClaimedCount'] as num?)?.toInt() ?? 0;
           stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
           _renderCapturedHexes(result);
           // The bonus claim is reflected by the server's UserStatsDelta push
@@ -182,7 +189,18 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
       }
     });
 
+    final mockEnabled = kDebugMode && ref.watch(mockWalkConfigProvider).enabled;
+
     return Scaffold(
+      // Debug-only entry to the mock walk simulator (#29), shown before a walk starts.
+      floatingActionButton: (kDebugMode && journey.status == JourneyStatus.idle)
+          ? FloatingActionButton.small(
+              heroTag: 'mockWalkFab',
+              tooltip: 'Mock walk (debug)',
+              onPressed: () => context.push('/dev/mock-walk'),
+              child: const Icon(Icons.bug_report),
+            )
+          : null,
       body: Stack(
         children: [
           _JourneyMap(
@@ -195,6 +213,19 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
             },
           ),
           _CloseButton(padding: topPadding),
+          if (mockEnabled)
+            Positioned(
+              top: topPadding + 18,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.deepOrange,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text('MOCK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ),
           // LIVE indicator — always visible on map (right of close button)
           Positioned(
             top: topPadding + 18,

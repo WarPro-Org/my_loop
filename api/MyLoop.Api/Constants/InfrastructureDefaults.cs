@@ -21,6 +21,21 @@ public static class InfrastructureDefaults
     public const int LogRetainedFileCountLimit = 7;
     public const long LogFileSizeLimitBytes = 50_000_000;
 
+    // --- Mock walk simulation (#29) ---
+    /// <summary>
+    /// Header whose presence marks a request as originating from the in-app mock walk simulator.
+    /// The Flutter client attaches it only in debug builds while a simulated walk is running. It is
+    /// read in exactly one place — <c>MockLogContextMiddleware</c> — and branches logging only; no
+    /// game logic, validation, or persistence inspects it, so a mock walk hits the identical server
+    /// path (anti-cheat included) as a real one.
+    /// </summary>
+    public const string MockRequestHeader = "X-MyLoop-Mock";
+    /// <summary>LogContext property set on mock requests so their events route to <see cref="MockLogDirectoryName"/>.</summary>
+    public const string MockLogContextProperty = "IsMock";
+    /// <summary>Directory (under the same root as <see cref="LogDirectoryName"/>) for segregated mock logs.</summary>
+    public const string MockLogDirectoryName = "MockLogs";
+    public const string MockLogFileNamePattern = "mock-.log";
+
     // --- CORS ---
     /// <summary>Fallback origin when no browser origins are configured (the native client is CORS-exempt).</summary>
     public const string DefaultCorsOrigin = "http://localhost";

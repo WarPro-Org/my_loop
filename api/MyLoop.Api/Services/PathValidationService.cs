@@ -189,6 +189,21 @@ public class PathValidationService : IPathValidationService
         return null;
     }
 
+    /// <summary>
+    /// Public smoothness gate for real-time batch-step windows (issue #52). Adapts the
+    /// timestamp-free lat/lng list to the same bearing-stddev logic the loop-claim path
+    /// uses, so a synthetic dead-straight batch is rejected on the live claim path too.
+    /// Windows shorter than the analysis minimum are accepted (returns null), matching the
+    /// loop-claim behaviour — cross-batch smoothness is out of scope for this fix.
+    /// </summary>
+    public string? ValidateSmoothness(IReadOnlyList<(double Lat, double Lng)> points)
+    {
+        var path = new double[points.Count][];
+        for (var i = 0; i < points.Count; i++)
+            path[i] = [points[i].Lat, points[i].Lng];
+        return ValidateSmoothness(path);
+    }
+
     // ──────────────────────────────────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────

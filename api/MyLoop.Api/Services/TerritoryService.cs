@@ -93,7 +93,11 @@ public class TerritoryService : ITerritoryService
             _db.Claims.Add(claim);
 
             var totalDistance = _geo.CalculatePathDistance(path);
-            await UpdateUserStats(userId, transfers, totalDistance);
+            // Distance stats are owned by the live batch-step path (#54). The loop claim
+            // only fills interior hexes and awards the one-time distance XP computed below;
+            // it must not re-add DistanceKm or WalkDistance mission progress, which the
+            // batch-step drain already accumulated during the walk.
+            await UpdateUserStats(userId, transfers);
 
             // Record exploration for all captured cells (single batched upsert)
             var newExplorations = await RecordExplorationBatch(userId, cells.Select(c => c.CellId));
@@ -113,7 +117,8 @@ public class TerritoryService : ITerritoryService
             if (stolenCells > 0)
                 await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells);
             await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, newCells + stolenCells);
-            await _missionService.RecordProgress(userId, MissionType.WalkDistance, (int)totalDistance);
+            // WalkDistance mission progress is recorded by the live batch-step path (#54),
+            // not here, to avoid double-counting this walk's distance.
             if (newExplorations > 0)
                 await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
 
@@ -143,6 +148,10 @@ public class TerritoryService : ITerritoryService
             {
                 Id = claim.Id,
                 CellCount = claim.CellCount,
+                // transfers excludes cells the user already owned (AssignCells skips them),
+                // so this is the bonus the client adds to its live count, with no double
+                // count of trail hexes already claimed during the walk (#55).
+                NewlyClaimedCount = transfers.Count,
                 AreaM2 = claim.AreaM2,
                 StolenFromOthers = transfers.Count(t => t.FromUserId != null),
                 Boundaries = boundaries,
@@ -152,331 +161,6 @@ public class TerritoryService : ITerritoryService
             {
                 await transaction.RollbackAsync();
                 _logger.LogWarning("Claim retry {Attempt} for user {UserId} after a write conflict", attempt, userId);
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
-        }
-    }
-
-    public async Task<TrailClaimResult> ProcessTrailClaim(Guid userId, double[][] points)
-    {
-        if (points.Length == 0)
-            return TrailClaimResult.Failure("No GPS points provided");
-
-        if (points.Length > 200)
-            return TrailClaimResult.Failure("Too many points in a single batch");
-
-        var cells = _hexGrid.GetTrailCells(points);
-        if (cells.Count == 0)
-            return TrailClaimResult.Failure("No hexes in batch");
-
-        var cellIds = cells.Select(c => c.CellId).ToList();
-
-        // Serializable + per-user advisory lock + bounded retry (see ProcessClaim).
-        for (var attempt = 1; ; attempt++)
-        {
-            _db.ChangeTracker.Clear();
-            await using var transaction =
-                await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-            try
-            {
-                await _db.Database.ExecuteSqlRawAsync(
-                    "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
-
-                var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
-
-                var existingCells = await _db.TerritoryCells
-                    .Include(t => t.Owner)
-                    .Where(t => cellIds.Contains(t.CellId))
-                    .ToDictionaryAsync(t => t.CellId);
-
-                var claimed = new List<TrailHexResponse>();
-                var transfers = new List<CellTransfer>();
-                var claimId = Guid.NewGuid();
-
-        // Create Claim entity for FK integrity (trail claims)
-        var trailClaim = new Claim
-        {
-            Id = claimId,
-            UserId = userId,
-            CellCount = cells.Count,
-            AreaM2 = cells.Count * GameConstants.CellAreaSquareMeters,
-        };
-        trailClaim.SetPolygon(points);
-        _db.Claims.Add(trailClaim);
-
-        // Load user for home location (decay calculation)
-        var trailUser = await _db.Users.FindAsync(userId);
-
-        foreach (var hexCell in cells)
-        {
-            var cellCenter = _hexGrid.GetCellCenter(hexCell.CellId);
-
-            // Calculate per-cell decay based on geographic comparison
-            var cellDecayDays = await CalculateDecayDays(trailUser, cellCenter.Lat, cellCenter.Lng);
-
-            if (existingCells.TryGetValue(hexCell.CellId, out var existing))
-            {
-                if (existing.OwnerId == userId) continue; // already ours
-                if (IsOnCooldown(existing)) continue;
-
-                var prevOwnerName = existing.Owner?.DisplayName;
-                transfers.Add(CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId));
-                UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
-                existing.DecayDays = cellDecayDays;
-                claimed.Add(new TrailHexResponse
-                {
-                    CellId = hexCell.CellId,
-                    Boundary = hexCell.Boundary,
-                    WasStolen = true,
-                    PreviousOwnerName = prevOwnerName,
-                });
-            }
-            else
-            {
-                var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry, cellDecayDays);
-                _db.TerritoryCells.Add(newCell);
-                transfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
-                claimed.Add(new TrailHexResponse
-                {
-                    CellId = hexCell.CellId,
-                    Boundary = hexCell.Boundary,
-                    WasStolen = false,
-                });
-            }
-        }
-
-        if (claimed.Count == 0)
-        {
-            await transaction.RollbackAsync();
-            return TrailClaimResult.Succeeded(new TrailClaimResponse());
-        }
-
-        _db.CellTransfers.AddRange(transfers);
-
-        // Update user stats
-        var newCells = transfers.Count(t => t.FromUserId == null);
-        var stolenCells = transfers.Count(t => t.FromUserId != null);
-        if (trailUser != null)
-        {
-            trailUser.HexCount += newCells + stolenCells;
-            trailUser.TotalHexesCaptured += newCells + stolenCells;
-            if (stolenCells > 0) trailUser.TotalHexesStolen += stolenCells;
-            UpdateStreak(trailUser);
-            await DecrementVictimHexCounts(userId, transfers);
-        }
-
-        // Record exploration for all claimed cells
-        var newExplorations = 0;
-        foreach (var c in claimed)
-        {
-            if (await RecordExploration(userId, c.CellId))
-                newExplorations++;
-        }
-
-        // Award XP + mission progress
-        var xpAmount = newCells * GameConstants.XpPerHexCaptured
-                     + stolenCells * GameConstants.XpPerHexStolen;
-        MissionProgressResult? missionResult = null;
-        if (newCells + stolenCells > 0)
-            missionResult = await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells);
-        if (stolenCells > 0)
-            await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells);
-        if (newExplorations > 0)
-            await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations);
-
-        var newAchievements = await _achievementService.CheckAndUnlock(userId);
-        var xpResult = await _missionService.AwardXp(userId, xpAmount, "trail_claim");
-
-        await _db.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        // Broadcast changes for real-time multiplayer
-        await BroadcastOwnershipChanges(userId, cells.Where(c =>
-            claimed.Any(cl => cl.CellId == c.CellId)).ToList(), transfers);
-
-        // Personal deltas to claiming user
-        var trailUserForPush = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
-        await PushPersonalDeltas(userId, trailUserForPush, xpResult, xpAmount, missionResult, newAchievements);
-
-        // Victim deltas
-        var victimIds = transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct();
-        foreach (var victimId in victimIds)
-            await PushVictimDelta(victimId);
-
-        var stolenCount = claimed.Count(c => c.WasStolen);
-        return TrailClaimResult.Succeeded(new TrailClaimResponse
-        {
-            ClaimedCells = claimed,
-            NewCellCount = claimed.Count,
-            StolenCount = stolenCount,
-        });
-            }
-            catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
-            {
-                await transaction.RollbackAsync();
-                _logger.LogWarning("Trail retry {Attempt} for user {UserId} after a write conflict", attempt, userId);
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
-        }
-    }
-
-    public async Task<StepClaimResponse> ProcessStepClaim(Guid userId, double lat, double lng)
-    {
-        var hexCell = _hexGrid.GetCellAtPoint(lat, lng);
-
-        // Serializable + per-user advisory lock + bounded retry (see ProcessClaim).
-        for (var attempt = 1; ; attempt++)
-        {
-            _db.ChangeTracker.Clear();
-            await using var transaction =
-                await _db.Database.BeginTransactionAsync(IsolationLevel.Serializable);
-            try
-            {
-                await _db.Database.ExecuteSqlRawAsync(
-                    "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
-
-                var existing = await _db.TerritoryCells.Include(t => t.Owner)
-                    .FirstOrDefaultAsync(t => t.CellId == hexCell.CellId);
-
-                // Already ours — refresh decay timer and record exploration, but no new claim
-                if (existing != null && existing.OwnerId == userId)
-                {
-                    existing.LastRefreshedAt = DateTime.UtcNow;
-                    await RecordExploration(userId, hexCell.CellId);
-                    await _db.SaveChangesAsync();
-                    await transaction.CommitAsync();
-                    return new StepClaimResponse { Claimed = false };
-                }
-
-                // On cooldown — can't steal
-                if (existing != null && IsOnCooldown(existing))
-                {
-                    await transaction.RollbackAsync();
-                    return new StepClaimResponse { Claimed = false };
-                }
-
-        var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
-        var claimId = Guid.NewGuid();
-        string? previousOwnerName = null;
-
-        // Create a Claim entity for FK integrity (step claims are 1-cell claims)
-        var claim = new Claim
-        {
-            Id = claimId,
-            UserId = userId,
-            CellCount = 1,
-            AreaM2 = GameConstants.CellAreaSquareMeters, // one res-11 hex (~2,150 m²)
-        };
-        claim.SetPolygon([[lat, lng]]);
-        _db.Claims.Add(claim);
-
-        // Load user for home location (decay calculation)
-        var user = await _db.Users.FindAsync(userId);
-        var cellCenter = _hexGrid.GetCellCenter(hexCell.CellId);
-
-        // Calculate decay days: if home not set, use default. Otherwise compare geography.
-        var decayDays = await CalculateDecayDays(user, cellCenter.Lat, cellCenter.Lng);
-
-        if (existing != null)
-        {
-            // Steal from another player
-            previousOwnerName = existing.Owner?.DisplayName;
-            var transfer = CreateTransfer(hexCell.CellId, existing.OwnerId, userId, claimId);
-            _db.CellTransfers.Add(transfer);
-            UpdateExistingCell(existing, userId, claimId, hexCell, cooldownExpiry);
-            existing.DecayDays = decayDays;
-            await DecrementVictimHexCounts(userId, [transfer]);
-        }
-        else
-        {
-            // New cell — claim it
-            var newCell = CreateNewCell(userId, claimId, hexCell, cooldownExpiry, decayDays);
-            _db.TerritoryCells.Add(newCell);
-            _db.CellTransfers.Add(CreateTransfer(hexCell.CellId, null, userId, claimId));
-        }
-
-        // Record exploration (permanent) — returns true if this was a genuinely new cell
-        var isNewExploration = await RecordExploration(userId, hexCell.CellId);
-
-        // Update claimer stats
-        if (user != null)
-        {
-            user.HexCount += 1;
-            user.TotalHexesCaptured += 1;
-            if (existing != null) user.TotalHexesStolen += 1;
-            UpdateStreak(user);
-        }
-
-        // Award XP + mission progress in a single save
-        var xpAmount = existing != null ? GameConstants.XpPerHexStolen : GameConstants.XpPerHexCaptured;
-        var missionType = existing != null ? MissionType.StealHex : MissionType.CaptureHexes;
-
-        // Record all mission progress (tracked in memory, saved together)
-        var missionResult = await _missionService.RecordProgress(userId, missionType, 1);
-        await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, 1);
-        // ~30m per hex for walk distance approximation
-        await _missionService.RecordProgress(userId, MissionType.WalkDistance, 30);
-        if (isNewExploration)
-            await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, 1);
-        if (user?.IsStreakActive == true)
-            await _missionService.RecordProgress(userId, MissionType.MaintainStreak, 1);
-
-        // Check achievements (adds XP + unlocks to change tracker, no save)
-        var newAchievements = await _achievementService.CheckAndUnlock(userId);
-
-        // Award capture XP + mission/achievement XP changes
-        var xpResult = await _missionService.AwardXp(userId, xpAmount, "hex_capture");
-
-        // Persist the claim explicitly rather than relying on AwardXp's internal save —
-        // matches ProcessClaim/ProcessTrailClaim/ProcessBatchStepClaim and keeps territory
-        // persistence independent of the mission service.
-        await _db.SaveChangesAsync();
-        await transaction.CommitAsync();
-
-        // ── Real-time push notifications (fire-and-forget, AFTER commit) ──
-
-        // Public: hex ownership broadcast to region
-        await BroadcastOwnershipChanges(userId, [hexCell],
-            [CreateTransfer(hexCell.CellId, existing?.OwnerId, userId, claimId)]);
-
-        // Personal: push state deltas to claiming user
-        await PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
-
-        // Victim: push decremented stats
-        if (existing != null && existing.OwnerId != Guid.Empty)
-            await PushVictimDelta(existing.OwnerId);
-
-        return new StepClaimResponse
-        {
-            Claimed = true,
-            CellId = hexCell.CellId,
-            Boundary = hexCell.Boundary,
-            WasStolen = existing != null,
-            PreviousOwnerName = previousOwnerName,
-            XpGained = xpAmount,
-            LeveledUp = xpResult.LeveledUp,
-            NewLevel = xpResult.Level,
-            AchievementsUnlocked = newAchievements.Select(a => new AchievementUnlockedDto
-            {
-                Id = a.AchievementId,
-                Name = a.Name,
-                Icon = a.Icon,
-                XpAwarded = a.XpAwarded,
-            }).ToList(),
-        };
-            }
-            catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
-            {
-                await transaction.RollbackAsync();
-                _logger.LogWarning("Step retry {Attempt} for user {UserId} after a write conflict", attempt, userId);
             }
             catch
             {
@@ -1258,7 +942,7 @@ public class TerritoryService : ITerritoryService
             hexLocation.City, hexLocation.State, hexLocation.Country, hexLocation.Continent);
     }
 
-    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers, double totalDistance)
+    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers)
     {
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return;
@@ -1267,7 +951,10 @@ public class TerritoryService : ITerritoryService
         var stolenCells = transfers.Count(t => t.FromUserId != null);
         user.HexCount += newCells + stolenCells;
         user.TotalHexesCaptured += newCells + stolenCells;
-        user.DistanceKm += totalDistance / 1000.0;
+        // NOTE: DistanceKm is intentionally NOT updated here. The live batch-step claim
+        // path is the single source of truth for walked distance (#54) — it accumulated
+        // this walk's full GPS distance before this loop-claim runs, so re-adding it here
+        // would double-count distance on every walk-and-loop journey.
 
         UpdateStreak(user);
         await DecrementVictimHexCounts(userId, transfers);
