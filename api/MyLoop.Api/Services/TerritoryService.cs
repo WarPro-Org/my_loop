@@ -395,7 +395,7 @@ public class TerritoryService : ITerritoryService
                 ? await _achievementService.CheckAndUnlock(userId)
                 : new List<AchievementUnlock>();
 
-            // 9. XP — single award call also persists everything via SaveChangesAsync
+            // 9. XP
             var xpAmount = newCellsCount * GameConstants.XpPerHexCaptured
                          + stolenCellsCount * GameConstants.XpPerHexStolen;
             XpGainResult xpResult;
@@ -405,8 +405,6 @@ public class TerritoryService : ITerritoryService
             }
             else
             {
-                // No claims happened — still need to persist any "owned" refresh / exploration writes
-                await _db.SaveChangesAsync();
                 xpResult = new XpGainResult
                 {
                     TotalXp = user.TotalXp,
@@ -415,6 +413,11 @@ public class TerritoryService : ITerritoryService
                 };
             }
 
+            // Persist every batch write (claim upsert, cells, transfers, stats, "owned"
+            // refreshes) before committing. The claimed path previously relied on AwardXp's
+            // internal SaveChangesAsync, so the whole batch silently stayed uncommitted whenever
+            // no XP was awarded — a hidden coupling. Save explicitly, mirroring ProcessClaim.
+            await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
             // 10. ONE consolidated push per slice (after commit)
@@ -482,7 +485,17 @@ public class TerritoryService : ITerritoryService
             }
             catch
             {
-                await transaction.RollbackAsync();
+                // Guard the rollback: a rollback on an already-completed transaction throws and
+                // would replace (mask) the real exception — database-retry-resilience rule 3.
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogWarning(rollbackEx,
+                        "Batch-step rollback failed for user {UserId}; preserving original error", userId);
+                }
                 throw;
             }
         }
