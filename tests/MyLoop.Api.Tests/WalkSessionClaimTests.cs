@@ -69,6 +69,10 @@ public class WalkSessionClaimTests : IAsyncLifetime
         missions.Setup(m => m.AwardXp(It.IsAny<Guid>(), It.IsAny<int>(), It.IsAny<string>()))
             .ReturnsAsync(new XpGainResult { TotalXp = 0, Level = 1, LeveledUp = false });
         var achievements = new Mock<IAchievementService> { DefaultValue = DefaultValue.Empty };
+        // CheckAndUnlock feeds a non-null-guarded .Select in the response builder; the real
+        // service never returns null, so the mock must return an (empty) list, not default.
+        achievements.Setup(a => a.CheckAndUnlock(It.IsAny<Guid>()))
+            .ReturnsAsync(new List<AchievementUnlock>());
 
         return new TerritoryService(
             db, hex.Object, geo.Object, notifier.Object, Mock.Of<IPathValidationService>(),
