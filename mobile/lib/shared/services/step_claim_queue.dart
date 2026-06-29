@@ -137,11 +137,18 @@ class QueuedStepPoint {
   final double lng;
   final DateTime capturedAt;
 
+  /// Id of the walk this point belongs to. Persisted per point so a drain after an
+  /// app-kill mid-walk still attributes points to their originating walk, and the server
+  /// folds the whole walk into one Claim (one walk = one history entry, #56). Empty for
+  /// points written by an older app build; the drainer assigns a fresh id to those.
+  final String walkSessionId;
+
   QueuedStepPoint({
     required this.clientId,
     required this.lat,
     required this.lng,
     required this.capturedAt,
+    required this.walkSessionId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -149,6 +156,7 @@ class QueuedStepPoint {
         'lat': lat,
         'lng': lng,
         'capturedAt': capturedAt.toUtc().toIso8601String(),
+        'walkSessionId': walkSessionId,
       };
 
   factory QueuedStepPoint.fromJson(Map<String, dynamic> json) {
@@ -157,6 +165,7 @@ class QueuedStepPoint {
       lat: (json['lat'] as num).toDouble(),
       lng: (json['lng'] as num).toDouble(),
       capturedAt: DateTime.parse(json['capturedAt'] as String),
+      walkSessionId: json['walkSessionId'] as String? ?? '',
     );
   }
 }

@@ -16,6 +16,14 @@ public class BatchStepClaimRequest
     /// </summary>
     public string? LocalDate { get; set; }
 
+    /// <summary>
+    /// Client-generated walk session id (UUID) shared by every batch-step drain and the
+    /// final loop claim of one continuous walk. The server upserts a single Claim keyed on
+    /// this id so a walk shows as one history entry instead of one-per-batch (#56).
+    /// Defaults to <see cref="Guid.Empty"/> for older clients → standalone single-batch claim.
+    /// </summary>
+    public Guid WalkSessionId { get; set; }
+
     public List<BatchStepPoint> Points { get; set; } = [];
 }
 

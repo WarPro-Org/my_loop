@@ -85,7 +85,7 @@ public class ClaimsControllerAuthTests
         var callerId = Guid.NewGuid();
         var territory = new Mock<ITerritoryService>();
         territory.Setup(t => t.ProcessBatchStepClaim(
-                It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>()))
+                It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>(), It.IsAny<Guid>()))
             .ReturnsAsync(new BatchStepClaimResponse());
 
         var currentUser = new Mock<ICurrentUser>();
@@ -99,7 +99,7 @@ public class ClaimsControllerAuthTests
         // path would have reached ProcessBatchStepClaim and returned Ok. The gate must block it.
         Assert.IsType<BadRequestObjectResult>(result);
         territory.Verify(t => t.ProcessBatchStepClaim(
-            It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>()), Times.Never);
+            It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>(), It.IsAny<Guid>()), Times.Never);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public class ClaimsControllerAuthTests
         var callerId = Guid.NewGuid();
         var territory = new Mock<ITerritoryService>();
         territory.Setup(t => t.ProcessBatchStepClaim(
-                It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>()))
+                It.IsAny<Guid>(), It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>(), It.IsAny<Guid>()))
             .ReturnsAsync(new BatchStepClaimResponse());
 
         var currentUser = new Mock<ICurrentUser>();
@@ -121,7 +121,7 @@ public class ClaimsControllerAuthTests
         // Natural jitter clears both gates: the claim is processed.
         Assert.IsType<OkObjectResult>(result);
         territory.Verify(t => t.ProcessBatchStepClaim(
-            callerId, It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>()), Times.Once);
+            callerId, It.IsAny<string?>(), It.IsAny<List<BatchStepPoint>>(), It.IsAny<Guid>()), Times.Once);
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public class ClaimsControllerAuthTests
         var spoofedBodyUserId = Guid.NewGuid();
 
         var territory = new Mock<ITerritoryService>();
-        territory.Setup(t => t.ProcessClaim(It.IsAny<Guid>(), It.IsAny<double[][]>()))
+        territory.Setup(t => t.ProcessClaim(It.IsAny<Guid>(), It.IsAny<double[][]>(), It.IsAny<Guid>()))
                  .ReturnsAsync(ClaimResult.Failure("short-circuit after identity check"));
 
         var currentUser = new Mock<ICurrentUser>();
@@ -142,8 +142,8 @@ public class ClaimsControllerAuthTests
 
         await controller.SubmitClaim(request);
 
-        territory.Verify(t => t.ProcessClaim(callerId, It.IsAny<double[][]>()), Times.Once);
-        territory.Verify(t => t.ProcessClaim(spoofedBodyUserId, It.IsAny<double[][]>()), Times.Never);
+        territory.Verify(t => t.ProcessClaim(callerId, It.IsAny<double[][]>(), It.IsAny<Guid>()), Times.Once);
+        territory.Verify(t => t.ProcessClaim(spoofedBodyUserId, It.IsAny<double[][]>(), It.IsAny<Guid>()), Times.Never);
     }
 
     [Fact]
@@ -159,6 +159,6 @@ public class ClaimsControllerAuthTests
         var result = await controller.SubmitClaim(request);
 
         Assert.IsType<UnauthorizedResult>(result);
-        territory.Verify(t => t.ProcessClaim(It.IsAny<Guid>(), It.IsAny<double[][]>()), Times.Never);
+        territory.Verify(t => t.ProcessClaim(It.IsAny<Guid>(), It.IsAny<double[][]>(), It.IsAny<Guid>()), Times.Never);
     }
 }

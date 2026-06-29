@@ -91,8 +91,8 @@ public class ClaimConcurrencyTests : IAsyncLifetime
 
         await using var dbA = NewDb();
         await using var dbB = NewDb();
-        var taskA = NewService(dbA).ProcessClaim(userA, path);
-        var taskB = NewService(dbB).ProcessClaim(userB, path);
+        var taskA = NewService(dbA).ProcessClaim(userA, path, Guid.NewGuid());
+        var taskB = NewService(dbB).ProcessClaim(userB, path, Guid.NewGuid());
         await Task.WhenAll(taskA, taskB);
 
         // Invariant: exactly one row for the contested cell, owned by one of the two users.

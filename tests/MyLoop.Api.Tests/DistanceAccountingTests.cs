@@ -97,7 +97,7 @@ public class DistanceAccountingTests : IAsyncLifetime
         ];
 
         await using var db = NewDb();
-        var result = await NewService(db).ProcessClaim(userId, path);
+        var result = await NewService(db).ProcessClaim(userId, path, Guid.NewGuid());
         Assert.True(result.Success);
 
         await using var check = NewDb();

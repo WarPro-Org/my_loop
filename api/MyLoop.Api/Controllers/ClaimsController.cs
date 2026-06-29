@@ -54,7 +54,8 @@ public class ClaimsController : ControllerBase
 
         try
         {
-            var result = await _territoryService.ProcessClaim(callerId.Value, request.Path);
+            var result = await _territoryService.ProcessClaim(
+                callerId.Value, request.Path, request.WalkSessionId);
 
             if (!result.Success)
                 return BadRequest(new { error = result.Error });
@@ -118,7 +119,7 @@ public class ClaimsController : ControllerBase
         try
         {
             var result = await _territoryService.ProcessBatchStepClaim(
-                callerId.Value, request.LocalDate, request.Points);
+                callerId.Value, request.LocalDate, request.Points, request.WalkSessionId);
             return Ok(result);
         }
         catch (Exception ex)

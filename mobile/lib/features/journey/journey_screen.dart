@@ -53,6 +53,9 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final walkDistance = journey.distanceMeters;
     final walkDuration = journey.elapsed;
     final claimedCount = journey.claimedCount;
+    // Read before stopJourney so the loop claim shares this walk's session id, folding it
+    // into the same Claim as the walk's batch-step captures (#56).
+    final walkSessionId = controller.walkSessionId ?? '';
     final path = controller.stopJourney();
 
     // If user hasn't walked at all
@@ -72,7 +75,8 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         final api = ref.read(apiServiceProvider);
         final profile = ref.read(userProfileProvider);
         if (profile.userId != null) {
-          final result = await api.submitClaim(userId: profile.userId!, path: path);
+          final result = await api.submitClaim(
+              userId: profile.userId!, path: path, walkSessionId: walkSessionId);
           // Use newlyClaimedCount (hexes this loop claim actually added — interior fill +
           // steals), NOT cellCount (total enclosed cells, which includes the trail hexes
           // already counted in claimedCount during the walk). Adding cellCount here
