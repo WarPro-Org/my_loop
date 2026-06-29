@@ -72,7 +72,7 @@ public class TerritoryService : ITerritoryService
         // (Neon cold start). Serialization conflicts are still handled by the inner loop; only
         // connection-level transients fall through the bare catch to be retried by the strategy.
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        var commit = await strategy.ExecuteAsync(async () =>
         {
         for (var attempt = 1; ; attempt++)
         {
@@ -90,8 +90,9 @@ public class TerritoryService : ITerritoryService
                 if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
                 {
                     await transaction.RollbackAsync();
-                    return ClaimResult.Failure(
-                        $"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day");
+                    return new TerritoryCommit<ClaimResult>(
+                        ClaimResult.Failure($"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day"),
+                        Pushed: false, [], [], null, null, 0, null, []);
                 }
 
                 var claim = CreateClaimEntity(userId, cells.Count, area, path);
@@ -139,20 +140,7 @@ public class TerritoryService : ITerritoryService
             await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
-            // Real-time push notifications (AFTER commit)
-            await BroadcastOwnershipChanges(userId, cells, transfers);
-            await NotifyVictimsOfTheft(userId, transfers);
-
-            // Personal deltas to claiming user
-            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
-            await PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
-
-            // Victim deltas
-            var victimIds = transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct();
-            foreach (var victimId in victimIds)
-                await PushVictimDelta(victimId);
-
-            return ClaimResult.Succeeded(new ClaimResponse
+            var response = ClaimResult.Succeeded(new ClaimResponse
             {
                 Id = claim.Id,
                 CellCount = claim.CellCount,
@@ -164,6 +152,12 @@ public class TerritoryService : ITerritoryService
                 StolenFromOthers = transfers.Count(t => t.FromUserId != null),
                 Boundaries = boundaries,
             });
+
+            // Carry the post-commit payload out; broadcasts/pushes run AFTER ExecuteAsync returns
+            // (outside the retriable block) so a transient there can't re-run a committed claim.
+            return new TerritoryCommit<ClaimResult>(
+                response, Pushed: true, cells, transfers, User: null,
+                xpResult, xpAmount, missionResult, newAchievements);
             }
             catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
             {
@@ -188,6 +182,22 @@ public class TerritoryService : ITerritoryService
             }
         }
         });
+
+        // Post-commit side effects run OUTSIDE the retrying execution strategy (see TerritoryCommit):
+        // the claim is durably committed, so a transient here must never re-run it.
+        if (!commit.Pushed)
+            return commit.Response;
+
+        await BroadcastOwnershipChanges(userId, commit.CapturedHexes, commit.Transfers);
+        await NotifyVictimsOfTheft(userId, commit.Transfers);
+
+        var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId);
+        await PushPersonalDeltas(userId, user, commit.XpResult!, commit.XpAmount, commit.MissionResult, commit.NewAchievements);
+
+        foreach (var victimId in commit.Transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct())
+            await PushVictimDelta(victimId);
+
+        return commit.Response;
     }
 
     public async Task<BatchStepClaimResponse> ProcessBatchStepClaim(
@@ -213,7 +223,7 @@ public class TerritoryService : ITerritoryService
         // inside CreateExecutionStrategy so EnableRetryOnFailure tolerates Neon cold-start
         // connection drops; the inner loop still handles serialization conflicts.
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        var commit = await strategy.ExecuteAsync(async () =>
         {
         for (var attempt = 1; ; attempt++)
         {
@@ -235,7 +245,8 @@ public class TerritoryService : ITerritoryService
                 if (user == null)
                 {
                     await transaction.RollbackAsync();
-                    return new BatchStepClaimResponse();
+                    return new TerritoryCommit<BatchStepClaimResponse>(
+                        new BatchStepClaimResponse(), Pushed: false, [], [], null, null, 0, null, []);
                 }
 
             var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
@@ -431,25 +442,11 @@ public class TerritoryService : ITerritoryService
 
             await transaction.CommitAsync();
 
-            // 10. ONE consolidated push per slice (after commit)
-            if (capturedHexes.Count > 0)
-            {
-                await BroadcastOwnershipChanges(userId, capturedHexes, transfers);
-                await PushPersonalDeltas(userId, user, xpResult, xpAmount, missionResult, newAchievements);
-
-                var victimIds = transfers
-                    .Where(t => t.FromUserId != null)
-                    .Select(t => t.FromUserId!.Value)
-                    .Distinct();
-                foreach (var victimId in victimIds)
-                    await PushVictimDelta(victimId);
-            }
-
-            // 11. Build response
+            // Build response (in-memory only); the consolidated push is deferred to after the block.
             var neededXp = GameConstants.XpForLevel(xpResult.Level + 1) - GameConstants.XpForLevel(xpResult.Level);
             var progressXp = (int)(xpResult.TotalXp - GameConstants.XpForLevel(xpResult.Level));
 
-            return new BatchStepClaimResponse
+            var response = new BatchStepClaimResponse
             {
                 Results = results,
                 Stats = new BatchStepStats
@@ -488,6 +485,12 @@ public class TerritoryService : ITerritoryService
                     XpAwarded = a.XpAwarded,
                 }).ToList(),
             };
+
+            // Carry the post-commit payload out; the consolidated push runs AFTER ExecuteAsync
+            // returns (outside the retriable block) so a transient there can't re-run the committed slice.
+            return new TerritoryCommit<BatchStepClaimResponse>(
+                response, Pushed: capturedHexes.Count > 0, capturedHexes, transfers, user,
+                xpResult, xpAmount, missionResult, newAchievements);
             }
             catch (Exception ex) when (attempt < MaxClaimRetries && IsTransientConflict(ex))
             {
@@ -512,6 +515,20 @@ public class TerritoryService : ITerritoryService
             }
         }
         });
+
+        // Consolidated push runs OUTSIDE the retrying execution strategy (see TerritoryCommit): the
+        // slice is committed, so a transient here must never re-run it. Reuses the in-memory user
+        // captured at commit time (no post-commit DB read).
+        if (commit.Pushed)
+        {
+            await BroadcastOwnershipChanges(userId, commit.CapturedHexes, commit.Transfers);
+            await PushPersonalDeltas(userId, commit.User, commit.XpResult!, commit.XpAmount, commit.MissionResult, commit.NewAchievements);
+
+            foreach (var victimId in commit.Transfers.Where(t => t.FromUserId != null).Select(t => t.FromUserId!.Value).Distinct())
+                await PushVictimDelta(victimId);
+        }
+
+        return commit.Response;
     }
 
     public async Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
@@ -789,6 +806,24 @@ public class TerritoryService : ITerritoryService
     }
 
     private const int MaxClaimRetries = 3;
+
+    /// <summary>
+    /// Carries a committed claim's response plus the data its post-commit side effects need, so the
+    /// broadcasts/pushes run <b>outside</b> the retrying execution strategy. Running them inside risks
+    /// a transient (e.g. a Neon connection drop on a post-commit read) propagating out of the lambda
+    /// and making EF re-run an already-committed claim — duplicate Claim row, double XP, re-fired
+    /// broadcasts. <see cref="Pushed"/> is false for early-exit paths (e.g. daily cap) that did not commit.
+    /// </summary>
+    private sealed record TerritoryCommit<TResponse>(
+        TResponse Response,
+        bool Pushed,
+        List<HexCell> CapturedHexes,
+        List<CellTransfer> Transfers,
+        Entities.User? User,
+        XpGainResult? XpResult,
+        int XpAmount,
+        MissionProgressResult? MissionResult,
+        List<AchievementUnlock> NewAchievements);
 
     /// <summary>
     /// True when an exception represents a write conflict worth retrying — a serialization

@@ -101,6 +101,9 @@ public class DbRetryStrategyTests : IAsyncLifetime
         Assert.True(result.Success);
         await using var check = NewDb();
         Assert.Equal(userId, (await check.TerritoryCells.SingleAsync(c => c.CellId == TargetCell)).OwnerId);
+        // Exactly one Claim row — guards against the post-commit side effects (now run outside the
+        // execution strategy) ever re-running a committed claim and inserting a duplicate.
+        Assert.Equal(1, await check.Claims.CountAsync());
     }
 
     [Fact]
