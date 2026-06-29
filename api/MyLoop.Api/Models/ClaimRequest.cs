@@ -6,10 +6,11 @@ public class ClaimRequest
     public double[][] Path { get; set; } = [];
 
     /// <summary>
-    /// Client-generated walk session id (UUID). All batch-step claims and the final
-    /// loop claim for one continuous walk share this id, so the server records them as a
-    /// single Claim (one walk = one history entry, #56). Defaults to <see cref="Guid.Empty"/>
-    /// for older clients, which the server treats as a standalone single-batch claim.
+    /// Client-generated walk session id (UUID string). All batch-step claims and the final loop
+    /// claim for one continuous walk share this id, so the server records them as a single Claim
+    /// (one walk = one history entry, #56). Sent as a string (JSON has no Guid type); the
+    /// controller parses it tolerantly — absent, empty, or unparseable values resolve to a
+    /// standalone claim, so a malformed id can never 400 the core claim path.
     /// </summary>
-    public Guid WalkSessionId { get; set; }
+    public string? WalkSessionId { get; set; }
 }

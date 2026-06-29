@@ -55,7 +55,7 @@ public class ClaimsController : ControllerBase
         try
         {
             var result = await _territoryService.ProcessClaim(
-                callerId.Value, request.Path, request.WalkSessionId);
+                callerId.Value, request.Path, ParseWalkSessionId(request.WalkSessionId));
 
             if (!result.Success)
                 return BadRequest(new { error = result.Error });
@@ -119,7 +119,7 @@ public class ClaimsController : ControllerBase
         try
         {
             var result = await _territoryService.ProcessBatchStepClaim(
-                callerId.Value, request.LocalDate, request.Points, request.WalkSessionId);
+                callerId.Value, request.LocalDate, request.Points, ParseWalkSessionId(request.WalkSessionId));
             return Ok(result);
         }
         catch (Exception ex)
@@ -170,4 +170,13 @@ public class ClaimsController : ControllerBase
         }
         return true;
     }
+
+    /// <summary>
+    /// Parses the client-supplied walk session id. The client sends a UUID string; an absent,
+    /// empty, or unparseable value resolves to <see cref="Guid.Empty"/>, which the service treats
+    /// as a standalone claim. Parsing here (instead of a non-nullable Guid DTO) keeps a malformed
+    /// id from 400-ing the core claim path at model binding (#56).
+    /// </summary>
+    private static Guid ParseWalkSessionId(string? walkSessionId) =>
+        Guid.TryParse(walkSessionId, out var id) ? id : Guid.Empty;
 }

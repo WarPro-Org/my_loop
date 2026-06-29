@@ -146,6 +146,50 @@ public class ClaimsControllerAuthTests
         territory.Verify(t => t.ProcessClaim(spoofedBodyUserId, It.IsAny<double[][]>(), It.IsAny<Guid>()), Times.Never);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not-a-guid")]
+    public async Task SubmitClaim_tolerates_absent_or_malformed_walkSessionId(string? walkSessionId)
+    {
+        // The client sends walkSessionId as a JSON string; an empty/garbage value must resolve
+        // to Guid.Empty (standalone claim), never 400 the core claim path at model binding (#56).
+        var callerId = Guid.NewGuid();
+        var territory = new Mock<ITerritoryService>();
+        territory.Setup(t => t.ProcessClaim(It.IsAny<Guid>(), It.IsAny<double[][]>(), It.IsAny<Guid>()))
+                 .ReturnsAsync(ClaimResult.Failure("short-circuit"));
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.Setup(c => c.TryGetUserIdAsync()).ReturnsAsync(callerId);
+
+        var controller = Build(territory, currentUser);
+        var request = new ClaimRequest { Path = ValidPath(), WalkSessionId = walkSessionId };
+
+        await controller.SubmitClaim(request);
+
+        // ProcessClaim being reached at all proves binding didn't 400 on the string; it receives
+        // Guid.Empty, the documented "standalone claim" sentinel.
+        territory.Verify(t => t.ProcessClaim(callerId, It.IsAny<double[][]>(), Guid.Empty), Times.Once);
+    }
+
+    [Fact]
+    public async Task SubmitClaim_passes_a_valid_walkSessionId_through_unchanged()
+    {
+        var callerId = Guid.NewGuid();
+        var session = Guid.NewGuid();
+        var territory = new Mock<ITerritoryService>();
+        territory.Setup(t => t.ProcessClaim(It.IsAny<Guid>(), It.IsAny<double[][]>(), It.IsAny<Guid>()))
+                 .ReturnsAsync(ClaimResult.Failure("short-circuit"));
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.Setup(c => c.TryGetUserIdAsync()).ReturnsAsync(callerId);
+
+        var controller = Build(territory, currentUser);
+        var request = new ClaimRequest { Path = ValidPath(), WalkSessionId = session.ToString() };
+
+        await controller.SubmitClaim(request);
+
+        territory.Verify(t => t.ProcessClaim(callerId, It.IsAny<double[][]>(), session), Times.Once);
+    }
+
     [Fact]
     public async Task SubmitClaim_returns_401_when_unauthenticated_and_never_writes()
     {

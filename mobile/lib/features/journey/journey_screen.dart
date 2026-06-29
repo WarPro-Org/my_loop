@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:uuid/uuid.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
@@ -54,8 +55,13 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final walkDuration = journey.elapsed;
     final claimedCount = journey.claimedCount;
     // Read before stopJourney so the loop claim shares this walk's session id, folding it
-    // into the same Claim as the walk's batch-step captures (#56).
-    final walkSessionId = controller.walkSessionId ?? '';
+    // into the same Claim as the walk's batch-step captures (#56). Coalesce a null/empty id to
+    // a fresh UUID — mirroring the batch drainer — so the wire value is always a parseable Guid
+    // and the loop claim can never 400 on an empty string.
+    final rawSessionId = controller.walkSessionId;
+    final walkSessionId = (rawSessionId == null || rawSessionId.isEmpty)
+        ? const Uuid().v4()
+        : rawSessionId;
     final path = controller.stopJourney();
 
     // If user hasn't walked at all

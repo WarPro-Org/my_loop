@@ -123,6 +123,11 @@ public class WalkSessionClaimTests : IAsyncLifetime
         // Net cells across both batches = 4; area derived from the canonical constant (not 4234).
         Assert.Equal(4, claims[0].CellCount);
         Assert.Equal(4 * 2_150.0, claims[0].AreaM2);
+        // The walk's geometry accumulates across batches — the Claim keeps both batches' points
+        // (2 + 2), not just the first batch's, so anti-cheat forensics see the whole path (#56).
+        var polygon = claims[0].GetPolygon();
+        Assert.Equal(4, polygon.Length);
+        Assert.Contains(polygon, p => p[0] == 1.003); // a point from the second batch
     }
 
     [Fact]

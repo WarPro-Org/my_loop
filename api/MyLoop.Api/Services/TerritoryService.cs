@@ -864,6 +864,15 @@ public class TerritoryService : ITerritoryService
             claim.SetPolygon(path);
             _db.Claims.Add(claim);
         }
+        else
+        {
+            // Accumulate the whole walk's geometry into its single Claim (#56) — not just the
+            // first batch — so anti-cheat forensics retain the full GPS path. The claim is
+            // re-read fresh inside the cleared transaction block, so the append stays idempotent
+            // across execution-strategy retries (a retry re-reads the committed path and re-adds
+            // only this batch's slice).
+            claim.AppendToPolygon(path, GameConstants.MaxClaimPathPoints);
+        }
         return claim;
     }
 

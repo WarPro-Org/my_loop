@@ -43,6 +43,22 @@ public class Claim
     /// <param name="polygon">Array of [latitude, longitude] coordinate pairs to store.</param>
     public void SetPolygon(double[][] polygon) => PolygonJson = JsonSerializer.Serialize(polygon);
 
+    /// <summary>
+    /// Appends GPS points to the stored walk path, keeping at most <paramref name="maxPoints"/>
+    /// (most recent retained). Because one walk now folds into a single Claim (#56), each batch
+    /// accumulates its slice here so the Claim retains the whole walk's geometry for anti-cheat
+    /// forensics — not just its first batch — while the cap bounds row growth on long walks.
+    /// </summary>
+    public void AppendToPolygon(double[][] morePoints, int maxPoints)
+    {
+        if (morePoints.Length == 0) return;
+        var existing = GetPolygon();
+        var combined = existing.Length == 0 ? morePoints : [.. existing, .. morePoints];
+        if (combined.Length > maxPoints)
+            combined = combined[^maxPoints..];
+        SetPolygon(combined);
+    }
+
     /// <summary>Navigation property to the user who submitted this claim.</summary>
     public User? User { get; set; }
 }
