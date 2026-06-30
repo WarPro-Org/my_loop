@@ -62,6 +62,17 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
     _loadPage();
   }
 
+  /// Reloads history from the first page. Used by both the offline-notice retry
+  /// button and pull-to-refresh (issue #49). Resets paging state first because
+  /// [_loadPage] *appends* — re-running it without a reset would duplicate the
+  /// already-loaded rows.
+  Future<void> _refresh() async {
+    _page = 1;
+    _hasMore = true;
+    _claims.clear();
+    await _loadPage();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -72,9 +83,10 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
       body: _claims.isEmpty && _loading
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : _claims.isEmpty && _offline
-              ? const OfflineNotice(
+              ? OfflineNotice(
                   title: AppConstants.offlineNoticeTitle,
                   message: AppConstants.offlineWalkHistoryMessage,
+                  onRetry: _refresh,
                 )
               : _claims.isEmpty
                   ? _buildEmpty()
@@ -99,14 +111,18 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
   }
 
   Widget _buildList() {
-    return NotificationListener<ScrollNotification>(
-      onNotification: (scroll) {
-        if (scroll.metrics.pixels > scroll.metrics.maxScrollExtent - 200) {
-          _loadMore();
-        }
-        return false;
-      },
-      child: ListView.separated(
+    return RefreshIndicator(
+      color: AppColors.primary,
+      onRefresh: _refresh,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (scroll) {
+          if (scroll.metrics.pixels > scroll.metrics.maxScrollExtent - 200) {
+            _loadMore();
+          }
+          return false;
+        },
+        child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
         itemCount: _claims.length + (_hasMore ? 1 : 0),
         separatorBuilder: (_, __) => const SizedBox(height: 12),
@@ -121,6 +137,7 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
           }
           return _WalkCard(claim: _claims[index]);
         },
+        ),
       ),
     );
   }

@@ -23,6 +23,7 @@ import 'package:myloop/shared/state/achievements_slice.dart';
 import 'package:myloop/shared/state/exploration_slice.dart';
 import 'package:myloop/shared/widgets/animated_hexagon.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
+import 'package:myloop/shared/widgets/retry_button.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/shared/services/notification_service.dart';
@@ -1103,6 +1104,17 @@ class _RankSheetState extends State<_RankSheet> {
     _fetchRanks();
   }
 
+  /// Re-show the loading spinner and refetch on an in-place retry (issue #49).
+  /// Separate from [_fetchRanks] so the initState call path does not call
+  /// setState during widget initialisation.
+  void _retryRanks() {
+    setState(() {
+      _loading = true;
+      _offline = false;
+    });
+    _fetchRanks();
+  }
+
   Future<void> _fetchRanks() async {
     if (widget.userId == null) {
       setState(() => _loading = false);
@@ -1169,7 +1181,7 @@ class _RankSheetState extends State<_RankSheet> {
           const SizedBox(height: 12),
           _RankOption(scope: 'City', rank: rank, emoji: '🏙️'),
           if (_offline)
-            const _RankOfflineNote()
+            _RankOfflineNote(onRetry: _retryRanks)
           else ...[
             _RankOption(scope: 'Country', rank: _loading ? -1 : _countryRank, emoji: '🌍'),
             _RankOption(scope: 'World', rank: _loading ? -1 : _worldRank, emoji: '🌐'),
@@ -1222,7 +1234,9 @@ class _RankOption extends StatelessWidget {
 /// renders from the cached profile, so only the network-backed scopes are
 /// replaced.
 class _RankOfflineNote extends StatelessWidget {
-  const _RankOfflineNote();
+  /// Re-runs the country/world rank fetch when tapped (issue #49).
+  final VoidCallback onRetry;
+  const _RankOfflineNote({required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -1245,6 +1259,7 @@ class _RankOfflineNote extends StatelessWidget {
               style: const TextStyle(color: AppColors.grey, fontSize: 13, fontWeight: FontWeight.w600),
             ),
           ),
+          RetryButton(onPressed: onRetry),
         ],
       ),
     );
