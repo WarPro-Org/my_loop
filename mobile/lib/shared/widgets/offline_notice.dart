@@ -21,8 +21,12 @@ class OfflineNotice extends StatelessWidget {
   /// the user can re-attempt the failed fetch once back online (issue #49).
   final VoidCallback? onRetry;
 
-  const OfflineNotice(
-      {super.key, required this.title, required this.message, this.onRetry});
+  const OfflineNotice({
+    super.key,
+    required this.title,
+    required this.message,
+    this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -38,9 +42,10 @@ class OfflineNotice extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                  color: AppColors.grey,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700),
+                color: AppColors.grey,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
             Text(

@@ -21,6 +21,12 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
   bool _loading = true;
   bool _hasMore = true;
   int _page = 1;
+  // Guards against overlapping fetches. Retry, pull-to-refresh, and infinite
+  // scroll are all writers of [_claims]; without this, a refresh racing an
+  // in-flight page load would append to a half-cleared list and duplicate rows
+  // (issue #49 review). Set synchronously before the first await so a second
+  // trigger in the same event-loop turn is rejected.
+  bool _inFlight = false;
   // True when the last load failed because the backend was unreachable, so we
   // can show an explicit offline notice instead of the "No walks yet" empty
   // state, which falsely implies the user has never walked (issue #36).
@@ -35,11 +41,17 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
   Future<void> _loadPage() async {
     final profile = ref.read(userProfileProvider);
     if (profile.userId == null) return;
+    if (_inFlight) return;
+    _inFlight = true;
 
     setState(() => _loading = true);
     try {
       final api = ref.read(apiServiceProvider);
-      final results = await api.getWalkHistory(userId: profile.userId!, page: _page);
+      final results = await api.getWalkHistory(
+        userId: profile.userId!,
+        page: _page,
+      );
+      if (!mounted) return;
       setState(() {
         _claims.addAll(results);
         _hasMore = results.length == 20;
@@ -47,17 +59,20 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
         _offline = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _loading = false;
         // Only surface the offline state when we have nothing else to show;
         // a failed page-2 fetch shouldn't replace already-loaded history.
         _offline = _claims.isEmpty && isServerUnreachable(e);
       });
+    } finally {
+      _inFlight = false;
     }
   }
 
   void _loadMore() {
-    if (_loading || !_hasMore) return;
+    if (_inFlight || !_hasMore) return;
     _page++;
     _loadPage();
   }
@@ -65,8 +80,10 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
   /// Reloads history from the first page. Used by both the offline-notice retry
   /// button and pull-to-refresh (issue #49). Resets paging state first because
   /// [_loadPage] *appends* — re-running it without a reset would duplicate the
-  /// already-loaded rows.
+  /// already-loaded rows. Bails if a load is already running so the reset can't
+  /// race an in-flight page fetch (see [_inFlight]).
   Future<void> _refresh() async {
+    if (_inFlight) return;
     _page = 1;
     _hasMore = true;
     _claims.clear();
@@ -76,21 +93,20 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Walk History'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('Walk History'), centerTitle: true),
       body: _claims.isEmpty && _loading
-          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          ? const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            )
           : _claims.isEmpty && _offline
-              ? OfflineNotice(
-                  title: AppConstants.offlineNoticeTitle,
-                  message: AppConstants.offlineWalkHistoryMessage,
-                  onRetry: _refresh,
-                )
-              : _claims.isEmpty
-                  ? _buildEmpty()
-                  : _buildList(),
+          ? OfflineNotice(
+              title: AppConstants.offlineNoticeTitle,
+              message: AppConstants.offlineWalkHistoryMessage,
+              onRetry: _refresh,
+            )
+          : _claims.isEmpty
+          ? _buildEmpty()
+          : _buildList(),
     );
   }
 
@@ -101,10 +117,15 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
         children: [
           Icon(Icons.directions_walk, size: 64, color: AppColors.greyLight),
           const SizedBox(height: 16),
-          Text('No walks yet', style: TextStyle(color: AppColors.grey, fontSize: 16)),
+          Text(
+            'No walks yet',
+            style: TextStyle(color: AppColors.grey, fontSize: 16),
+          ),
           const SizedBox(height: 8),
-          Text('Complete a loop to see your history here.',
-              style: TextStyle(color: AppColors.grey, fontSize: 13)),
+          Text(
+            'Complete a loop to see your history here.',
+            style: TextStyle(color: AppColors.grey, fontSize: 13),
+          ),
         ],
       ),
     );
@@ -122,21 +143,24 @@ class _WalkHistoryScreenState extends ConsumerState<WalkHistoryScreen> {
           return false;
         },
         child: ListView.separated(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-        itemCount: _claims.length + (_hasMore ? 1 : 0),
-        separatorBuilder: (_, __) => const SizedBox(height: 12),
-        itemBuilder: (context, index) {
-          if (index == _claims.length) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(16),
-                child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2),
-              ),
-            );
-          }
-          return _WalkCard(claim: _claims[index]);
-        },
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+          itemCount: _claims.length + (_hasMore ? 1 : 0),
+          separatorBuilder: (_, __) => const SizedBox(height: 12),
+          itemBuilder: (context, index) {
+            if (index == _claims.length) {
+              return const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16),
+                  child: CircularProgressIndicator(
+                    color: AppColors.primary,
+                    strokeWidth: 2,
+                  ),
+                ),
+              );
+            }
+            return _WalkCard(claim: _claims[index]);
+          },
         ),
       ),
     );
@@ -151,7 +175,8 @@ class _WalkCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final cellCount = (claim['cellCount'] as num?)?.toInt() ?? 0;
     final areaM2 = (claim['areaM2'] as num?)?.toDouble() ?? 0;
-    final createdAt = DateTime.tryParse(claim['createdAt'] ?? '') ?? DateTime.now();
+    final createdAt =
+        DateTime.tryParse(claim['createdAt'] ?? '') ?? DateTime.now();
     final areaDisplay = areaM2 >= 10000
         ? '${(areaM2 / 10000).toStringAsFixed(2)} ha'
         : '${areaM2.toInt()} m²';
@@ -179,7 +204,11 @@ class _WalkCard extends StatelessWidget {
               color: AppColors.primary.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.hexagon, color: AppColors.primary, size: 26),
+            child: const Icon(
+              Icons.hexagon,
+              color: AppColors.primary,
+              size: 26,
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -188,7 +217,10 @@ class _WalkCard extends StatelessWidget {
               children: [
                 Text(
                   '$cellCount hex${cellCount == 1 ? '' : 'es'} captured',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
