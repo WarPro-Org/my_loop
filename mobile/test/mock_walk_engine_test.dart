@@ -224,6 +224,14 @@ void main() {
           expect(_bearingChangeStdDev(kept), greaterThan(_minBearingStdDev));
         });
 
+        if (cfg.routeType == MockRouteType.loop) {
+          test('loop closes within the closure threshold', () {
+            final d = Geolocator.distanceBetween(kept.first.latitude,
+                kept.first.longitude, kept.last.latitude, kept.last.longitude);
+            expect(d, lessThanOrEqualTo(_closureThresholdMeters));
+          });
+        }
+
         // Model the real flow: fixes are stamped ~1/sec in wall-clock and the client
         // noise floor drops sub-floor hops, so retained capturedAt spacing ≈ tick
         // spacing. A brisk 4 m/s scenario must still keep every retained hop < cap.
