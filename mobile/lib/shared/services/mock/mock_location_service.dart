@@ -14,11 +14,18 @@ import 'package:geolocator/geolocator.dart';
 import '../location_service.dart';
 import 'mock_walk_engine.dart';
 import 'mock_walk_config.dart';
+import 'mock_walk_progress.dart';
 
 class MockLocationService implements LocationService {
   final MockWalkEngine _engine;
 
-  MockLocationService(MockWalkConfig config) : _engine = MockWalkEngine(config);
+  /// Optional, debug-only progress sink for the dev HUD. Read-only observer —
+  /// the values it receives never feed back into the emitted stream. Null in any
+  /// path that does not surface progress (e.g. unit tests of the raw stream).
+  final MockWalkProgressNotifier? _progress;
+
+  MockLocationService(MockWalkConfig config, [this._progress])
+      : _engine = MockWalkEngine(config);
 
   /// The simulator never needs real OS permission.
   @override
@@ -29,8 +36,21 @@ class MockLocationService implements LocationService {
   Future<Position> getCurrentPosition() async =>
       _engine.generatePositions(startTime: DateTime.now()).first;
 
+  /// Streams the simulated walk, reporting progress to [_progress] as it goes:
+  /// `begin` with the total plotted-fix count, a `tick` per emitted fix, and
+  /// `finish` when the stream ends (whether it completes or is cancelled on stop).
   @override
-  Stream<Position> startTracking() => _engine.stream();
+  Stream<Position> startTracking() async* {
+    _progress?.begin(_engine.plotPoints().length);
+    try {
+      await for (final position in _engine.stream()) {
+        _progress?.tick();
+        yield position;
+      }
+    } finally {
+      _progress?.finish();
+    }
+  }
 
   /// No OS resources to release — the journey controller owns and cancels the
   /// stream subscription returned by [startTracking].

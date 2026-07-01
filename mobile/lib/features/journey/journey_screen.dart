@@ -18,6 +18,7 @@ import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
+import 'package:myloop/features/dev/mock_walk_overlay.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/hydration.dart';
@@ -235,6 +236,14 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
                 ),
                 child: const Text('MOCK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
               ),
+            ),
+          // Debug-only mock-walk HUD / post-run summary (#29 follow-up). Read-only;
+          // never feeds back into the GPS stream. Only built while the mock is on.
+          if (mockEnabled && journey.status == JourneyStatus.tracking)
+            Positioned(
+              top: topPadding + 54,
+              right: 16,
+              child: const MockWalkOverlay(),
             ),
           // LIVE indicator — always visible on map (right of close button)
           Positioned(

@@ -21,6 +21,7 @@ class _Strings {
   _Strings._();
   static const title = 'Mock Walk (debug)';
   static const clearWaypoints = 'Clear waypoints';
+  static const quickLaunch = 'Quick launch (one tap → start at map centre)';
   static const start = 'START MOCK WALK';
   static const routeLoop = 'Loop';
   static const routeStraight = 'Straight';
@@ -139,6 +140,22 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          const Text(_Strings.quickLaunch,
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final scenario in MockWalkScenarios.all)
+                FilledButton.tonalIcon(
+                  icon: const Icon(Icons.bolt, size: 18),
+                  label: Text(scenario.label),
+                  onPressed: () => _launchScenario(scenario),
+                ),
+            ],
+          ),
+          const Divider(height: 28),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text(_Strings.mockModeTitle),
@@ -235,6 +252,18 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
   // ── Actions ───────────────────────────────────────────────────────────────
 
   void _set(MockWalkConfig config) => ref.read(mockWalkConfigProvider.notifier).update(config);
+
+  /// One-tap path: take a curated scenario, anchor it at the map's current
+  /// centre, enable the mock, and go straight to the journey — no drawing or
+  /// slider tweaking. The scenario's config is already anti-cheat-valid; only
+  /// the start point is overridden.
+  void _launchScenario(MockWalkScenario scenario) {
+    final center = _mapController.camera.center;
+    ref.read(mockWalkConfigProvider.notifier).update(
+          scenario.config.copyWith(startPoint: center, enabled: true),
+        );
+    context.go('/journey');
+  }
 
   void _startWalk(MockWalkConfig config) {
     if (config.routeType == MockRouteType.multiWaypoint && config.waypoints.length < 2) {
