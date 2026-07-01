@@ -127,7 +127,7 @@ public class WalkSessionClaimTests : IAsyncLifetime
         // (2 + 2), not just the first batch's, so anti-cheat forensics see the whole path (#56).
         var polygon = claims[0].GetPolygon();
         Assert.Equal(4, polygon.Length);
-        Assert.Contains(polygon, p => p[0] == 1.003); // a point from the second batch
+        Assert.Contains(polygon, p => Math.Abs(p[0] - 1.003) < 1e-9); // a point from the second batch
     }
 
     [Fact]
