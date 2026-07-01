@@ -420,26 +420,17 @@ public class TerritoryService : ITerritoryService
                 ? await _achievementService.CheckAndUnlock(userId)
                 : new List<AchievementUnlock>();
 
-            // 9. XP — single award call also persists everything via SaveChangesAsync
+            // 9. XP
             var xpAmount = newCellsCount * GameConstants.XpPerHexCaptured
                          + stolenCellsCount * GameConstants.XpPerHexStolen;
-            XpGainResult xpResult;
-            if (xpAmount > 0)
-            {
-                xpResult = await _missionService.AwardXp(userId, xpAmount, "batch_step_claim");
-            }
-            else
-            {
-                // No claims happened — still need to persist any "owned" refresh / exploration writes
-                await _db.SaveChangesAsync();
-                xpResult = new XpGainResult
-                {
-                    TotalXp = user.TotalXp,
-                    Level = user.Level,
-                    LeveledUp = false,
-                };
-            }
+            var xpResult = xpAmount > 0
+                ? await _missionService.AwardXp(userId, xpAmount, "batch_step_claim")
+                : new XpGainResult { TotalXp = user.TotalXp, Level = user.Level, LeveledUp = false };
 
+            // Persist territory writes (claim, ownership, user stats) explicitly before commit —
+            // mirrors ProcessClaim/ProcessTrailClaim. Territory durability must not depend on
+            // AwardXp's internal SaveChangesAsync (which no-ops when xpAmount == 0).
+            await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
             // Build response (in-memory only); the consolidated push is deferred to after the block.
