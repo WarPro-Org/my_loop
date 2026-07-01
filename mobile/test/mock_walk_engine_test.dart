@@ -192,4 +192,61 @@ void main() {
       expect(positions.first.speed, MockWalkConstants.defaultSpeedMps);
     });
   });
+
+  // Every one-tap quick-launch scenario must clear the SAME anti-cheat bar as a
+  // hand-configured walk. This is the tested guarantee behind the "curated, small,
+  // valid-by-construction" claim — a scenario added with bad tuning fails loudly here.
+  group('quick-launch scenarios stay anti-cheat-valid by construction', () {
+    // The server's per-hop batch gate (PathValidationService): a hop is a violation
+    // only when its straight-line distance exceeds what max walking speed could cover
+    // in the elapsed capturedAt time, PLUS a GPS-uncertainty margin. Mirrored here so
+    // the assertion matches what the backend actually rejects (not a bare d/dt).
+    const maxSpeedMps = 8.33; // AntiCheatConstants.MaxSpeedMetersPerSecond
+    const gpsDriftMarginMeters = 30.0; // PathValidationService.gpsDriftMarginMeters
+
+    for (final scenario in MockWalkScenarios.all) {
+      group(scenario.label, () {
+        final cfg = scenario.config.copyWith(startPoint: start);
+        final kept = _retained(engine(cfg).plotPoints());
+
+        test('has jitter enabled', () {
+          expect(cfg.jitterEnabled, isTrue);
+        });
+
+        test('yields retained points above the relevant density floor', () {
+          final floor = cfg.routeType == MockRouteType.loop
+              ? _minLoopPoints
+              : AppConstants.minGpsPointsPerClaim;
+          expect(kept.length, greaterThanOrEqualTo(floor));
+        });
+
+        test('reads as a human walk (bearing std-dev over the floor)', () {
+          expect(_bearingChangeStdDev(kept), greaterThan(_minBearingStdDev));
+        });
+
+        // Model the real flow: fixes are stamped ~1/sec in wall-clock and the client
+        // noise floor drops sub-floor hops, so retained capturedAt spacing ≈ tick
+        // spacing. A brisk 4 m/s scenario must still keep every retained hop < cap.
+        test('every retained hop stays under the server speed cap', () {
+          final positions =
+              engine(cfg).generatePositions(startTime: DateTime(2026, 1, 1));
+          Position? last;
+          for (final p in positions) {
+            if (last == null) {
+              last = p;
+              continue;
+            }
+            final d = Geolocator.distanceBetween(
+                last.latitude, last.longitude, p.latitude, p.longitude);
+            if (d < _noiseFloorMeters) continue; // dropped by the client noise floor
+            final dt = p.timestamp.difference(last.timestamp).inMilliseconds / 1000.0;
+            expect(d, lessThanOrEqualTo(maxSpeedMps * dt + gpsDriftMarginMeters),
+                reason: '${scenario.label}: ${d}m hop over ${dt}s exceeds the '
+                    'server per-hop allowance');
+            last = p;
+          }
+        });
+      });
+    }
+  });
 }

@@ -109,11 +109,16 @@ class MockWalkOverlay extends ConsumerWidget {
         children: [
           Text(label,
               style: const TextStyle(color: Colors.white70, fontSize: 11)),
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(value,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+          ),
         ],
       ),
     );
