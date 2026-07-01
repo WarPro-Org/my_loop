@@ -20,8 +20,9 @@ methods and had just gone green. #61 merged first →
 A removal's own diff and CI look clean; the damage lands on *other* PRs.
 
 ## Checklist before merging a removal
-1. List open PRs touching the deleted symbols: `gh pr list --state open`, then grep each
-   (`gh pr view N --json files` / its diff) for the methods/types/routes you delete. Don't trust memory.
+1. Enumerate open PRs and grep each PR's diff for the methods/types/routes you delete — however you
+   reach GitHub (the `gh` CLI, the GitHub MCP server, or the web UI; sandboxed agents may not have `gh`).
+   The point is the check, not the tool. Don't trust memory.
 2. For each overlap, decide merge order explicitly and state it in BOTH PR descriptions.
 3. Check the other PR's **tests**, not just production hunks — a test referencing a deleted symbol breaks
    the build on master.
