@@ -40,7 +40,7 @@ public class TerritoryService : ITerritoryService
         _logger = logger;
     }
 
-    public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path)
+    public async Task<ClaimResult> ProcessClaim(Guid userId, double[][] path, Guid walkSessionId)
     {
         var validationError = await ValidateClaim(userId, path);
         if (validationError != null)
@@ -85,8 +85,12 @@ public class TerritoryService : ITerritoryService
                     "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
 
                 var todayStart = DateTime.UtcNow.Date;
+                // Resolve the session's Claim id first: this walk's batch-step drains may have
+                // already created the Claim earlier today, so exclude it from the per-day cap —
+                // the cap counts distinct walks, not the batches/loop within one walk (#56).
+                var claimId = await ResolveSessionClaimId(userId, walkSessionId);
                 var todayClaimCount = await _db.Claims
-                    .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart);
+                    .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart && c.Id != claimId);
                 if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
                 {
                     await transaction.RollbackAsync();
@@ -95,11 +99,17 @@ public class TerritoryService : ITerritoryService
                         Pushed: false, [], [], null, null, 0, null, []);
                 }
 
-                var claim = CreateClaimEntity(userId, cells.Count, area, path);
-            var (boundaries, transfers) = await AssignCells(userId, cells, claim.Id);
+            var (boundaries, transfers) = await AssignCells(userId, cells, claimId);
 
             _db.CellTransfers.AddRange(transfers);
-            _db.Claims.Add(claim);
+
+            // One walk = one Claim (#56): upsert the session Claim rather than inserting a new
+            // row per loop/batch. CellCount accumulates the NET cells this walk added (transfer
+            // count — disjoint from cells already owned, which AssignCells skips), and AreaM2 is
+            // derived from the canonical cell area, never the legacy 4234 literal.
+            var claim = await GetOrCreateSessionClaim(userId, claimId, path);
+            claim.CellCount += transfers.Count;
+            claim.AreaM2 = claim.CellCount * GameConstants.CellAreaSquareMeters;
 
             var totalDistance = _geo.CalculatePathDistance(path);
             // Distance stats are owned by the live batch-step path (#54). The loop claim
@@ -143,12 +153,15 @@ public class TerritoryService : ITerritoryService
             var response = ClaimResult.Succeeded(new ClaimResponse
             {
                 Id = claim.Id,
-                CellCount = claim.CellCount,
+                // CellCount/AreaM2 describe THIS loop submission's enclosed area (cells.Count),
+                // not the stored session total — the response contract is unchanged. The client
+                // shows NewlyClaimedCount, not CellCount (#55).
+                CellCount = cells.Count,
                 // transfers excludes cells the user already owned (AssignCells skips them),
                 // so this is the bonus the client adds to its live count, with no double
                 // count of trail hexes already claimed during the walk (#55).
                 NewlyClaimedCount = transfers.Count,
-                AreaM2 = claim.AreaM2,
+                AreaM2 = area,
                 StolenFromOthers = transfers.Count(t => t.FromUserId != null),
                 Boundaries = boundaries,
             });
@@ -201,7 +214,7 @@ public class TerritoryService : ITerritoryService
     }
 
     public async Task<BatchStepClaimResponse> ProcessBatchStepClaim(
-        Guid userId, string? clientLocalDate, List<BatchStepPoint> points)
+        Guid userId, string? clientLocalDate, List<BatchStepPoint> points, Guid walkSessionId)
     {
         if (points == null || points.Count == 0)
             return new BatchStepClaimResponse();
@@ -250,7 +263,9 @@ public class TerritoryService : ITerritoryService
                 }
 
             var cooldownExpiry = DateTime.UtcNow.AddHours(GameConstants.CellCooldownHours);
-            var claimId = Guid.NewGuid();
+            // One walk = one Claim (#56): all of this walk's batch drains share the client's
+            // walkSessionId, so they upsert the same Claim instead of each adding a row.
+            var claimId = await ResolveSessionClaimId(userId, walkSessionId);
 
             // Aggregate state across batch
             var results = new List<BatchStepResult>(points.Count);
@@ -370,18 +385,14 @@ public class TerritoryService : ITerritoryService
             if (batchDistanceMeters > 0)
                 user.DistanceKm += batchDistanceMeters / 1000.0;
 
-            // 5. Create a single Claim entity covering this slice (FK target for transfers)
+            // 5. Upsert the walk's single Claim (FK target for transfers, #56). CellCount
+            // accumulates the net cells claimed across all of this walk's batches; AreaM2 is
+            // derived from the canonical cell area, not the legacy 4234 literal.
             if (totalClaimedThisBatch > 0)
             {
-                var claim = new Claim
-                {
-                    Id = claimId,
-                    UserId = userId,
-                    CellCount = totalClaimedThisBatch,
-                    AreaM2 = totalClaimedThisBatch * 4234, // ~4,234 m² per H3 res-11 hex
-                };
-                claim.SetPolygon(pathPoints);
-                _db.Claims.Add(claim);
+                var claim = await GetOrCreateSessionClaim(userId, claimId, pathPoints);
+                claim.CellCount += totalClaimedThisBatch;
+                claim.AreaM2 = claim.CellCount * GameConstants.CellAreaSquareMeters;
 
                 // 6. Update user stats (atomic)
                 user.HexCount += totalClaimedThisBatch;
@@ -420,7 +431,7 @@ public class TerritoryService : ITerritoryService
                 ? await _achievementService.CheckAndUnlock(userId)
                 : new List<AchievementUnlock>();
 
-            // 9. XP — single award call also persists everything via SaveChangesAsync
+            // 9. XP
             var xpAmount = newCellsCount * GameConstants.XpPerHexCaptured
                          + stolenCellsCount * GameConstants.XpPerHexStolen;
             XpGainResult xpResult;
@@ -430,8 +441,6 @@ public class TerritoryService : ITerritoryService
             }
             else
             {
-                // No claims happened — still need to persist any "owned" refresh / exploration writes
-                await _db.SaveChangesAsync();
                 xpResult = new XpGainResult
                 {
                     TotalXp = user.TotalXp,
@@ -440,6 +449,11 @@ public class TerritoryService : ITerritoryService
                 };
             }
 
+            // Persist every batch write (claim upsert, cells, transfers, stats, "owned"
+            // refreshes) before committing. The claimed path previously relied on AwardXp's
+            // internal SaveChangesAsync, so the whole batch silently stayed uncommitted whenever
+            // no XP was awarded — a hidden coupling. Save explicitly, mirroring ProcessClaim.
+            await _db.SaveChangesAsync();
             await transaction.CommitAsync();
 
             // Build response (in-memory only); the consolidated push is deferred to after the block.
@@ -501,6 +515,7 @@ public class TerritoryService : ITerritoryService
             {
                 // Preserve the original (possibly transient) exception for the execution strategy to
                 // classify — a rollback on a dropped connection would otherwise throw and mask it.
+                // (database-retry-resilience rule 3: never let a rollback replace the real error.)
                 try
                 {
                     await transaction.RollbackAsync();
@@ -868,16 +883,59 @@ public class TerritoryService : ITerritoryService
         return await _db.Database.ExecuteSqlRawAsync(sql.ToString(), args.ToArray());
     }
 
-    private static Claim CreateClaimEntity(Guid userId, int cellCount, double area, double[][] path)
+    // ────────────────────────────────────────────────────────────────────────────
+    // Walk-session Claim correlation (#56 — one walk = one Claim)
+    //
+    // A "walk" is one continuous outing. The client stamps every batch-step drain and the
+    // final loop claim with a single walkSessionId; the server uses it as the Claim primary
+    // key so all of a walk's captures fold into one Claim (and one Walk History row) instead
+    // of fragmenting into one row per drained batch plus a loop row.
+    // ────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Resolves the Claim id that should record this walk. Empty (older client) → a fresh id,
+    /// so each batch stays a standalone claim as before. A supplied id that already belongs to
+    /// ANOTHER user is never trusted (it would let a caller mutate someone else's claim) — a
+    /// fresh id is used instead. Call inside the claim transaction so the lookup is consistent.
+    /// </summary>
+    private async Task<Guid> ResolveSessionClaimId(Guid userId, Guid walkSessionId)
     {
-        var claim = new Claim
+        if (walkSessionId == Guid.Empty)
+            return Guid.NewGuid();
+
+        var ownerId = await _db.Claims
+            .Where(c => c.Id == walkSessionId)
+            .Select(c => (Guid?)c.UserId)
+            .FirstOrDefaultAsync();
+
+        // No existing claim → safe to adopt. Already ours → reuse (merge into this walk).
+        return ownerId == null || ownerId == userId ? walkSessionId : Guid.NewGuid();
+    }
+
+    /// <summary>
+    /// Returns the walk's Claim, creating it on the first capture of the session. The id is
+    /// assumed already resolved by <see cref="ResolveSessionClaimId"/> (i.e. unused or owned by
+    /// this user). Loaded fresh inside the transaction so callers can additively accumulate
+    /// CellCount idempotently across execution-strategy retries.
+    /// </summary>
+    private async Task<Claim> GetOrCreateSessionClaim(Guid userId, Guid claimId, double[][] path)
+    {
+        var claim = await _db.Claims.FindAsync(claimId);
+        if (claim == null)
         {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            CellCount = cellCount,
-            AreaM2 = area,
-        };
-        claim.SetPolygon(path);
+            claim = new Claim { Id = claimId, UserId = userId, CreatedAt = DateTime.UtcNow };
+            claim.SetPolygon(path);
+            _db.Claims.Add(claim);
+        }
+        else
+        {
+            // Accumulate the whole walk's geometry into its single Claim (#56) — not just the
+            // first batch — so anti-cheat forensics retain the full GPS path. The claim is
+            // re-read fresh inside the cleared transaction block, so the append stays idempotent
+            // across execution-strategy retries (a retry re-reads the committed path and re-adds
+            // only this batch's slice).
+            claim.AppendToPolygon(path, GameConstants.MaxClaimPathPoints);
+        }
         return claim;
     }
 

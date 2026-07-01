@@ -12,7 +12,7 @@ public interface ITerritoryService
     /// assigns ownership, and records transfers.
     /// Returns the claim result or an error message.
     /// </summary>
-    Task<ClaimResult> ProcessClaim(Guid userId, double[][] path);
+    Task<ClaimResult> ProcessClaim(Guid userId, double[][] path, Guid walkSessionId);
 
     /// <summary>
     /// Batch step claim: processes N GPS points atomically in a single transaction.
@@ -21,7 +21,7 @@ public interface ITerritoryService
     /// single consolidated push (final state, not per-point deltas).
     /// </summary>
     Task<BatchStepClaimResponse> ProcessBatchStepClaim(
-        Guid userId, string? clientLocalDate, List<BatchStepPoint> points);
+        Guid userId, string? clientLocalDate, List<BatchStepPoint> points, Guid walkSessionId);
 
     /// <summary>
     /// Gets all territory cells within a map viewport bounding box.

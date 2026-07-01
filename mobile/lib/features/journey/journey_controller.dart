@@ -7,6 +7,7 @@ library;
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:uuid/uuid.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/batch_drain_service.dart';
@@ -121,6 +122,12 @@ class JourneyController extends Notifier<JourneyState> {
   int _pointsSinceLastCheck = 0;
   List<List<double>>? _pendingPreviewPath;
 
+  /// Id for the current walk. Stamped on every queued GPS point and sent with the final
+  /// loop claim so the server records the whole walk as one Claim (#56). Generated fresh
+  /// in [startJourney]; read by the journey screen before [stopJourney] for the loop claim.
+  String? _walkSessionId;
+  String? get walkSessionId => _walkSessionId;
+
   static const int _loopCheckInterval = 5;
 
   @override
@@ -148,6 +155,8 @@ class JourneyController extends Notifier<JourneyState> {
 
       final pos = await locationService.getCurrentPosition();
       _startTime = DateTime.now();
+      // New walk → new session id; every point and the loop claim carry it (#56).
+      _walkSessionId = const Uuid().v4();
 
       state = state.copyWith(
         status: JourneyStatus.tracking,
@@ -279,6 +288,7 @@ class JourneyController extends Notifier<JourneyState> {
       lat: lat,
       lng: lng,
       capturedAt: DateTime.now(),
+      walkSessionId: _walkSessionId ?? '',
     );
 
     await _queue!.enqueue(point);

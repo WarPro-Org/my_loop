@@ -96,7 +96,7 @@ public class DbRetryStrategyTests : IAsyncLifetime
 
         await using var db = NewDb();
         // Before the execution-strategy wrap this line threw InvalidOperationException.
-        var result = await NewTerritoryService(db).ProcessClaim(userId, path);
+        var result = await NewTerritoryService(db).ProcessClaim(userId, path, Guid.Empty);
 
         Assert.True(result.Success);
         await using var check = NewDb();

@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:dio/dio.dart';
 import 'package:logging/logging.dart';
+import 'package:uuid/uuid.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
 
@@ -93,7 +94,18 @@ class BatchDrainService {
     try {
       final points = _queue.peek(_maxBatchSize);
       if (points.isEmpty) return true;
-      peeked = points;
+
+      // Drain one walk at a time so each Claim the server upserts maps to exactly one walk
+      // (#56). Points are FIFO, so a walk's points are contiguous — take the leading run that
+      // shares the first point's session id; the next run drains on the following cycle.
+      final rawSessionId = points.first.walkSessionId;
+      final batch =
+          points.takeWhile((p) => p.walkSessionId == rawSessionId).toList();
+      peeked = batch;
+
+      // Legacy points written before #56 carry no session id — assign a fresh one so the
+      // server treats them as a standalone walk rather than rejecting an empty id.
+      final sessionId = rawSessionId.isEmpty ? const Uuid().v4() : rawSessionId;
 
       // Determine local date for streak calculation
       final now = DateTime.now();
@@ -103,7 +115,8 @@ class BatchDrainService {
       final response = await _api.claimBatchStep(
         userId: _userId,
         localDate: localDate,
-        points: points,
+        walkSessionId: sessionId,
+        points: batch,
       );
 
       if (response != null) {

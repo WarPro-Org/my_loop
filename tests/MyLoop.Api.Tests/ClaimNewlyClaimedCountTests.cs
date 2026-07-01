@@ -110,7 +110,7 @@ public class ClaimNewlyClaimedCountTests : IAsyncLifetime
         ];
 
         await using var db = NewDb();
-        var result = await NewService(db, loopCells).ProcessClaim(userId, path);
+        var result = await NewService(db, loopCells).ProcessClaim(userId, path, Guid.NewGuid());
 
         Assert.True(result.Success);
         // CellCount = every cell the loop encloses (trail + interior) = 3.

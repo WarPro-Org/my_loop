@@ -233,10 +233,14 @@ class ApiService {
   Future<Map<String, dynamic>> submitClaim({
     required String userId,
     required List<List<double>> path,
+    required String walkSessionId,
   }) async {
     final response = await _dio.post('/api/claims', data: {
       'userId': userId,
       'path': path,
+      // Shared with this walk's batch-step claims so the server folds them into one
+      // Claim instead of adding a separate loop-claim row (#56).
+      'walkSessionId': walkSessionId,
     });
     return response.data as Map<String, dynamic>;
   }
@@ -246,12 +250,15 @@ class ApiService {
   Future<BatchResult?> claimBatchStep({
     required String userId,
     required String localDate,
+    required String walkSessionId,
     required List<QueuedStepPoint> points,
   }) async {
     try {
       final response = await _dio.post('/api/claims/batch-step', data: {
         'userId': userId,
         'localDate': localDate,
+        // One walk = one Claim (#56): all of a walk's batches share this id.
+        'walkSessionId': walkSessionId,
         'points': points.map((p) => p.toJson()).toList(),
       });
       final data = response.data as Map<String, dynamic>;

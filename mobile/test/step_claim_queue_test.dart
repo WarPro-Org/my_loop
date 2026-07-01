@@ -17,11 +17,12 @@ class _FakePathProvider extends PathProviderPlatform
   Future<String?> getApplicationDocumentsPath() async => dir;
 }
 
-QueuedStepPoint _pt(String id) => QueuedStepPoint(
+QueuedStepPoint _pt(String id, {String session = 's1'}) => QueuedStepPoint(
       clientId: id,
       lat: 12.34,
       lng: 56.78,
       capturedAt: DateTime.utc(2026, 6, 15, 10),
+      walkSessionId: session,
     );
 
 void main() {
@@ -56,6 +57,36 @@ void main() {
     final reopened = StepClaimQueue();
     await reopened.init();
     expect(reopened.getAll().map((p) => p.clientId), ['a', 'c']);
+  });
+
+  // #56: a point's walkSessionId is the key that folds a whole walk into one Claim. It
+  // must round-trip through the on-disk WAL, or a drain after an app-kill mid-walk would
+  // lose the correlation and re-fragment the walk.
+  test('walkSessionId round-trips through the on-disk WAL', () async {
+    final q = StepClaimQueue();
+    await q.init();
+    await q.enqueue(_pt('a', session: 'walk-1'));
+    await q.enqueue(_pt('b', session: 'walk-2'));
+
+    final reopened = StepClaimQueue();
+    await reopened.init();
+    expect(
+      reopened.getAll().map((p) => p.walkSessionId),
+      ['walk-1', 'walk-2'],
+      reason: 'session ids read from disk must match what was written',
+    );
+  });
+
+  // Forward-compat: a WAL line written by a pre-#56 build has no walkSessionId key.
+  // It must load as empty (the drainer then assigns a fresh session id) rather than throw.
+  test('QueuedStepPoint.fromJson tolerates a missing walkSessionId', () {
+    final p = QueuedStepPoint.fromJson({
+      'clientId': 'legacy',
+      'lat': 1.0,
+      'lng': 2.0,
+      'capturedAt': DateTime.utc(2026, 6, 15, 10).toIso8601String(),
+    });
+    expect(p.walkSessionId, '');
   });
 
   test('clear empties both memory and the on-disk WAL', () async {
