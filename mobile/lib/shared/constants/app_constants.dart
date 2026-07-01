@@ -59,4 +59,9 @@ class AppConstants {
       'Connect to the internet to load your walk history.';
   static const String offlineRankingMessage =
       'Connect to the internet to see your country and world ranking.';
+
+  /// Label for the in-place retry control shown on offline notices, so the
+  /// user can recover once connectivity returns without leaving the screen
+  /// (issue #49).
+  static const String retryButtonLabel = 'Try again';
 }
