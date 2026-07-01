@@ -62,6 +62,12 @@ class MockWalkConstants {
 
   /// Nominal GPS horizontal accuracy reported on synthesized fixes, in metres.
   static const double reportedAccuracyMeters = 8.0;
+
+  /// Walking speed used by the one-tap quick-launch scenarios. Held at the speed
+  /// upper bound — a brisk jog that shortens a desk run while staying well under
+  /// the server cap (8.33 m/s) even with jitter, because retained points sit a
+  /// fixed [reportedAccuracyMeters] (8 m) apart so the per-hop speed ≈ this value.
+  static const double quickScenarioSpeedMps = maxSpeedMps;
 }
 
 /// Shape of the route the simulator walks.
@@ -133,6 +139,61 @@ class MockWalkConfig {
       straightBearingDegrees: straightBearingDegrees ?? this.straightBearingDegrees,
     );
   }
+}
+
+/// A named one-tap test scenario surfaced as a quick-launch button on the dev
+/// screen. Each [config] already sits within the clamped bounds with jitter ON,
+/// so the walk it generates satisfies server anti-cheat (retained-point density
+/// above the loop/claim floors, per-hop speed under the cap) by construction.
+///
+/// The embedded [MockWalkConfig.startPoint] is a placeholder (the const default):
+/// the dev screen overrides it with the map's current centre at launch, so a tap
+/// always starts the walk wherever the tester has panned to.
+class MockWalkScenario {
+  final String label;
+  final MockWalkConfig config;
+  const MockWalkScenario(this.label, this.config);
+}
+
+/// The curated set of one-tap scenarios. Deliberately small: every entry must
+/// stay anti-cheat-valid and is asserted so in tests — an unbounded button grid
+/// would rot and risk silently generating a server-rejected path.
+class MockWalkScenarios {
+  MockWalkScenarios._();
+
+  static const quickLoop = MockWalkScenario(
+    'Quick loop',
+    MockWalkConfig(
+      enabled: true,
+      routeType: MockRouteType.loop,
+      loopRadiusMeters: MockWalkConstants.defaultLoopRadiusMeters,
+      speedMps: MockWalkConstants.quickScenarioSpeedMps,
+    ),
+  );
+
+  static const bigLoop = MockWalkScenario(
+    'Big loop',
+    MockWalkConfig(
+      enabled: true,
+      routeType: MockRouteType.loop,
+      loopRadiusMeters: MockWalkConstants.maxLoopRadiusMeters,
+      speedMps: MockWalkConstants.quickScenarioSpeedMps,
+    ),
+  );
+
+  static const straight = MockWalkScenario(
+    'Straight',
+    MockWalkConfig(
+      enabled: true,
+      routeType: MockRouteType.straight,
+      straightLengthMeters: MockWalkConstants.defaultStraightLengthMeters,
+      speedMps: MockWalkConstants.quickScenarioSpeedMps,
+    ),
+  );
+
+  /// Display order for the quick-launch row. "Last used" is intentionally absent
+  /// — it re-runs the live [mockWalkConfigProvider] state and is handled in the UI.
+  static const all = <MockWalkScenario>[quickLoop, bigLoop, straight];
 }
 
 /// Riverpod state for the simulator config. Side effect: mirrors [MockWalkConfig.enabled]

@@ -52,6 +52,10 @@ class JourneyState {
   final String? achievementUnlocked;
   /// Metadata for each step-claimed hex (for hex manager integration).
   final List<StepClaimMeta> claimedMeta;
+  /// Running count of batches permanently rejected this walk (e.g. anti-cheat
+  /// speed/smoothness violations). Surfaced in the debug mock-walk summary so a
+  /// desk tester sees rejections without digging through logs; harmless in prod.
+  final int rejectionCount;
 
   const JourneyState({
     this.status = JourneyStatus.idle,
@@ -69,6 +73,7 @@ class JourneyState {
     this.levelUpTo,
     this.achievementUnlocked,
     this.claimedMeta = const [],
+    this.rejectionCount = 0,
   });
 
   JourneyState copyWith({
@@ -87,6 +92,7 @@ class JourneyState {
     int? levelUpTo,
     String? achievementUnlocked,
     List<StepClaimMeta>? claimedMeta,
+    int? rejectionCount,
   }) {
     return JourneyState(
       status: status ?? this.status,
@@ -104,6 +110,7 @@ class JourneyState {
       levelUpTo: levelUpTo,
       achievementUnlocked: achievementUnlocked,
       claimedMeta: claimedMeta ?? this.claimedMeta,
+      rejectionCount: rejectionCount ?? this.rejectionCount,
     );
   }
 }
@@ -156,6 +163,7 @@ class JourneyController extends Notifier<JourneyState> {
         distanceMeters: 0,
         elapsed: Duration.zero,
         error: null,
+        rejectionCount: 0,
       );
 
       await _initWriteLayer();
@@ -265,7 +273,10 @@ class JourneyController extends Notifier<JourneyState> {
     // Surface permanent rejections (e.g. anti-cheat speed violation) to the user
     // instead of silently dropping the batch (MEDIUM-5).
     _rejectionSub = _drainService!.onRejection.listen((message) {
-      state = state.copyWith(error: message);
+      state = state.copyWith(
+        error: message,
+        rejectionCount: state.rejectionCount + 1,
+      );
     });
     _drainService!.start();
   }

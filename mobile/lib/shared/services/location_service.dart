@@ -19,6 +19,7 @@ import 'package:logging/logging.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/mock/mock_location_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
+import 'package:myloop/shared/services/mock/mock_walk_progress.dart';
 
 final _log = Logger('LocationService');
 
@@ -181,7 +182,10 @@ final locationServiceProvider = Provider<LocationService>((ref) {
   if (kDebugMode) {
     final mockConfig = ref.watch(mockWalkConfigProvider);
     if (mockConfig.enabled) {
-      return MockLocationService(mockConfig);
+      return MockLocationService(
+        mockConfig,
+        ref.read(mockWalkProgressProvider.notifier),
+      );
     }
   }
   final service = LocationService();
