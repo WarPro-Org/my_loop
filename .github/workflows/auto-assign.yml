@@ -11,11 +11,19 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-    - name: 'Auto-assign issue'
-      # Pinned to a full commit SHA (v1) so a retagged/compromised release
-      # cannot run with issues:write + pull-requests:write. Bump deliberately.
-      uses: pozil/auto-assign-issue@d11e715efc663fe323c3d8d4d3cbbfdddd539baf # v1
+    - name: 'Auto-assign issue or PR'
+      # Pinned to a full commit SHA so a retagged/compromised release cannot run
+      # with issues:write + pull-requests:write. Bump deliberately.
+      #
+      # v4.0.1 — supports both `issues` and `pull_request` events (v1 only read
+      # an issue from the event context, so every PR-triggered run failed with
+      # "Couldn't find issue info in current context"). v4 also recognises the
+      # `numOfAssignee` input that v1 rejected as unexpected.
+      uses: pozil/auto-assign-issue@af6beea6bdf1e8eb373f061c5bc168681fc6d011 # v4.0.1
       with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           assignees: ProManXi
           numOfAssignee: 1
+          # The PR author (ProManXi) is also the assignee target; without this
+          # the action would skip self-assignment and assign no one.
+          allowSelfAssign: true
