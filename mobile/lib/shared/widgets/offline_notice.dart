@@ -8,6 +8,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/shared/widgets/retry_button.dart';
 
 class OfflineNotice extends StatelessWidget {
   /// Short headline, e.g. "You're offline".
@@ -16,7 +17,16 @@ class OfflineNotice extends StatelessWidget {
   /// Explanatory line telling the user what to do.
   final String message;
 
-  const OfflineNotice({super.key, required this.title, required this.message});
+  /// When provided, an in-place retry control is rendered below the message so
+  /// the user can re-attempt the failed fetch once back online (issue #49).
+  final VoidCallback? onRetry;
+
+  const OfflineNotice({
+    super.key,
+    required this.title,
+    required this.message,
+    this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -32,9 +42,10 @@ class OfflineNotice extends StatelessWidget {
               title,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                  color: AppColors.grey,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700),
+                color: AppColors.grey,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -42,6 +53,10 @@ class OfflineNotice extends StatelessWidget {
               textAlign: TextAlign.center,
               style: const TextStyle(color: AppColors.grey, fontSize: 13),
             ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              RetryButton(onPressed: onRetry!),
+            ],
           ],
         ),
       ),
