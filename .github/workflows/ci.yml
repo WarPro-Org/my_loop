@@ -34,7 +34,9 @@ jobs:
 
       - name: Coverage gate (backend)
         run: |
-          report="$(find ./coverage/backend -name 'coverage.cobertura.xml' | head -1)"
+          # -print -quit stops at the first match without a `find | head` pipe,
+          # which would SIGPIPE-fail under GitHub Actions' default bash -eo pipefail.
+          report="$(find ./coverage/backend -name 'coverage.cobertura.xml' -print -quit)"
           scripts/coverage/check.sh backend "$report"
 
   mobile:
