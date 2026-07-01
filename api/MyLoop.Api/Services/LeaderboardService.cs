@@ -37,36 +37,48 @@ public class LeaderboardService : ILeaderboardService
     public async Task<int> RefreshLeaderboard()
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        await using var transaction = await _db.Database.BeginTransactionAsync();
 
-        await _db.LeaderboardEntries.Where(l => l.Date == today).ExecuteDeleteAsync();
-
-        var rankings = await _db.TerritoryCells
-            .GroupBy(t => t.OwnerId)
-            .Select(g => new { UserId = g.Key, CellCount = g.Count() })
-            .OrderByDescending(x => x.CellCount)
-            .ToListAsync();
-
-        var entries = rankings.Select((r, i) => new LeaderboardEntry
+        // The retrying execution strategy (EnableRetryOnFailure) may re-run this whole block on a
+        // transient connection failure, so it must be wrapped here and be idempotent. The leading
+        // ChangeTracker.Clear() is essential: UpdateAchievementCounters increments persistent user
+        // counters in memory, and without a reset a retry would compound those increments on the
+        // same DbContext. Clearing makes each attempt re-read fresh state (prior attempts rolled
+        // back), and the delete-then-reinsert of today's rows is itself idempotent.
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            Id = Guid.NewGuid(),
-            UserId = r.UserId,
-            Date = today,
-            CellCount = r.CellCount,
-            AreaM2 = _hexGrid.CalculateArea(r.CellCount),
-            Rank = i + 1,
-        }).ToList();
+            _db.ChangeTracker.Clear();
+            await using var transaction = await _db.Database.BeginTransactionAsync();
 
-        _db.LeaderboardEntries.AddRange(entries);
-        await _db.SaveChangesAsync();
+            await _db.LeaderboardEntries.Where(l => l.Date == today).ExecuteDeleteAsync();
 
-        await UpdateAchievementCounters(entries);
-        await PurgeOldEntries(today);
+            var rankings = await _db.TerritoryCells
+                .GroupBy(t => t.OwnerId)
+                .Select(g => new { UserId = g.Key, CellCount = g.Count() })
+                .OrderByDescending(x => x.CellCount)
+                .ToListAsync();
 
-        await _db.SaveChangesAsync();
-        await transaction.CommitAsync();
+            var entries = rankings.Select((r, i) => new LeaderboardEntry
+            {
+                Id = Guid.NewGuid(),
+                UserId = r.UserId,
+                Date = today,
+                CellCount = r.CellCount,
+                AreaM2 = _hexGrid.CalculateArea(r.CellCount),
+                Rank = i + 1,
+            }).ToList();
 
-        return rankings.Count;
+            _db.LeaderboardEntries.AddRange(entries);
+            await _db.SaveChangesAsync();
+
+            await UpdateAchievementCounters(entries);
+            await PurgeOldEntries(today);
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return rankings.Count;
+        });
     }
 
     // ──────────────────────────────────────────────────────────────────────────

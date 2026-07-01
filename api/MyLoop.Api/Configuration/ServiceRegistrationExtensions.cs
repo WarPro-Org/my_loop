@@ -13,7 +13,16 @@ public static class ServiceRegistrationExtensions
 {
     public static IServiceCollection AddMyLoopDatabase(this IServiceCollection services, IConfiguration configuration) =>
         services.AddDbContext<AppDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("DefaultConnection")));
+            options.UseNpgsql(
+                configuration.GetConnectionString("DefaultConnection"),
+                // Neon scales to zero when idle; the first query after a cold start (or a pooled
+                // connection dropped during suspension) surfaces as a transient failure. Retry it
+                // transparently. NOTE: this installs a retrying execution strategy, so every
+                // user-initiated transaction MUST run inside Database.CreateExecutionStrategy().
+                npgsql => npgsql.EnableRetryOnFailure(
+                    maxRetryCount: InfrastructureDefaults.DbMaxRetryCount,
+                    maxRetryDelay: TimeSpan.FromSeconds(InfrastructureDefaults.DbMaxRetryDelaySeconds),
+                    errorCodesToAdd: null)));
 
     /// <summary>Registers domain services, identity resolution, the geocoding client, and the decay worker.</summary>
     public static IServiceCollection AddMyLoopServices(this IServiceCollection services)

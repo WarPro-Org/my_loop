@@ -7,6 +7,15 @@ namespace MyLoop.Api.Constants;
 /// </summary>
 public static class InfrastructureDefaults
 {
+    // --- Database resilience (Neon serverless Postgres scale-to-zero cold starts) ---
+    /// <summary>
+    /// Max times Npgsql's retrying execution strategy re-runs an operation after a transient
+    /// connection failure (e.g. a pooled connection dropped while Neon was scaled to zero).
+    /// </summary>
+    public const int DbMaxRetryCount = 5;
+    /// <summary>Upper bound on the (exponential) delay between database retry attempts.</summary>
+    public const int DbMaxRetryDelaySeconds = 10;
+
     // --- Rate limiting (per authenticated user, falling back to client IP) ---
     public const int RateLimitPermitLimit = 120;
     public const int RateLimitWindowSeconds = 60;
