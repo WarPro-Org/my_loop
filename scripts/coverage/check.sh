@@ -25,8 +25,14 @@ floor="$(python3 -c "import json; print(json.load(open('$thresholds'))['$stack']
 case "$stack" in
   backend)
     # Cobertura: the root <coverage line-rate="0.xx" ...> is the overall ratio.
-    rate="$(grep -oE 'line-rate="[0-9.]+"' "$report" | head -1 | grep -oE '[0-9.]+')"
-    pct="$(awk "BEGIN{printf \"%.2f\", ${rate:-0} * 100}")"
+    # Parse with python to avoid SIGPIPE from a grep|head pipeline under pipefail.
+    pct="$(python3 - "$report" <<'PY'
+import re, sys
+text = open(sys.argv[1]).read()
+m = re.search(r'line-rate="([0-9.]+)"', text)
+print(f"{float(m.group(1)) * 100:.2f}" if m else "0")
+PY
+)"
     ;;
   mobile)
     # lcov: sum LF (found) and LH (hit) across all records.
