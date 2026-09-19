@@ -535,10 +535,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _showHexOwnerSheet(TerritoryCell cell) {
     final profile = ref.read(userProfileProvider);
     final isOwn = cell.ownerId == profile.userId;
-    // Show owner's actual color only for own hexes; black for others
-    final ownerColor = isOwn
-        ? Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000)
-        : const Color(0xFF1A1A1A);
+    // Show owner's actual color only for own hexes; neutral for others. A hex
+    // captured or step-claimed this session is in the store before its colour
+    // is, so this must tolerate a blank value instead of throwing.
+    final ownerColor =
+        isOwn ? AppColors.fromHex(cell.ownerColor) : AppColors.hexUnknownOwner;
 
     showModalBottomSheet(
       context: context,
