@@ -92,7 +92,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
           stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
           _renderCapturedHexes(result);
           // The bonus claim is reflected by the server's UserStatsDelta push
-          // (consumed live by userProfileProvider) and reconciled authoritatively
+          // (consumed live by profileSliceProvider) and reconciled authoritatively
           // by _refreshUserData below — no local optimistic add, which would
           // double-count the bonus on top of the pushed value (issue #30).
         }
