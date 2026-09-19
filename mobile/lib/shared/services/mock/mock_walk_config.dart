@@ -26,18 +26,24 @@ class MockWalkConstants {
   /// Wall-clock interval between synthesized GPS fixes (~1 Hz, like a real device).
   static const Duration tickInterval = Duration(seconds: 1);
 
-  /// Default and bounds for walking speed. The upper bound is held well under the
-  /// server anti-cheat cap (8.33 m/s) so even with jitter no hop is rejected, while
-  /// still letting a tester speed a run up to a brisk jog to shorten it.
+  /// Default and bounds for walking speed. The upper bound is a brisk jog, so a
+  /// tester can shorten a desk run; [jitterSigmaMeters] is what keeps the measured
+  /// path under the server's 9.0 m/s sustained-average gate at this bound.
   static const double defaultSpeedMps = 1.4; // average human walk
   static const double minSpeedMps = 0.5;
-  static const double maxSpeedMps = 4.0; // brisk jog; << 8.33 m/s cap
+  static const double maxSpeedMps = 4.0; // brisk jog
 
-  /// Std-dev of per-fix positional jitter, in metres. Calibrated so consecutive
-  /// retained points (~5 m apart after the client noise filter) have a bearing
-  /// std-dev comfortably above the server's 2° smoothness floor — i.e. even a
-  /// "straight" route reads as a real human walk, not a spoofed line.
-  static const double jitterSigmaMeters = 4.0;
+  /// Std-dev of per-fix positional jitter, in metres.
+  ///
+  /// Calibrated against BOTH server gates, which pull in opposite directions:
+  /// too little jitter and a straight route falls under the 2° bearing-std-dev
+  /// smoothness floor; too much and the noise itself dominates displacement,
+  /// inflating the measured path until it trips the 9.0 m/s sustained-average
+  /// speed gate (jitter is independent per 1 Hz fix, so σ adds ~2σ·√2 m/s of
+  /// phantom speed — real GPS error is time-correlated and does not).
+  /// At 2.5 m the worst case over 40 seeds is 15° std-dev (floor 2°) and
+  /// 5.1 m/s measured (cap 9.0). Asserted in `mock_walk_engine_test.dart`.
+  static const double jitterSigmaMeters = 2.5;
 
   /// Default and bounds for the generated closed loop radius, in metres. The minimum
   /// is held high enough that the loop perimeter, after the client noise-floor dedup
@@ -64,9 +70,9 @@ class MockWalkConstants {
   static const double reportedAccuracyMeters = 8.0;
 
   /// Walking speed used by the one-tap quick-launch scenarios. Held at the speed
-  /// upper bound — a brisk jog that shortens a desk run while staying well under
-  /// the server cap (8.33 m/s) even with jitter, because retained points sit a
-  /// fixed [reportedAccuracyMeters] (8 m) apart so the per-hop speed ≈ this value.
+  /// upper bound to keep a desk run short; the binding server constraint is the
+  /// 9.0 m/s sustained-average gate, not the per-hop cap, and clearing it at this
+  /// speed is what [jitterSigmaMeters] is calibrated for.
   static const double quickScenarioSpeedMps = maxSpeedMps;
 }
 

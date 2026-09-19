@@ -591,7 +591,7 @@ class _Section extends StatelessWidget {
             Row(
               children: [
                 Expanded(child: Text(title, style: theme.textTheme.titleLarge)),
-                if (trailing != null) trailing!,
+                ?trailing,
               ],
             ),
             if (subtitle != null)

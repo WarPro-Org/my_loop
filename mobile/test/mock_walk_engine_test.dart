@@ -28,6 +28,7 @@ final int _minLoopPoints = LoopDetector.minLoopPoints;
 // tightening should break this test loudly.
 const double _minBearingStdDev = 2.0; // AntiCheatConstants.MinBearingStdDev
 const double _maxHopMeters = 60.0; // AntiCheatConstants.MaxDistanceBetweenPointsMeters
+const double _maxAverageSpeedMps = 9.0; // AntiCheatConstants.MaxAverageSpeedMetersPerSecond
 
 /// The real moving noise floor the journey controller applies to a mock fix (whose
 /// speed is always > stationary threshold): clamp(accuracy, movingMin, movingMax).
@@ -47,6 +48,34 @@ List<LatLng> _retained(List<MockRoutePoint> raw) {
     }
   }
   return kept;
+}
+
+/// Sustained average speed of the path the server actually receives, mirroring
+/// `PathValidationService.ValidateConsecutivePoints`: total retained hop distance
+/// over total elapsed capturedAt. This is the gate that per-hop checks miss — the
+/// per-hop allowance carries a 30 m GPS-drift margin that hides noise-inflated
+/// hops, while this average does not.
+double _sustainedAverageSpeedMps(List<Position> positions) {
+  Position? last;
+  var totalMeters = 0.0;
+  DateTime? firstAt;
+  DateTime? lastAt;
+  for (final p in positions) {
+    if (last == null) {
+      last = p;
+      firstAt = p.timestamp;
+      lastAt = p.timestamp;
+      continue;
+    }
+    final d = Geolocator.distanceBetween(
+        last.latitude, last.longitude, p.latitude, p.longitude);
+    if (d < _noiseFloorMeters) continue; // dropped by the client noise floor
+    totalMeters += d;
+    lastAt = p.timestamp;
+    last = p;
+  }
+  final elapsedSeconds = lastAt!.difference(firstAt!).inMilliseconds / 1000.0;
+  return elapsedSeconds <= 0 ? 0 : totalMeters / elapsedSeconds;
 }
 
 /// Std-dev of consecutive bearing changes — the server's smoothness metric.
@@ -326,5 +355,87 @@ void main() {
         });
       });
     }
+  });
+
+  // The per-hop gate above carries a 30 m GPS-drift margin, so it cannot catch a
+  // path whose length is inflated by jitter rather than by teleport jumps. The
+  // sustained-average gate can, and it is what rejects the whole batch. Jitter is
+  // independent per 1 Hz fix, so its sigma contributes phantom speed directly —
+  // at sigma 4.0 m the min-radius loop at max speed measured 9.56 m/s and this
+  // group failed. Swept over many seeds because a single seed hides the tail.
+  group('sustained average speed stays under the server gate', () {
+    const seedCount = 40;
+
+    final extremes = <String, MockWalkConfig>{
+      'loop at min radius, max speed': const MockWalkConfig(
+        routeType: MockRouteType.loop,
+        loopRadiusMeters: MockWalkConstants.minLoopRadiusMeters,
+        speedMps: MockWalkConstants.maxSpeedMps,
+      ),
+      'loop at max radius, max speed': const MockWalkConfig(
+        routeType: MockRouteType.loop,
+        loopRadiusMeters: MockWalkConstants.maxLoopRadiusMeters,
+        speedMps: MockWalkConstants.maxSpeedMps,
+      ),
+      'straight at min length, max speed': const MockWalkConfig(
+        routeType: MockRouteType.straight,
+        straightLengthMeters: MockWalkConstants.minStraightLengthMeters,
+        speedMps: MockWalkConstants.maxSpeedMps,
+      ),
+      'straight at max length, max speed': const MockWalkConfig(
+        routeType: MockRouteType.straight,
+        straightLengthMeters: MockWalkConstants.maxStraightLengthMeters,
+        speedMps: MockWalkConstants.maxSpeedMps,
+      ),
+      'loop at min speed': const MockWalkConfig(
+        routeType: MockRouteType.loop,
+        speedMps: MockWalkConstants.minSpeedMps,
+      ),
+    };
+
+    for (final entry in extremes.entries) {
+      test(entry.key, () {
+        final cfg = entry.value.copyWith(startPoint: start);
+        for (var seed = 1; seed <= seedCount; seed++) {
+          final positions = MockWalkEngine(cfg, random: Random(seed))
+              .generatePositions(startTime: DateTime(2026, 1, 1));
+          expect(_sustainedAverageSpeedMps(positions), lessThan(_maxAverageSpeedMps),
+              reason: '${entry.key}: seed $seed exceeds the sustained-average gate');
+        }
+      });
+    }
+
+    test('every quick-launch scenario clears the gate on every seed', () {
+      for (final scenario in MockWalkScenarios.all) {
+        final cfg = scenario.config.copyWith(startPoint: start);
+        for (var seed = 1; seed <= seedCount; seed++) {
+          final positions = MockWalkEngine(cfg, random: Random(seed))
+              .generatePositions(startTime: DateTime(2026, 1, 1));
+          expect(_sustainedAverageSpeedMps(positions), lessThan(_maxAverageSpeedMps),
+              reason: '${scenario.label}: seed $seed exceeds the sustained-average gate');
+        }
+      }
+    });
+
+    // Guards the other side of the sigma trade-off: shrinking jitter to buy speed
+    // headroom must not drop a straight route under the smoothness floor.
+    test('smoothness floor still cleared at every speed bound', () {
+      for (final speed in [
+        MockWalkConstants.minSpeedMps,
+        MockWalkConstants.defaultSpeedMps,
+        MockWalkConstants.maxSpeedMps,
+      ]) {
+        final cfg = MockWalkConfig(
+          routeType: MockRouteType.straight,
+          startPoint: start,
+          speedMps: speed,
+        );
+        for (var seed = 1; seed <= seedCount; seed++) {
+          final kept = _retained(MockWalkEngine(cfg, random: Random(seed)).plotPoints());
+          expect(_bearingChangeStdDev(kept), greaterThan(_minBearingStdDev),
+              reason: 'straight at $speed m/s, seed $seed reads as spoof-smooth');
+        }
+      }
+    });
   });
 }
