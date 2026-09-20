@@ -12,10 +12,18 @@ public class GeocodingService
 {
     private readonly HttpClient _http;
     private readonly ILogger<GeocodingService> _logger;
-    private readonly ConcurrentDictionary<string, string> _cache = new();
-    private readonly ConcurrentDictionary<string, LocationInfo> _locationCache = new();
-    private readonly SemaphoreSlim _throttle = new(1, 1); // 1 req/sec Nominatim policy
-    private DateTime _lastRequest = DateTime.MinValue;
+
+    // Static, not instance, state: this type is registered as a typed HttpClient, which makes it
+    // TRANSIENT, so every injection gets a fresh instance. Instance-scoped throttle state therefore
+    // enforced nothing — each caller had its own semaphore and its own "last request" clock, so N
+    // concurrent callers could issue N simultaneous requests and blow straight through Nominatim's
+    // 1-req/sec usage policy, while the caches never got a hit across requests (#139 D2).
+    // Rate limiting an external service is inherently process-wide, so the state has to be too.
+    // Both lookup methods share one semaphore on purpose — the policy is per-service, not per-endpoint.
+    private static readonly ConcurrentDictionary<string, string> _cache = new();
+    private static readonly ConcurrentDictionary<string, LocationInfo> _locationCache = new();
+    private static readonly SemaphoreSlim _throttle = new(1, 1); // 1 req/sec Nominatim policy
+    private static DateTime _lastRequest = DateTime.MinValue; // guarded by _throttle
 
     public GeocodingService(HttpClient http, ILogger<GeocodingService> logger)
     {

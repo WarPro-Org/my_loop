@@ -42,7 +42,12 @@ public static class ServiceRegistrationExtensions
         services.AddScoped<IMissionService, MissionService>();
         services.AddScoped<IAchievementService, AchievementService>();
 
-        services.AddSingleton<GeocodingService>();
+        // Registered ONLY as a typed HttpClient, which makes it transient. An AddSingleton here
+        // used to sit above this line and was silently overridden — last registration wins — so the
+        // service was transient while its throttle and caches were instance state, enforcing
+        // nothing. GeocodingService now holds that state statically, which is what a process-wide
+        // rate limit requires; do not re-add a lifetime registration for this type (#139 D2).
+        //
         // Bound external geocoding latency: Nominatim is best-effort and the service already falls
         // back gracefully, so cap each request well below the 100s HttpClient default to avoid
         // tying up request threads when the upstream is slow or unreachable.
