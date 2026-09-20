@@ -16,66 +16,65 @@ final _log = Logger('Hydrate');
 
 /// Hydrates all state slices from the unified game-state endpoint.
 /// Call this once after login and on app resume from background.
-Future<void> hydrateAllSlices(WidgetRef ref) async {
-  final api = ref.read(apiServiceProvider);
-  final profile = ref.read(userProfileProvider);
-  if (profile.userId == null) return;
+Future<void> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
+      api: ref.read(apiServiceProvider),
+      userId: ref.read(userProfileProvider).userId,
+      profile: ref.read(profileSliceProvider.notifier),
+      xp: ref.read(xpSliceProvider.notifier),
+      missions: ref.read(missionsSliceProvider.notifier),
+      achievements: ref.read(achievementsSliceProvider.notifier),
+      exploration: ref.read(explorationSliceProvider.notifier),
+    );
 
-  final userId = profile.userId!;
+/// Same as [hydrateAllSlices] but accepts a [Ref], for use outside widgets.
+Future<void> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
+      api: ref.read(apiServiceProvider),
+      userId: ref.read(userProfileProvider).userId,
+      profile: ref.read(profileSliceProvider.notifier),
+      xp: ref.read(xpSliceProvider.notifier),
+      missions: ref.read(missionsSliceProvider.notifier),
+      achievements: ref.read(achievementsSliceProvider.notifier),
+      exploration: ref.read(explorationSliceProvider.notifier),
+    );
+
+/// The single hydration implementation, shared by both entry points above.
+///
+/// Takes the already-resolved notifiers rather than a Riverpod handle, because
+/// `Ref` and `WidgetRef` share no supertype exposing `read`, and the type that
+/// would let one function accept either (`ProviderListenable`) is not exported
+/// from `flutter_riverpod` — only `ProviderListenableSelect` is. Notifiers, by
+/// contrast, are plain classes whichever handle resolved them (#139 D1).
+///
+/// The two wrappers therefore duplicate only a list of `ref.read` calls, not any
+/// logic. That is the part worth having: because every parameter here is
+/// `required`, adding a slice and forgetting one wrapper is a **compile error**
+/// rather than a silent divergence between the widget and non-widget paths —
+/// which is exactly how these two drifted before (the `Ref` variant had lost its
+/// logging entirely).
+Future<void> _hydrateAll({
+  required ApiService api,
+  required String? userId,
+  required ProfileSlice profile,
+  required XpSlice xp,
+  required MissionsSlice missions,
+  required AchievementsSlice achievements,
+  required ExplorationSlice exploration,
+}) async {
+  if (userId == null) return;
+
   final data = await api.getGameState(userId);
   if (data == null) {
     _log.warning('getGameState returned null — restoring home cards from cache');
-    await _restoreOfflineCards(ref, userId);
+    await _restoreOfflineCards(userId, missions, exploration);
     return;
   }
 
   // Fill each slice from the unified response
-  ref.read(profileSliceProvider.notifier).hydrate(data);
-  ref.read(xpSliceProvider.notifier).hydrate(data);
-  ref.read(missionsSliceProvider.notifier).hydrate(data['missions'] as List? ?? []);
-  ref.read(achievementsSliceProvider.notifier).hydrate(data['achievements'] as List? ?? []);
-  ref.read(explorationSliceProvider.notifier).hydrate(data['exploration'] as List? ?? []);
-
-  await _cacheOfflineCards(userId, data);
-
-  _log.fine('All slices hydrated successfully');
-}
-
-/// Same as [hydrateAllSlices] but accepts a [Ref], for use outside widgets.
-///
-/// This is a near-verbatim copy of [hydrateAllSlices] and has to be: `Ref` and
-/// `WidgetRef` both expose a generic `read`, but share no supertype that
-/// declares it, and the parameter type that would let one function accept both
-/// (`ProviderListenable`) is not exported from `flutter_riverpod` — only
-/// `ProviderListenableSelect` is. Factoring these together therefore needs
-/// either an import of Riverpod internals or a contrived closure API, both
-/// worse than the duplication (#139 D1).
-///
-/// **So: any slice added to one of these must be added to the other.** The two
-/// bodies are kept byte-identical apart from the handle type precisely so that
-/// a diff of them shows drift immediately.
-Future<void> hydrateAllSlicesFromRef(Ref ref) async {
-  final api = ref.read(apiServiceProvider);
-  final profile = ref.read(userProfileProvider);
-  if (profile.userId == null) return;
-
-  final userId = profile.userId!;
-  final data = await api.getGameState(userId);
-  if (data == null) {
-    // Logged, unlike before: this path previously failed over to the offline
-    // cache in complete silence, so a non-widget hydration hitting an
-    // unreachable server left no trace in the ring buffer that crash reports
-    // ship — the one place you would look to explain stale home cards.
-    _log.warning('getGameState returned null — restoring home cards from cache');
-    await _restoreOfflineCardsFromRef(ref, userId);
-    return;
-  }
-
-  ref.read(profileSliceProvider.notifier).hydrate(data);
-  ref.read(xpSliceProvider.notifier).hydrate(data);
-  ref.read(missionsSliceProvider.notifier).hydrate(data['missions'] as List? ?? []);
-  ref.read(achievementsSliceProvider.notifier).hydrate(data['achievements'] as List? ?? []);
-  ref.read(explorationSliceProvider.notifier).hydrate(data['exploration'] as List? ?? []);
+  profile.hydrate(data);
+  xp.hydrate(data);
+  missions.hydrate(data['missions'] as List? ?? []);
+  achievements.hydrate(data['achievements'] as List? ?? []);
+  exploration.hydrate(data['exploration'] as List? ?? []);
 
   await _cacheOfflineCards(userId, data);
 
@@ -94,23 +93,18 @@ Future<void> _cacheOfflineCards(String userId, Map<String, dynamic> data) async 
   );
 }
 
-/// Offline path for [hydrateAllSlices]: restores the last-known Daily Missions
-/// and Area Exploration from the cache when the server is unreachable. Other
-/// slices (profile/xp/achievements) are intentionally untouched — profile is
-/// restored separately by [ProfileCache], and stale achievements are not part
-/// of issue #34.
-Future<void> _restoreOfflineCards(WidgetRef ref, String userId) async {
+/// Offline path: restores the last-known Daily Missions and Area Exploration
+/// from the cache when the server is unreachable. Other slices (profile/xp/
+/// achievements) are intentionally untouched — profile is restored separately by
+/// [ProfileCache], and stale achievements are not part of issue #34.
+Future<void> _restoreOfflineCards(
+  String userId,
+  MissionsSlice missions,
+  ExplorationSlice exploration,
+) async {
   final cached = await GameStateCache.load(userId);
   if (cached == null) return;
-  ref.read(missionsSliceProvider.notifier).hydrate(cached.missions);
-  ref.read(explorationSliceProvider.notifier).hydrate(cached.exploration);
+  missions.hydrate(cached.missions);
+  exploration.hydrate(cached.exploration);
   _log.fine('Restored home cards from offline cache');
-}
-
-/// [Ref] variant of [_restoreOfflineCards] for use outside widgets.
-Future<void> _restoreOfflineCardsFromRef(Ref ref, String userId) async {
-  final cached = await GameStateCache.load(userId);
-  if (cached == null) return;
-  ref.read(missionsSliceProvider.notifier).hydrate(cached.missions);
-  ref.read(explorationSliceProvider.notifier).hydrate(cached.exploration);
 }
