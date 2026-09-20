@@ -34,28 +34,33 @@ const _healthCheckPath = '/';
 /// Build-time API host, supplied as `--dart-define=API_URL=https://your-host`.
 const _apiUrlFromEnvironment = String.fromEnvironment('API_URL');
 
-/// Fallback for debug/profile builds only, so `flutter run` needs no extra flags.
+/// Fallback for **debug builds only**, so `flutter run` needs no extra flags.
 ///
-/// Deliberately NOT used in release. A default baked into a shipped binary keeps
-/// being called by every installed copy forever, and this host is a reclaimable
-/// ngrok subdomain — if it lapses, whoever registers it next receives real users'
-/// Firebase JWTs and GPS coordinates (#139 D8).
+/// Deliberately not used in release or profile. A default baked into a built
+/// binary keeps being called by every installed copy forever, and this host is a
+/// reclaimable ngrok subdomain — if it lapses, whoever registers it next
+/// receives real users' Firebase JWTs and GPS coordinates (#139 D8).
 const _devFallbackApiUrl = 'https://destitute-living-bullpen.ngrok-free.dev';
 
-/// Resolves the API host, returning an empty string when a release build has no
-/// `API_URL`. Callers must treat empty as fatal — see [apiBaseUrlConfigError].
+/// Resolves the API host, returning an empty string when a non-debug build has
+/// no `API_URL`. Callers must treat empty as fatal — see [apiBaseUrlConfigError].
 ///
-/// Takes [isRelease] rather than reading `kReleaseMode` so both branches are
+/// Gated on **debug**, not on "not release": `kReleaseMode` is `false` in profile
+/// mode, so keying off it would let a profile build silently use the dev tunnel.
+/// Profile builds run on real devices over real networks, so they get the same
+/// treatment as release.
+///
+/// Takes [isDebug] rather than reading `kDebugMode` so both branches are
 /// testable; `String.fromEnvironment` cannot branch on build mode in a `const`.
-String resolveApiBaseUrl({required String fromEnvironment, required bool isRelease}) {
+String resolveApiBaseUrl({required String fromEnvironment, required bool isDebug}) {
   if (fromEnvironment.isNotEmpty) return fromEnvironment;
-  return isRelease ? '' : _devFallbackApiUrl;
+  return isDebug ? _devFallbackApiUrl : '';
 }
 
-/// The API base URL. Empty only in a misconfigured release build.
+/// The API base URL. Empty only in a release or profile build with no `API_URL`.
 final String apiBaseUrl = resolveApiBaseUrl(
   fromEnvironment: _apiUrlFromEnvironment,
-  isRelease: kReleaseMode,
+  isDebug: kDebugMode,
 );
 
 /// Describes why the API host is unusable, or `null` when it is fine. The
@@ -63,7 +68,7 @@ final String apiBaseUrl = resolveApiBaseUrl(
 /// against an unintended host.
 String? apiBaseUrlConfigError(String baseUrl) {
   if (baseUrl.isNotEmpty) return null;
-  return 'API_URL was not provided at build time. Release builds must pass '
+  return 'API_URL was not provided at build time. Release and profile builds must pass '
       '--dart-define=API_URL=https://your-api-host';
 }
 

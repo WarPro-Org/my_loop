@@ -33,11 +33,21 @@ void main() {
     WidgetsFlutterBinding.ensureInitialized();
     AppLogger.init();
 
-    // Fail closed before any network call: a release build with no API_URL has
-    // no host to talk to, and must not silently fall back to the dev tunnel
-    // baked into the binary (#139 D8). Thrown inside the zone so it is logged.
+    // Fail closed before any network call: a release or profile build with no
+    // API_URL has no host to talk to, and must not silently fall back to the dev
+    // tunnel baked into the binary (#139 D8).
+    //
+    // Shows a screen rather than throwing. Throwing here is caught by the zone
+    // handler below, which only logs — so runApp never runs and the user stares
+    // at a frozen splash with nothing to report. This states the cause on the
+    // device, which is the only diagnostic channel a misconfigured build has:
+    // it fails before Firebase init, so no crash reporter is up either.
     final apiUrlError = apiBaseUrlConfigError(apiBaseUrl);
-    if (apiUrlError != null) throw StateError(apiUrlError);
+    if (apiUrlError != null) {
+      Logger('Bootstrap').severe(apiUrlError);
+      runApp(_MisconfiguredBuildApp(message: apiUrlError));
+      return;
+    }
 
     // Framework errors (build/layout/paint). Still show the red screen in
     // debug, but always record it.
@@ -74,4 +84,52 @@ void main() {
     // Final safety net: anything uncaught in the zone.
     Logger('Zone').severe('Uncaught zone error', error, stack);
   });
+}
+
+/// Shown instead of the app when the build has no usable API host (#139 D8).
+///
+/// Intentionally self-contained: no Riverpod, no theme, no Firebase, no network.
+/// It renders in a build where none of those are available, which is precisely
+/// when it is needed.
+class _MisconfiguredBuildApp extends StatelessWidget {
+  const _MisconfiguredBuildApp({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF1A1A2E),
+        body: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.settings_ethernet, color: Color(0xFFFF6B6B), size: 56),
+                const SizedBox(height: 20),
+                const Text(
+                  'Build misconfigured',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFF9BA4B5), fontSize: 14),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
