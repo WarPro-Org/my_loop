@@ -43,6 +43,9 @@ public class AppDbContext : DbContext
     /// <summary>Gets the set of unlocked achievements per user.</summary>
     public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
 
+    /// <summary>Gets the set of persisted reverse-geocode results, one row per H3 neighborhood.</summary>
+    public DbSet<NeighborhoodName> NeighborhoodNames => Set<NeighborhoodName>();
+
     /// <summary>
     /// Configures the entity model: primary keys, unique constraints, and indexes
     /// for efficient query patterns used by the game.
@@ -66,6 +69,14 @@ public class AppDbContext : DbContext
             // The ParentCellId prefix also serves the old single-column lookups.
             e.HasIndex(t => new { t.ParentCellId, t.CenterLat, t.CenterLng });
             e.HasIndex(t => new { t.ParentCellId, t.OwnerId }); // per-region ownership (spatial-model.md)
+        });
+
+        // Claim: the per-day cap count (UserId + CreatedAt window) runs inside EVERY claim
+        // transaction, and claim history groups over the same predicate — without this index
+        // both degrade to per-claim seq scans as claim volume grows (#124)
+        modelBuilder.Entity<Claim>(e =>
+        {
+            e.HasIndex(c => new { c.UserId, c.CreatedAt });
         });
 
         // CellTransfer: ownership history for revenge/recapture features
@@ -106,6 +117,12 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(a => a.UserId); // fast: "all achievements for user"
             e.HasIndex(a => new { a.UserId, a.AchievementId }).IsUnique(); // prevent duplicates
+        });
+
+        // NeighborhoodName: one persisted reverse-geocode result per neighborhood, shared by all users
+        modelBuilder.Entity<NeighborhoodName>(e =>
+        {
+            e.HasKey(n => n.NeighborhoodId);
         });
     }
 }
