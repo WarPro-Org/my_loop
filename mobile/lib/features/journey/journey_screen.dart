@@ -114,7 +114,8 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         }
       }
     } catch (e) {
-      _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red);
+      _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red,
+          replacePrevious: true);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -171,13 +172,22 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     );
   }
 
-  void _showSnackbar(String message, Color color) {
+  /// [replacePrevious] drops whatever is showing or queued before showing this.
+  ///
+  /// Right for errors — only the latest rejection reason is worth reading — but
+  /// wrong for celebrations. One batch can both level the player up AND unlock an
+  /// achievement in a single state transition (`_onBatchResult` sets `levelUpTo`
+  /// and `achievementUnlocked` in the same `copyWith`), so the listener calls this
+  /// twice in a row. Clearing unconditionally destroyed the level-up toast before
+  /// it was ever painted: the player earned it and never saw it (#139 D5).
+  /// Celebrations now queue, and `ScaffoldMessenger` shows them in turn.
+  void _showSnackbar(String message, Color color, {bool replacePrevious = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: color),
-      );
+    final messenger = ScaffoldMessenger.of(context);
+    if (replacePrevious) messenger.clearSnackBars();
+    messenger.showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: color),
+    );
   }
 
   @override
@@ -188,7 +198,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
     ref.listen(journeyControllerProvider, (prev, next) {
       if (next.error != null && next.error != prev?.error) {
-        _showSnackbar(next.error!, AppColors.red);
+        _showSnackbar(next.error!, AppColors.red, replacePrevious: true);
       }
       // Level-up celebration
       if (next.levelUpTo != null && next.levelUpTo != prev?.levelUpTo) {
