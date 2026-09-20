@@ -41,7 +41,19 @@ Future<void> hydrateAllSlices(WidgetRef ref) async {
   _log.fine('All slices hydrated successfully');
 }
 
-/// Same as hydrateAllSlices but accepts a Ref (for use outside widgets).
+/// Same as [hydrateAllSlices] but accepts a [Ref], for use outside widgets.
+///
+/// This is a near-verbatim copy of [hydrateAllSlices] and has to be: `Ref` and
+/// `WidgetRef` both expose a generic `read`, but share no supertype that
+/// declares it, and the parameter type that would let one function accept both
+/// (`ProviderListenable`) is not exported from `flutter_riverpod` — only
+/// `ProviderListenableSelect` is. Factoring these together therefore needs
+/// either an import of Riverpod internals or a contrived closure API, both
+/// worse than the duplication (#139 D1).
+///
+/// **So: any slice added to one of these must be added to the other.** The two
+/// bodies are kept byte-identical apart from the handle type precisely so that
+/// a diff of them shows drift immediately.
 Future<void> hydrateAllSlicesFromRef(Ref ref) async {
   final api = ref.read(apiServiceProvider);
   final profile = ref.read(userProfileProvider);
@@ -50,6 +62,11 @@ Future<void> hydrateAllSlicesFromRef(Ref ref) async {
   final userId = profile.userId!;
   final data = await api.getGameState(userId);
   if (data == null) {
+    // Logged, unlike before: this path previously failed over to the offline
+    // cache in complete silence, so a non-widget hydration hitting an
+    // unreachable server left no trace in the ring buffer that crash reports
+    // ship — the one place you would look to explain stale home cards.
+    _log.warning('getGameState returned null — restoring home cards from cache');
     await _restoreOfflineCardsFromRef(ref, userId);
     return;
   }
@@ -61,6 +78,8 @@ Future<void> hydrateAllSlicesFromRef(Ref ref) async {
   ref.read(explorationSliceProvider.notifier).hydrate(data['exploration'] as List? ?? []);
 
   await _cacheOfflineCards(userId, data);
+
+  _log.fine('All slices hydrated successfully');
 }
 
 /// Persists the offline-restorable home cards (Daily Missions + Area
