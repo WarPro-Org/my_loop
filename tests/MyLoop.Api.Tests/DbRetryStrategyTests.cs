@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Constants;
@@ -74,7 +75,7 @@ public class DbRetryStrategyTests : IAsyncLifetime
         return new TerritoryService(
             db, hex.Object, geo.Object, notifier.Object, pathValidator.Object,
             push.Object, new GeocodingService(new HttpClient(), NullLogger<GeocodingService>.Instance),
-            missions.Object, achievements.Object, NullLogger<TerritoryService>.Instance);
+            missions.Object, achievements.Object, Mock.Of<IServiceScopeFactory>(), NullLogger<TerritoryService>.Instance);
     }
 
     [Fact]
@@ -104,6 +105,28 @@ public class DbRetryStrategyTests : IAsyncLifetime
         // Exactly one Claim row — guards against the post-commit side effects (now run outside the
         // execution strategy) ever re-running a committed claim and inserting a duplicate.
         Assert.Equal(1, await check.Claims.CountAsync());
+    }
+
+    [Fact]
+    public async Task DeleteAccount_runs_its_transaction_under_a_retrying_strategy()
+    {
+        var userId = Guid.NewGuid();
+        await using (var seed = NewDb())
+        {
+            seed.Users.Add(new User { Id = userId, FirebaseUid = "uidD", DisplayName = "D", Color = "#333333" });
+            await seed.SaveChangesAsync();
+        }
+
+        await using var db = NewDb();
+        var validation = new Mock<IValidationService>();
+        var userService = new UserService(db, validation.Object, NullLogger<UserService>.Instance);
+
+        // Before the execution-strategy wrap this line threw InvalidOperationException.
+        var deleted = await userService.DeleteAccount(userId);
+
+        Assert.True(deleted);
+        await using var check = NewDb();
+        Assert.Equal(0, await check.Users.CountAsync(u => u.Id == userId));
     }
 
     [Fact]

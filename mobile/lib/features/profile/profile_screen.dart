@@ -12,6 +12,7 @@ import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
+import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
@@ -89,6 +90,9 @@ class ProfileScreen extends ConsumerWidget {
                 onTap: () async {
                   final uid = ref.read(userProfileProvider).userId;
                   ref.read(userProfileProvider.notifier).clear();
+                  // The hub connection is app-lifecycle-scoped (#102) — logout
+                  // is the one place it must actually be torn down.
+                  await ref.read(territoryRealtimeProvider).disconnect();
                   await ref.read(authServiceProvider).signOut(uid);
                   if (context.mounted) context.go('/login');
                 },
@@ -128,6 +132,7 @@ class ProfileScreen extends ConsumerWidget {
               await ProfileCache.clear();
               await GameStateCache.clear();
               await TerritoryCache.clear();
+              await ref.read(territoryRealtimeProvider).disconnect();
               final queue = StepClaimQueue();
               await queue.init(uid);
               await queue.clear();
