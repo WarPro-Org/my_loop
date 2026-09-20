@@ -346,7 +346,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       const Duration(seconds: AppConstants.hexRefreshIntervalSeconds),
       (_) => _refreshViewportHexes(),
     );
-    _connectRealtime();
+    _subscribeRealtime();
   }
 
   @override
@@ -355,14 +355,21 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     _hexRefreshTimer?.cancel();
     _realtimeSub?.cancel();
     _releasedSub?.cancel();
-    ref.read(territoryRealtimeProvider).disconnect();
+    // Do NOT disconnect territoryRealtimeProvider here — the hub connection is
+    // app-lifecycle-scoped (connected at login, disconnected at logout), not
+    // scoped to this screen. Killing it here left the app deaf to live stats/
+    // XP/mission/achievement pushes for the rest of the session (#102). Only
+    // this screen's own subscriptions come down with it.
     _mapController.dispose();
     super.dispose();
   }
 
-  void _connectRealtime() {
+  /// Subscribes to the already-connected shared hub's hex-change stream. Does
+  /// NOT call `connect()` — the connection is established once at login and
+  /// lives app-wide (see #102); this screen only listens and unsubscribes its
+  /// own listener on dispose.
+  void _subscribeRealtime() {
     final realtimeService = ref.read(territoryRealtimeProvider);
-    realtimeService.connect();
     // Decay releases (#104): drop the reaper's hexes from the map immediately —
     // without this the app renders ghost territory until the next viewport poll.
     _releasedSub = realtimeService.onHexesReleased.listen((event) {

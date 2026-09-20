@@ -42,6 +42,7 @@ public static class DbInitializer
             ApplyAchievementsSchema(db);
             ApplyTerritoryIndexes(db);
             ApplyDecayReleaseSchema(db);
+            ApplyNeighborhoodNamesSchema(db);
         }
         catch (Exception ex)
         {
@@ -195,7 +196,7 @@ public static class DbInitializer
             ON ""UserAchievements"" (""UserId"")");
     }
 
-    private static void ApplyTerritoryIndexes(AppDbContext db)
+    internal static void ApplyTerritoryIndexes(AppDbContext db)
     {
         // NeighborhoodId on TerritoryCells for per-area ownership queries.
         db.Database.ExecuteSqlRaw(
@@ -214,6 +215,25 @@ public static class DbInitializer
         db.Database.ExecuteSqlRaw(@"
             CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Decay""
             ON ""TerritoryCells"" (""LastRefreshedAt"", ""DecayDays"")");
+
+        // Daily claim-cap count + claim-history grouping both filter Claims by
+        // (UserId, CreatedAt); the cap check runs inside EVERY claim transaction (#124).
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_Claims_UserId_CreatedAt""
+            ON ""Claims"" (""UserId"", ""CreatedAt"")");
+    }
+
+    // Persisted, shared-across-all-users reverse-geocode cache (#121 / ML-ERR-024) — lets
+    // /game-state's exploration stats return without ever awaiting Nominatim inline.
+    private static void ApplyNeighborhoodNamesSchema(AppDbContext db)
+    {
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""NeighborhoodNames"" (
+                ""NeighborhoodId"" bigint NOT NULL,
+                ""AreaName"" text NOT NULL,
+                ""ResolvedAt"" timestamp with time zone NOT NULL,
+                CONSTRAINT ""PK_NeighborhoodNames"" PRIMARY KEY (""NeighborhoodId"")
+            )");
     }
 
     /// <summary>
