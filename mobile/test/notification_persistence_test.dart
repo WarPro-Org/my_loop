@@ -158,12 +158,12 @@ void main() {
       final c1 = _containerForUser('u1');
       c1.read(notificationProvider.notifier).addTheftAlert(
             thiefName: 'Robin', thiefColor: '#FF0000', hexCount: 2);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await c1.read(notificationProvider.notifier).pendingWrite;
       c1.dispose();
 
       final c2 = _containerForUser('u2');
       c2.read(notificationProvider);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await c2.read(notificationProvider.notifier).hydration;
       expect(c2.read(notificationProvider), isEmpty);
       c2.dispose();
     });
