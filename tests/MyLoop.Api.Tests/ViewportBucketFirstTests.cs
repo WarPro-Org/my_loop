@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Constants;
@@ -52,7 +53,8 @@ public class ViewportBucketFirstTests : IAsyncLifetime
             Mock.Of<ITerritoryNotifier>(), Mock.Of<IPathValidationService>(),
             Mock.Of<IPushNotificationService>(),
             new GeocodingService(new HttpClient(), NullLogger<GeocodingService>.Instance),
-            missions.Object, achievements.Object, NullLogger<TerritoryService>.Instance);
+            missions.Object, achievements.Object, Mock.Of<IServiceScopeFactory>(),
+            NullLogger<TerritoryService>.Instance);
     }
 
     private async Task<Guid> SeedOwner()
