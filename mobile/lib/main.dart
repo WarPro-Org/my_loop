@@ -14,6 +14,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:logging/logging.dart';
 import 'package:myloop/app/app.dart';
 import 'package:myloop/firebase_options.dart';
+import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/app_logger.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,6 +32,12 @@ void main() {
   runZonedGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
     AppLogger.init();
+
+    // Fail closed before any network call: a release build with no API_URL has
+    // no host to talk to, and must not silently fall back to the dev tunnel
+    // baked into the binary (#139 D8). Thrown inside the zone so it is logged.
+    final apiUrlError = apiBaseUrlConfigError(apiBaseUrl);
+    if (apiUrlError != null) throw StateError(apiUrlError);
 
     // Framework errors (build/layout/paint). Still show the red screen in
     // debug, but always record it.

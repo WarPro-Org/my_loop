@@ -31,12 +31,41 @@ final _log = Logger('API');
 /// reachability probe — no auth, cheap, safe to hit before every journey start.
 const _healthCheckPath = '/';
 
-/// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
-/// Defaults to ngrok tunnel for mobile testing over cellular.
-const apiBaseUrl = String.fromEnvironment(
-  'API_URL',
-  defaultValue: 'https://destitute-living-bullpen.ngrok-free.dev',
+/// Build-time API host, supplied as `--dart-define=API_URL=https://your-host`.
+const _apiUrlFromEnvironment = String.fromEnvironment('API_URL');
+
+/// Fallback for debug/profile builds only, so `flutter run` needs no extra flags.
+///
+/// Deliberately NOT used in release. A default baked into a shipped binary keeps
+/// being called by every installed copy forever, and this host is a reclaimable
+/// ngrok subdomain — if it lapses, whoever registers it next receives real users'
+/// Firebase JWTs and GPS coordinates (#139 D8).
+const _devFallbackApiUrl = 'https://destitute-living-bullpen.ngrok-free.dev';
+
+/// Resolves the API host, returning an empty string when a release build has no
+/// `API_URL`. Callers must treat empty as fatal — see [apiBaseUrlConfigError].
+///
+/// Takes [isRelease] rather than reading `kReleaseMode` so both branches are
+/// testable; `String.fromEnvironment` cannot branch on build mode in a `const`.
+String resolveApiBaseUrl({required String fromEnvironment, required bool isRelease}) {
+  if (fromEnvironment.isNotEmpty) return fromEnvironment;
+  return isRelease ? '' : _devFallbackApiUrl;
+}
+
+/// The API base URL. Empty only in a misconfigured release build.
+final String apiBaseUrl = resolveApiBaseUrl(
+  fromEnvironment: _apiUrlFromEnvironment,
+  isRelease: kReleaseMode,
 );
+
+/// Describes why the API host is unusable, or `null` when it is fine. The
+/// bootstrap fails closed on a non-null value instead of letting the app run
+/// against an unintended host.
+String? apiBaseUrlConfigError(String baseUrl) {
+  if (baseUrl.isNotEmpty) return null;
+  return 'API_URL was not provided at build time. Release builds must pass '
+      '--dart-define=API_URL=https://your-api-host';
+}
 
 /// True when [e] means the backend could not be reached at all — no network,
 /// DNS failure, connection refused, or a timeout — as opposed to the server

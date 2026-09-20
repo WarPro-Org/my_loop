@@ -188,6 +188,16 @@ flutter run
 > Make sure you have a valid `google-services.json` (Android) and `GoogleService-Info.plist` (iOS)
 > in the appropriate directories — these are not committed to the repo.
 
+**Release and profile builds MUST pass the API host** — there is no production fallback, and a
+build without it fails closed at startup rather than calling an unintended host:
+
+```bash
+flutter build apk --release --dart-define=API_URL=https://your-api-host
+flutter build ipa --release --dart-define=API_URL=https://your-api-host
+```
+
+Debug builds fall back to a dev tunnel, so plain `flutter run` needs no flags.
+
 ---
 
 ## Key Conventions
