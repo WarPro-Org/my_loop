@@ -24,6 +24,13 @@ public static class InfrastructureDefaults
     // --- External geocoding (Nominatim is best-effort) ---
     public const int GeocodingTimeoutSeconds = 5;
 
+    /// <summary>
+    /// How long the geocoding client reuses a pooled connection before recycling it. The client is
+    /// held by a singleton, so without this it would pin DNS for the life of the process — this is
+    /// the rotation an <c>IHttpClientFactory</c> typed client would otherwise provide (#139 D2).
+    /// </summary>
+    public const int GeocodingConnectionLifetimeMinutes = 5;
+
     // --- Serilog rolling-file sink ---
     public const string LogDirectoryName = "logs";
     public const string LogFileNamePattern = "myloop-.log";

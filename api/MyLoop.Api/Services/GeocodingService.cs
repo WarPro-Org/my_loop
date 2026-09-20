@@ -13,17 +13,25 @@ public class GeocodingService
     private readonly HttpClient _http;
     private readonly ILogger<GeocodingService> _logger;
 
-    // Static, not instance, state: this type is registered as a typed HttpClient, which makes it
-    // TRANSIENT, so every injection gets a fresh instance. Instance-scoped throttle state therefore
-    // enforced nothing — each caller had its own semaphore and its own "last request" clock, so N
-    // concurrent callers could issue N simultaneous requests and blow straight through Nominatim's
-    // 1-req/sec usage policy, while the caches never got a hit across requests (#139 D2).
-    // Rate limiting an external service is inherently process-wide, so the state has to be too.
+    // These are INSTANCE fields, and that is only correct because this type is registered as a
+    // genuine singleton (see ServiceRegistrationExtensions.AddMyLoopServices). It previously had
+    // an AddSingleton that a later AddHttpClient<GeocodingService> silently overrode — last
+    // registration wins — leaving it transient, so every injection got its own semaphore and its
+    // own "last request" clock. The "1 req/sec" policy below enforced nothing between callers and
+    // the caches never hit across requests (#139 D2).
+    //
+    // Deliberately NOT static. Rate limiting is process-wide, but the right mechanism for that is
+    // the DI lifetime, not static state: static caches leak between xUnit tests in one assembly,
+    // and DecayNoGeocodingTests asserts the claim path never geocodes by throwing on a coordinate
+    // that ExplorationNeighborhoodNameCacheTests also resolves successfully. A shared cache would
+    // pre-warm that coordinate and let a reintroduced geocoding call resolve from cache instead of
+    // hitting the throwing handler — the regression test would pass while shipping the bug.
+    //
     // Both lookup methods share one semaphore on purpose — the policy is per-service, not per-endpoint.
-    private static readonly ConcurrentDictionary<string, string> _cache = new();
-    private static readonly ConcurrentDictionary<string, LocationInfo> _locationCache = new();
-    private static readonly SemaphoreSlim _throttle = new(1, 1); // 1 req/sec Nominatim policy
-    private static DateTime _lastRequest = DateTime.MinValue; // guarded by _throttle
+    private readonly ConcurrentDictionary<string, string> _cache = new();
+    private readonly ConcurrentDictionary<string, LocationInfo> _locationCache = new();
+    private readonly SemaphoreSlim _throttle = new(1, 1); // 1 req/sec Nominatim policy
+    private DateTime _lastRequest = DateTime.MinValue; // guarded by _throttle
 
     public GeocodingService(HttpClient http, ILogger<GeocodingService> logger)
     {
