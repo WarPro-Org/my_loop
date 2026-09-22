@@ -24,14 +24,22 @@ class LocalSignupScreen extends StatefulWidget {
 class _LocalSignupScreenState extends State<LocalSignupScreen> {
   final _nameController = TextEditingController();
   bool _isValid = false;
+  /// Why the current name is refused; null while empty or valid (#189 review).
+  String? _nameError;
 
   @override
   void initState() {
     super.initState();
     _nameController.addListener(() {
       final name = _nameController.text.trim();
-      final valid = validateDisplayName(name) == null;
-      if (valid != _isValid) setState(() => _isValid = valid);
+      final error = name.isEmpty ? null : validateDisplayName(name);
+      final valid = name.isNotEmpty && error == null;
+      if (valid != _isValid || error != _nameError) {
+        setState(() {
+          _isValid = valid;
+          _nameError = error;
+        });
+      }
     });
   }
 
@@ -89,6 +97,7 @@ class _LocalSignupScreenState extends State<LocalSignupScreen> {
                 textCapitalization: TextCapitalization.words,
                 decoration: InputDecoration(
                   hintText: 'Your display name',
+                  errorText: _nameError,
                   prefixIcon: const Icon(Icons.person_outline),
                   counterText: '',
                   filled: true,
