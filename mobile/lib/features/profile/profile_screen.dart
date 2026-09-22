@@ -3,6 +3,7 @@ library;
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:logging/logging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
@@ -20,6 +21,8 @@ import 'package:myloop/shared/util/display_name.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/block_list_cache.dart';
+
+final _log = Logger('ProfileScreen');
 
 /// The player's profile screen with identity, stats, and settings.
 class ProfileScreen extends ConsumerWidget {
@@ -86,12 +89,7 @@ class ProfileScreen extends ConsumerWidget {
               _SettingsTile(
                 icon: Icons.support_agent_outlined,
                 label: contactSupportLabel,
-                enabled: AppConstants.supportEmail.isNotEmpty,
-                onTap: () => launchUrl(Uri(
-                  scheme: 'mailto',
-                  path: AppConstants.supportEmail,
-                  query: 'subject=${Uri.encodeComponent(supportEmailSubject)}',
-                )),
+                onTap: () => _contactSupport(context),
               ),
 
               const SizedBox(height: 24),
@@ -169,6 +167,26 @@ class ProfileScreen extends ConsumerWidget {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => _AvatarColorEditor(ref: ref),
     );
+  }
+
+  /// Opens the mail app. Never fails silently (#195 review): with no mail app the address is shown
+  /// so the player can still reach us, and a build without SUPPORT_EMAIL says so (and logs it)
+  /// instead of a greyed-out row nobody notices before App Review does.
+  Future<void> _contactSupport(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (AppConstants.supportEmail.isEmpty) {
+      _log.warning('Contact Support tapped but SUPPORT_EMAIL was not set for this build');
+      messenger.showSnackBar(const SnackBar(content: Text(supportNotConfiguredMessage)));
+      return;
+    }
+    final opened = await launchUrl(Uri(
+      scheme: 'mailto',
+      path: AppConstants.supportEmail,
+      query: 'subject=${Uri.encodeComponent(supportEmailSubject)}',
+    ));
+    if (!opened) {
+      messenger.showSnackBar(SnackBar(content: Text('$supportEmailFallbackPrefix${AppConstants.supportEmail}')));
+    }
   }
 
   void _showNameEditor(BuildContext context, WidgetRef ref) {
@@ -324,14 +342,15 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
 
 const supportEmailSubject = 'MyLoop support';
 const contactSupportLabel = 'Contact Support';
+const supportEmailFallbackPrefix = 'Email us at ';
+const supportNotConfiguredMessage = 'Support contact is not configured in this build';
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final Color? iconColor;
-  final bool enabled;
-  const _SettingsTile({required this.icon, required this.label, required this.onTap, this.iconColor, this.enabled = true});
+  const _SettingsTile({required this.icon, required this.label, required this.onTap, this.iconColor});
 
   @override
   Widget build(BuildContext context) {
@@ -348,7 +367,6 @@ class _SettingsTile extends StatelessWidget {
           leading: Icon(icon, color: iconColor ?? AppColors.dark),
           title: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: iconColor ?? AppColors.dark)),
           trailing: const Icon(Icons.chevron_right, color: AppColors.grey),
-          enabled: enabled,
           onTap: onTap,
         ),
       ),

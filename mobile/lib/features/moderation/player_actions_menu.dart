@@ -37,7 +37,7 @@ Future<String> submitNameReport(ApiService api, String userId, NameReportReason 
     return reportThanksMessage;
   } catch (e, s) {
     if (isServerUnreachable(e)) return reportOfflineError;
-    final serverReason = ApiService.extractApiError(e);
+    final serverReason = ApiService.clientErrorReason(e);
     if (serverReason == null) _log.warning('Name report failed unexpectedly', e, s);
     return serverReason ?? reportFailedError;
   }

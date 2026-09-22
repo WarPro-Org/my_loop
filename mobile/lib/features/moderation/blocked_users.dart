@@ -28,12 +28,14 @@ String displayNameFor(Set<String> blocked, String userId, String name) =>
 final blockedUsersProvider = NotifierProvider<BlockedUsersNotifier, Set<String>>(BlockedUsersNotifier.new);
 
 class BlockedUsersNotifier extends Notifier<Set<String>> {
-  /// Bumped by every local block/unblock. A list fetched before an edit is stale and must not
-  /// overwrite it (a slow sign-in fetch would otherwise silently undo a block made meanwhile).
-  int _localEdits = 0;
+  /// This session's block/unblock decisions (id → blocked), applied on top of every list that
+  /// arrives from the cache or the API. A fetch that started before an edit returns the server's
+  /// old list; overlaying keeps both the server's existing blocks and the new edit (#195 review).
+  final Map<String, bool> _edits = {};
 
   @override
   Set<String> build() {
+    _edits.clear(); // edits belong to the account that made them
     // Rebuild (and reload) only when the signed-in account changes, not on every stat update.
     final userId = ref.watch(userProfileProvider.select((p) => p.userId));
     if (userId == null || userId.isEmpty) return const {};
@@ -42,16 +44,21 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
     return const {};
   }
 
+  Set<String> _withEdits(Set<String> base) {
+    final result = {...base};
+    _edits.forEach((id, blocked) => blocked ? result.add(id) : result.remove(id));
+    return result;
+  }
+
   Future<void> _load(String userId) async {
-    final editsAtStart = _localEdits;
     final cached = await BlockListCache.load(userId);
-    // Don't clobber a list the API (or a block tap) already produced.
-    if (ref.mounted && cached != null && editsAtStart == _localEdits && state.isEmpty) state = cached;
+    if (!ref.mounted) return;
+    if (cached != null) state = _withEdits(cached);
     try {
       final fresh = await ref.read(apiServiceProvider).getBlockedUserIds();
-      if (!ref.mounted || editsAtStart != _localEdits) return;
-      state = fresh;
-      await BlockListCache.save(userId, fresh);
+      if (!ref.mounted) return;
+      state = _withEdits(fresh);
+      await BlockListCache.save(userId, state);
     } catch (e, s) {
       // Offline: the cached list stays in force. Anything else is a real failure worth logging.
       if (!isServerUnreachable(e)) _log.warning('Failed to load block list', e, s);
@@ -66,21 +73,26 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
   Future<String?> unblock(String userId) => _update(userId, blocking: false);
 
   Future<String?> _update(String userId, {required bool blocking}) async {
-    _localEdits++;
-    final previous = state;
-    state = blocking ? {...state, userId} : ({...state}..remove(userId));
+    final owner = ref.read(userProfileProvider).userId;
     final api = ref.read(apiServiceProvider);
+    _edits[userId] = blocking;
+    state = _withEdits(state);
     try {
       blocking ? await api.blockUser(userId) : await api.unblockUser(userId);
     } catch (e, s) {
-      if (ref.mounted) state = previous;
+      // Roll back only this id: another block made meanwhile may already have succeeded.
+      if (ref.mounted) {
+        _edits.remove(userId);
+        state = blocking ? ({...state}..remove(userId)) : {...state, userId};
+      }
       if (isServerUnreachable(e)) return blockOfflineError;
-      final serverReason = ApiService.extractApiError(e);
+      final serverReason = ApiService.clientErrorReason(e);
       if (serverReason == null) _log.warning('Block update failed unexpectedly', e, s);
       return serverReason ?? blockFailedError;
     }
-    final owner = ref.read(userProfileProvider).userId;
-    if (owner != null && ref.mounted) await BlockListCache.save(owner, state);
+    // Signed out while the request was in flight: nothing left to update.
+    if (!ref.mounted || owner == null) return null;
+    await BlockListCache.save(owner, state);
     return null;
   }
 }

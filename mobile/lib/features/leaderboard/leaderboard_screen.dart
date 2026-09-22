@@ -169,19 +169,18 @@ class _ScopedLeaderboard extends ConsumerWidget {
           ],
         ),
       ),
-      data: (raw) {
-        // Blocked players are masked for this viewer only (#190); ranks and counts are unchanged.
+      data: (entries) {
+        // Blocked players are masked for this viewer only (#190) — at render time, so taps still
+        // pass the real name to the profile screen, which masks (and unmasks) it itself.
         final blocked = ref.watch(blockedUsersProvider);
-        final entries = [
-          for (final e in raw) e.withDisplayName(displayNameFor(blocked, e.userId, e.displayName)),
-        ];
         return Column(
           children: [
-            if (entries.length >= 3) _TopThreePodium(top3: entries.sublist(0, 3)),
+            if (entries.length >= 3) _TopThreePodium(top3: entries.sublist(0, 3), blocked: blocked),
             const SizedBox(height: 12),
             Expanded(child: _RankingList(
               players: entries.length > 3 ? entries.sublist(3) : (entries.length < 3 ? entries : []),
               currentUserId: user.userId,
+              blocked: blocked,
             )),
           ],
         );
@@ -196,7 +195,8 @@ class _ScopedLeaderboard extends ConsumerWidget {
 
 class _TopThreePodium extends StatelessWidget {
   final List<LeaderboardEntry> top3;
-  const _TopThreePodium({required this.top3});
+  final Set<String> blocked;
+  const _TopThreePodium({required this.top3, required this.blocked});
 
   @override
   Widget build(BuildContext context) {
@@ -206,11 +206,11 @@ class _TopThreePodium extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          Expanded(child: _PodiumItem(entry: top3[1], height: 80)),
+          Expanded(child: _PodiumItem(entry: top3[1], height: 80, blocked: blocked)),
           const SizedBox(width: 8),
-          Expanded(child: _PodiumItem(entry: top3[0], height: 100)),
+          Expanded(child: _PodiumItem(entry: top3[0], height: 100, blocked: blocked)),
           const SizedBox(width: 8),
-          Expanded(child: _PodiumItem(entry: top3[2], height: 64)),
+          Expanded(child: _PodiumItem(entry: top3[2], height: 64, blocked: blocked)),
         ],
       ),
     );
@@ -220,7 +220,8 @@ class _TopThreePodium extends StatelessWidget {
 class _PodiumItem extends StatelessWidget {
   final LeaderboardEntry entry;
   final double height;
-  const _PodiumItem({required this.entry, required this.height});
+  final Set<String> blocked;
+  const _PodiumItem({required this.entry, required this.height, required this.blocked});
 
   @override
   Widget build(BuildContext context) {
@@ -240,7 +241,7 @@ class _PodiumItem extends StatelessWidget {
           const SizedBox(height: 4),
           AvatarWidget(avatarId: entry.avatarId, color: entry.color, size: 44, hexes: entry.cellCount),
           const SizedBox(height: 4),
-          Text(entry.displayName, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1),
+          Text(displayNameFor(blocked, entry.userId, entry.displayName), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13), overflow: TextOverflow.ellipsis, maxLines: 1),
           Text('${entry.cellCount} ⬡', style: TextStyle(fontSize: 11, color: AppColors.grey)),
           const SizedBox(height: 4),
           Container(
@@ -267,7 +268,8 @@ class _RankingList extends StatelessWidget {
   final List<LeaderboardEntry> players;
   /// Matched by id, not name: names are not unique (DR-002c) and blocked names are masked.
   final String? currentUserId;
-  const _RankingList({required this.players, required this.currentUserId});
+  final Set<String> blocked;
+  const _RankingList({required this.players, required this.currentUserId, required this.blocked});
 
   @override
   Widget build(BuildContext context) {
@@ -318,7 +320,7 @@ class _RankingList extends StatelessWidget {
                       const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          p.displayName,
+                          displayNameFor(blocked, p.userId, p.displayName),
                           style: TextStyle(
                             fontWeight: FontWeight.w700,
                             color: isMe ? AppColors.primary : AppColors.dark,

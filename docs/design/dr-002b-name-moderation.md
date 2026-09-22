@@ -369,6 +369,17 @@ The same address must be the App Store Connect Support URL/contact.
 - **Stale-fetch race fixed:** a slow block-list fetch at sign-in could overwrite (in state and on
   disk) a block made while it was in flight. The provider counts local edits and discards a fetch
   that started before one. Regression test fails without the fix.
+- **Review fixes (#195 agent review):**
+  - The stale-fetch guard discarded the whole server list whenever a block was made during a slow
+    load. The notifier now keeps this session's edits and applies them on top of every cached or
+    fetched list. A failed edit rolls back only its own id.
+  - In-app theft alerts are masked when they are created, and grouped by thief id, not name (so
+    two same-named thieves no longer merge). This part no longer waits for PR 4.
+  - The leaderboard and the map masks names at render time and pass the *raw* name to the profile
+    screen, which masks it itself. So after Unblock, the header shows the real name.
+  - Contact Support never fails silently: with no mail app it shows the address, and a build
+    without `SUPPORT_EMAIL` says so and logs a warning. The build-time guard belongs with #181's
+    fail-closed release config (follow-up once both merge).
 - **Found, out of scope:** the login screen's Terms/Privacy links point at the dev ngrok tunnel
   (`login_screen.dart:154,160`) — dead links in a production build, and an App Store review risk.
 

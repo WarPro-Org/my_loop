@@ -375,16 +375,20 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       // Detect thefts from the current user → add in-app notifications
       final userId = ref.read(userProfileProvider).userId;
       if (userId != null) {
+        // Grouped by thief id, not name: names are not unique (DR-002c), so two same-named thieves
+        // must not merge into one alert. A blocked thief is named "Blocked player" (#195 review).
         final stolenByThief = <String, List<HexChangeEvent>>{};
         for (final e in events) {
           if (e.previousOwnerId == userId && e.newOwnerId != userId) {
-            stolenByThief.putIfAbsent(e.newOwnerDisplayName, () => []).add(e);
+            stolenByThief.putIfAbsent(e.newOwnerId, () => []).add(e);
           }
         }
+        final blocked = ref.read(blockedUsersProvider);
         for (final entry in stolenByThief.entries) {
+          final first = entry.value.first;
           ref.read(notificationProvider.notifier).addTheftAlert(
-            thiefName: entry.key,
-            thiefColor: entry.value.first.newOwnerColor,
+            thiefName: displayNameFor(blocked, entry.key, first.newOwnerDisplayName),
+            thiefColor: first.newOwnerColor,
             hexCount: entry.value.length,
           );
         }
@@ -560,9 +564,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         onViewProfile: () {
           Navigator.pop(ctx);
           Navigator.push(context, MaterialPageRoute(
+            // Raw name: the profile screen masks it itself, and un-masks it the moment the
+            // viewer unblocks there (#195 review).
             builder: (_) => UserProfileScreen(
               userId: cell.ownerId,
-              name: cell.ownerName,
+              name: rawCell.ownerName,
               avatarId: 0,
               color: cell.ownerColor,
               rank: 0,

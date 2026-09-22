@@ -13,7 +13,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/features/moderation/blocked_users.dart';
 import 'package:myloop/features/moderation/player_actions_menu.dart';
-import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/block_list_cache.dart';
@@ -36,6 +35,10 @@ class _FakeApi extends ApiService {
   /// When set, the list fetch waits for it — simulates a slow (cold-start) response.
   Completer<void>? listGate;
   Object? writeError;
+  /// Ids whose block call fails; the rest succeed.
+  Set<String> failIds = {};
+  /// When set, each block call waits for it — lets two blocks overlap.
+  Completer<void>? writeGate;
   String? reportedReason;
 
   @override
@@ -48,7 +51,9 @@ class _FakeApi extends ApiService {
 
   @override
   Future<void> blockUser(String userId) async {
+    await writeGate?.future;
     if (writeError != null) throw writeError!;
+    if (failIds.contains(userId)) throw _status(409, 'refused');
     serverBlocks.add(userId);
   }
 
@@ -189,6 +194,37 @@ void main() {
       expect(await BlockListCache.load('me'), {'rival'});
     });
 
+    test("a block made during a slow load keeps the server's existing blocks too", () async {
+      final api = _FakeApi()
+        ..serverBlocks = {'a', 'b'}
+        ..listGate = Completer<void>();
+      final container = signedIn(api);
+      await settle(); // fetch in flight, holding {a, b}
+
+      await container.read(blockedUsersProvider.notifier).block('x');
+      api.listGate!.complete();
+      await settle();
+
+      expect(container.read(blockedUsersProvider), {'a', 'b', 'x'});
+      expect(await BlockListCache.load('me'), {'a', 'b', 'x'});
+    });
+
+    test('a failed block rolls back only its own id, not an overlapping one', () async {
+      final api = _FakeApi()
+        ..failIds = {'first'}
+        ..writeGate = Completer<void>();
+      final container = signedIn(api);
+      await settle();
+
+      final notifier = container.read(blockedUsersProvider.notifier);
+      final first = notifier.block('first');
+      final second = notifier.block('second');
+      api.writeGate!.complete();
+      await Future.wait([first, second]);
+
+      expect(container.read(blockedUsersProvider), {'second'});
+    });
+
     test('a refused block rolls back and returns the server reason', () async {
       final api = _FakeApi()..writeError = _status(409, "You've blocked the maximum number of players");
       final container = signedIn(api);
@@ -224,14 +260,7 @@ void main() {
       expect(displayNameFor({'rival'}, 'friend', 'Kai'), 'Kai');
     });
 
-    test('masked copies keep everything but the name', () {
-      const entry = LeaderboardEntry(
-          userId: 'rival', displayName: 'Rude Name', avatarId: 3, color: '#FF4B4B',
-          cellCount: 12, areaM2: 100, rank: 2);
-      final masked = entry.withDisplayName(blockedPlayerLabel);
-      expect([masked.displayName, masked.userId, masked.rank, masked.cellCount],
-          [blockedPlayerLabel, 'rival', 2, 12]);
-
+    test('a masked map cell keeps everything but the owner name', () {
       const cell = TerritoryCell(
           cellId: 1, ownerId: 'rival', ownerColor: '#FF4B4B', boundary: [], ownerName: 'Rude Name',
           parentCellId: 9, decayProgress: 0.5);
