@@ -142,7 +142,7 @@ public sealed class ModerationService(
 
             foreach (var user in page)
             {
-                if (user.NameHiddenAt != null || !IsBlockedName(user.DisplayName)) continue;
+                if (user.NameHiddenAt != null || !IsBlockedName(user.Id, user.DisplayName)) continue;
                 var caseId = await HideForRescanAsync(user.Id, user.DisplayName);
                 if (caseId is { } id) hidden.Add($"Case {id} — user {user.Id} — \"{user.DisplayName}\"");
             }
@@ -154,20 +154,29 @@ public sealed class ModerationService(
         return new RescanResponse(scanned, hidden.Count);
     }
 
-    public Task<bool> IsConfirmedRemovedNameAsync(Guid userId, string normalizedName) =>
-        db.NameModerationCases.AnyAsync(c =>
-            c.UserId == userId && c.NameSnapshot == normalizedName && c.Status == ModerationCaseStatus.Confirmed);
+    public async Task<RenameCheck> CheckRenameAsync(Guid userId, string requestedName)
+    {
+        var locked = await db.Users.AnyAsync(u => u.Id == userId && u.NameLockedAt != null);
+        if (locked) return RenameCheck.Locked;
+
+        var normalized = ValidationService.NormalizeDisplayName(requestedName);
+        var removed = await db.NameModerationCases.AnyAsync(c =>
+            c.UserId == userId && c.NameSnapshot == normalized && c.Status == ModerationCaseStatus.Confirmed);
+        return removed ? RenameCheck.RemovedName : RenameCheck.Allowed;
+    }
 
     /// <summary>Stored names predate #189's normalisation, so normalise before matching.</summary>
-    private static bool IsBlockedName(string storedName)
+    private bool IsBlockedName(Guid userId, string storedName)
     {
         try
         {
             return NameModeration.IsBlocked(ValidationService.NormalizeDisplayName(storedName));
         }
-        catch (ArgumentException)
+        catch (ArgumentException ex)
         {
-            return false; // ill-formed UTF-16 cannot be normalised; leave it to reports
+            // Ill-formed UTF-16 cannot be normalised or matched; leave it to player reports.
+            logger.LogWarning(ex, "Rescan skipped user {UserId}: stored name cannot be normalised", userId);
+            return false;
         }
     }
 
@@ -186,7 +195,13 @@ public sealed class ModerationService(
                 return (Guid?)null;
 
             var now = DateTime.UtcNow;
-            if (!await NameHiding.HideAsync(db, userId, name, now)) return null;
+            if (!await NameHiding.HideAsync(db, userId, name, now))
+            {
+                // Already hidden for this name: either a report beat us to it, or this is an
+                // execution-strategy retry of a block that already committed. Either way the name
+                // is hidden, so it belongs in the digest.
+                return existing?.Status == ModerationCaseStatus.AutoHidden ? existing.Id : (Guid?)null;
+            }
 
             Guid caseId;
             if (existing is null)

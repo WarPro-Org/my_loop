@@ -30,7 +30,10 @@ public sealed class SmtpModerationAlertChannel(IOptions<ModerationEmailOptions> 
         message.Subject = BuildSubject(alert);
         message.Body = new TextPart("plain") { Text = BuildBody(alert) };
 
-        using var client = new SmtpClient { Timeout = InfrastructureDefaults.ModerationSmtpTimeoutSeconds * 1000 };
+        using var client = new SmtpClient
+        {
+            Timeout = (int)TimeSpan.FromSeconds(InfrastructureDefaults.ModerationSmtpTimeoutSeconds).TotalMilliseconds,
+        };
         var security = settings.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.SslOnConnect;
         await client.ConnectAsync(host, settings.Port, security, cancellationToken);
         if (!string.IsNullOrEmpty(settings.Username))

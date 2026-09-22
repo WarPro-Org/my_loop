@@ -187,7 +187,7 @@ New `NameReportsController` and `BlocksController` (keeps `UsersController` thin
 
 | Verb + path | Body | Success | Errors |
 |---|---|---|---|
-| `POST /api/users/{id}/name-report` | `NameReportRequest { reason: "offensive" \| "impersonation" \| "other" }` | `204` (also for a duplicate — idempotent, reveals nothing) | `400` self / moderator target / bad reason · `404` unknown user · `429` daily limit |
+| `POST /api/users/{id}/name-reports` | `NameReportRequest { reason: "offensive" \| "impersonation" \| "other" }` | `204` (also for a duplicate — idempotent, reveals nothing) | `400` self / bad reason (a moderator target is answered `204`, see §4.7) · `404` unknown user · `429` daily limit |
 | `GET /api/users/me/blocks` | — | `200 BlockListResponse { blockedUserIds: Guid[] }` | — |
 | `PUT /api/users/{id}/block` | — | `204` (idempotent) | `400` self · `404` unknown · `409` over `MaxBlocksPerUser` |
 | `DELETE /api/users/{id}/block` | — | `204` (idempotent) | — |
@@ -328,7 +328,7 @@ discloses nothing new. No client → server methods are added.
 | `notificationProvider` | `AppNotification` gains `actorUserId: String?` (nullable — legacy persisted items have none). `addTheftAlert` takes `thiefId`; `journey_screen.dart:380` groups by `newOwnerId` instead of display name (fixes two same-named thieves merging). Inbox renders the body with the actor name through `displayNameFor`; items with `actorUserId` are tappable → `/user-profile`. |
 | `TerritoryRealtimeService` | Registers `connection.on('PlayerNameChanged', …)`; exposes a `Stream<PlayerNameChangedEvent>`. |
 
-`/user-profile` screen: ⋮ menu with **Report name** (reason sheet → `POST name-report` → "Thanks,
+`/user-profile` screen: ⋮ menu with **Report name** (reason sheet → `POST name-reports` → "Thanks,
 we'll review it") and **Block / Unblock player**. Hidden for my own profile.
 
 ---

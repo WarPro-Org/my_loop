@@ -4,7 +4,7 @@ using MyLoop.Api.Entities;
 
 namespace MyLoop.Api.Models;
 
-/// <summary>Body of <c>POST /api/users/{id}/name-report</c>.</summary>
+/// <summary>Body of <c>POST /api/users/{id}/name-reports</c>.</summary>
 public sealed class NameReportRequest
 {
     /// <summary>"offensive" | "impersonation" | "other".</summary>

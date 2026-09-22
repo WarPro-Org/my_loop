@@ -12,6 +12,16 @@ public enum ModerationDecisionOutcome
     InvalidState,
 }
 
+/// <summary>Whether moderation allows a player to rename.</summary>
+public enum RenameCheck
+{
+    Allowed,
+    /// <summary>Confirmed strikes lock renaming until a moderator unlocks it.</summary>
+    Locked,
+    /// <summary>A moderator already removed this exact name from this player.</summary>
+    RemovedName,
+}
+
 /// <summary>Moderator review of names (DR-002b, #190). Callers are authorized by the Moderator policy.</summary>
 public interface IModerationService
 {
@@ -30,6 +40,10 @@ public interface IModerationService
     /// <summary>Re-checks every visible name against the current blocklist and hides matches.</summary>
     Task<RescanResponse> RescanAsync(CancellationToken cancellationToken);
 
-    /// <summary>True when a moderator already confirmed this exact name for this player.</summary>
-    Task<bool> IsConfirmedRemovedNameAsync(Guid userId, string normalizedName);
+    /// <summary>
+    /// Moderation gates on a rename: refused while confirmed strikes lock the name, or when a
+    /// moderator already removed this exact name from this player. <paramref name="requestedName"/>
+    /// must already have passed display-name validation.
+    /// </summary>
+    Task<RenameCheck> CheckRenameAsync(Guid userId, string requestedName);
 }

@@ -19,7 +19,7 @@ public class NameReportsController(INameReportService reports, ICurrentUser curr
     /// authenticated caller. Repeat reports, already-hidden names and some targets are accepted
     /// silently (204) so the response reveals nothing about moderation state.
     /// </summary>
-    [HttpPost("{id:guid}/name-report")]
+    [HttpPost("{id:guid}/name-reports")]
     public async Task<IActionResult> Report([FromRoute] Guid id, [FromBody] NameReportRequest request)
     {
         var reporterId = await currentUser.TryGetUserIdAsync();
