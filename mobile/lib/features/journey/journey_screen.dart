@@ -30,6 +30,26 @@ import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/notification_service.dart';
 
+/// Whether the periodic viewport poll should skip its current tick because
+/// the SignalR hex feed already covers it: connected AND a delta arrived
+/// within [AppConstants.realtimeFreshnessSeconds] (issue #129 / ML-ERR-032).
+/// A `null` [lastEventAt] (no delta received yet this session) never counts
+/// as fresh, so the very first tick after connecting still polls.
+///
+/// Extracted as a pure top-level function (rather than inline in
+/// `_JourneyMapState`) so it's unit-testable without pumping the whole
+/// Journey screen and its GPS/API/hydration dependencies.
+@visibleForTesting
+bool isRealtimePollBackstopRedundant({
+  required bool isConnected,
+  required DateTime? lastEventAt,
+  required DateTime now,
+}) {
+  if (!isConnected || lastEventAt == null) return false;
+  return now.difference(lastEventAt) <
+      const Duration(seconds: AppConstants.realtimeFreshnessSeconds);
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Screen
 // ──────────────────────────────────────────────────────────────────────────────
@@ -322,7 +342,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   final MapController _mapController = MapController();
   Position? _initialPosition;
   LatLng? _fallbackCenter;
-  Timer? _locationTimer;
   Timer? _hexRefreshTimer;
   bool _mapReady = false;
   bool _followUser = true;
@@ -343,20 +362,20 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     _acquireLocation();
     _hexRefreshTimer = Timer.periodic(
       const Duration(seconds: AppConstants.hexRefreshIntervalSeconds),
-      (_) => _refreshViewportHexes(),
+      (_) => _pollViewportHexesIfStale(),
     );
     _subscribeRealtime();
   }
 
   @override
   void dispose() {
-    _locationTimer?.cancel();
     _hexRefreshTimer?.cancel();
     _realtimeSub?.cancel();
     // Do NOT disconnect territoryRealtimeProvider here — the hub connection is
     // app-lifecycle-scoped (connected at login, disconnected at logout), not
     // scoped to this screen. Killing it here left the app deaf to live stats/
     // XP/mission/achievement pushes for the rest of the session (#102).
+    _hexManager.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -368,8 +387,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _subscribeRealtime() {
     final realtimeService = ref.read(territoryRealtimeProvider);
     _realtimeSub = realtimeService.onHexChanges.listen((events) {
-      final changed = _hexManager.applyRealtimeChanges(events);
-      if (changed && mounted) setState(() {});
+      // Repaint is driven by hexManager.hexRevision (ValueListenableBuilder in
+      // _buildMap), not a screen-wide setState — a bare setState here used to
+      // rebuild the entire map subtree (tile layer, polyline, HUD, controls)
+      // on every SignalR delta (issue #129).
+      _hexManager.applyRealtimeChanges(events);
 
       // Detect thefts from the current user → add in-app notifications
       final userId = ref.read(userProfileProvider).userId;
@@ -413,13 +435,34 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         await _hexManager.loadUserOwnHexes();
         await _hexManager.loadWideArea(pos.latitude, pos.longitude);
         _updateRealtimeRegions();
-        if (mounted) setState(() {});
+        // No setState here — the hex loads above bump hexManager.hexRevision,
+        // which the map's ValueListenableBuilder repaints on directly.
       } else if (mounted) {
         setState(() => _locationError = true);
       }
     } catch (_) {
       if (mounted) setState(() => _locationError = true);
     }
+  }
+
+  /// Timer-tick entry point for the periodic viewport poll. The poll is a
+  /// reconnect/staleness backstop for the live SignalR hex feed, not a
+  /// primary data source — skipped while the hub is connected and has pushed
+  /// a hex delta recently enough to trust (#129), since polling on top of a
+  /// live, fresh feed is a wasted network round trip that doesn't change
+  /// what's on screen. Explicit refreshes (map becoming ready, a just-
+  /// submitted claim via [forceReloadHexes]) call [_refreshViewportHexes]
+  /// directly and always run, bypassing this freshness check.
+  Future<void> _pollViewportHexesIfStale() async {
+    final realtimeService = ref.read(territoryRealtimeProvider);
+    if (isRealtimePollBackstopRedundant(
+      isConnected: realtimeService.isConnected,
+      lastEventAt: realtimeService.lastHexEventAt,
+      now: DateTime.now(),
+    )) {
+      return;
+    }
+    await _refreshViewportHexes();
   }
 
   Future<void> _refreshViewportHexes() async {
@@ -433,28 +476,19 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       maxLat: bounds.north, maxLng: bounds.east,
     );
     _updateRealtimeRegions();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _refreshPosition() async {
-    final journey = ref.read(journeyControllerProvider);
-    if (journey.status == JourneyStatus.tracking) return;
-    try {
-      final locationService = ref.read(locationServiceProvider);
-      final pos = await locationService.getCurrentPosition();
-      if (mounted && pos.latitude.isFinite && pos.longitude.isFinite) {
-        setState(() => _initialPosition = pos);
-        if (_mapReady && _followUser) {
-          _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
-        }
-      }
-    } catch (_) {}
+    // No setState here — loadViewport bumps hexManager.hexRevision, which the
+    // map's ValueListenableBuilder repaints on directly.
   }
 
   @override
   void didUpdateWidget(covariant _JourneyMap old) {
     super.didUpdateWidget(old);
-    _manageLocationPolling();
+    // The map's follow-user position derives entirely from
+    // journeyControllerProvider's currentPosition (already updated per GPS
+    // stream sample — journey_controller.dart's _onPosition) via this
+    // widget-prop update. A separate 5s polling timer used to duplicate this
+    // with its own getCurrentPosition() calls, doubling GPS radio wakeups for
+    // no data gain while a walk was being tracked (#129).
     _followCurrentPosition();
     _integrateNewStepClaims(old.journey, widget.journey);
   }
@@ -465,22 +499,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     if (next.claimedMeta.length <= prev.claimedMeta.length) return;
     // Process only the new claims since last update
     final newClaims = next.claimedMeta.sublist(prev.claimedMeta.length);
-    bool hadStolen = false;
     for (final meta in newClaims) {
       _hexManager.integrateStepClaim(meta.boundary, meta.cellId, meta.wasStolen);
-      if (meta.wasStolen) hadStolen = true;
     }
-    // If a stolen hex was removed from others, trigger map repaint
-    if (hadStolen && mounted) setState(() {});
-  }
-
-  void _manageLocationPolling() {
-    if (widget.journey.status == JourneyStatus.tracking && _locationTimer == null) {
-      _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
-    } else if (widget.journey.status != JourneyStatus.tracking && _locationTimer != null) {
-      _locationTimer?.cancel();
-      _locationTimer = null;
-    }
+    // No setState here — integrateStepClaim bumps hexManager.hexRevision,
+    // which the map's ValueListenableBuilder repaints on directly.
   }
 
   void _followCurrentPosition() {
@@ -498,15 +521,14 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   }
 
   void forceReloadHexes() {
-    _hexManager.loadUserOwnHexes().then((_) {
-      if (mounted) setState(() {});
-    });
+    // No setState in either branch below — loadUserOwnHexes/loadViewport/
+    // loadWideArea all bump hexManager.hexRevision, which the map's
+    // ValueListenableBuilder repaints on directly.
+    _hexManager.loadUserOwnHexes();
     if (_mapReady) {
       _refreshViewportHexes();
     } else if (_initialPosition != null) {
-      _hexManager.loadWideArea(_initialPosition!.latitude, _initialPosition!.longitude).then((_) {
-        if (mounted) setState(() {});
-      });
+      _hexManager.loadWideArea(_initialPosition!.latitude, _initialPosition!.longitude);
     }
   }
 
@@ -651,15 +673,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       children: [
         _buildTileLayer(),
         if (_useSatellite) _buildLabelsLayer(),
-        ..._buildOtherPlayerHexes(),
-        if (_hexManager.userOwnHexBoundaries.isNotEmpty)
-          AnimatedHexOverlay(
-            hexBoundaries: _hexManager.userOwnHexBoundaries,
-            userColor: userColor,
-            currentZoom: _currentZoom,
-            solidMode: _solidHexes,
-            decayValues: _hexManager.userOwnDecayValues,
-          ),
+        // Other-players' + own owned-hex layers repaint from hexManager's
+        // hexRevision alone, not the screen-wide setState the other map
+        // layers rebuild from — a SignalR delta, viewport poll, or step
+        // claim no longer forces the tile layer / polyline / HUD / controls
+        // to rebuild too (issue #129 / ML-ERR-032).
+        _buildHexLayers(userColor),
         // Walk-through claimed hexes — appear instantly as user walks
         if (journey.claimedHexBoundaries.isNotEmpty)
           AnimatedHexOverlay(
@@ -686,9 +705,40 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
             solidMode: _solidHexes,
           ),
         if (journey.path.length > 1) _buildPathPolyline(journey),
-        if (_currentZoom >= 15) _buildCooldownMarkers(),
+        // Cooldown chips read hexManager.allCells, so they repaint from
+        // hexRevision too — otherwise they'd silently go stale once the bare
+        // setState calls that used to cover them were removed above.
+        if (_currentZoom >= 15)
+          ValueListenableBuilder<int>(
+            valueListenable: _hexManager.hexRevision,
+            builder: (context, revision, child) => _buildCooldownMarkers(),
+          ),
         _buildPositionMarker(journey, profile, userColor),
       ],
+    );
+  }
+
+  /// Other-players' hexes + the user's own owned hexes, scoped to a single
+  /// `ValueListenableBuilder` on `hexManager.hexRevision` so these are the
+  /// only layers that repaint on a hex mutation (see call site comment).
+  Widget _buildHexLayers(Color userColor) {
+    return RepaintBoundary(
+      child: ValueListenableBuilder<int>(
+        valueListenable: _hexManager.hexRevision,
+        builder: (context, revision, child) => Stack(
+          children: [
+            ..._buildOtherPlayerHexes(),
+            if (_hexManager.userOwnHexBoundaries.isNotEmpty)
+              AnimatedHexOverlay(
+                hexBoundaries: _hexManager.userOwnHexBoundaries,
+                userColor: userColor,
+                currentZoom: _currentZoom,
+                solidMode: _solidHexes,
+                decayValues: _hexManager.userOwnDecayValues,
+              ),
+          ],
+        ),
+      ),
     );
   }
 

@@ -34,6 +34,12 @@ class AppConstants {
   static const int hexRefreshIntervalSeconds = 30;
   static const int maxCachedCells = 1000;
 
+  /// While a live SignalR hex delta arrived more recently than this, the
+  /// periodic viewport poll is redundant — the push is the freshness source
+  /// of truth and the poll only exists as a reconnect/staleness backstop
+  /// (issue #129).
+  static const int realtimeFreshnessSeconds = 60;
+
   // --- Preview ---
   static const int maxPreviewPathPoints = 500;
 

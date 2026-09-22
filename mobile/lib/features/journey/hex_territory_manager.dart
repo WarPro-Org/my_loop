@@ -4,6 +4,7 @@
 /// Extracted from _JourneyMapState to keep map widget focused on rendering.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
@@ -16,6 +17,7 @@ final _log = Logger('HexTerritory');
 class HexTerritoryManager {
   final ApiService _api;
   final String? _userId;
+  bool _disposed = false;
 
   List<List<List<double>>> userOwnHexBoundaries = [];
   List<double> userOwnDecayValues = [];
@@ -23,9 +25,30 @@ class HexTerritoryManager {
   List<TerritoryCell> allCells = [];
   Set<int> userOwnCellIds = {};
 
+  /// Bumped every time any hex data mutates. The map screen listens to this
+  /// (via `ValueListenableBuilder`) to repaint only the hex overlay layers,
+  /// instead of a bare `setState(() {})` that used to rebuild the whole map
+  /// subtree — tile layer, path polyline, HUD, controls — on every SignalR
+  /// delta, viewport poll, and step claim (issue #129 / ML-ERR-032).
+  final ValueNotifier<int> hexRevision = ValueNotifier<int>(0);
+
   HexTerritoryManager({required ApiService api, required String? userId})
       : _api = api,
         _userId = userId;
+
+  /// Releases the revision notifier. Safe to call once; further mutation
+  /// calls become no-ops instead of throwing on a disposed `ValueNotifier` —
+  /// matters because an in-flight `load*` API call can still resolve after
+  /// the owning `_JourneyMapState` (and thus this manager) is disposed.
+  void dispose() {
+    _disposed = true;
+    hexRevision.dispose();
+  }
+
+  void _bumpRevision() {
+    if (_disposed) return;
+    hexRevision.value++;
+  }
 
   /// Loads ALL hexes owned by this user — no viewport limit.
   ///
@@ -69,6 +92,7 @@ class HexTerritoryManager {
       ...allCells.where((c) => c.ownerId != _userId),
       ...cells,
     ];
+    _bumpRevision();
   }
 
   /// Loads hexes in a wide area around [lat], [lng].
@@ -146,11 +170,13 @@ class HexTerritoryManager {
     } else {
       allCells = allList;
     }
+    _bumpRevision();
   }
 
   /// Adds captured hex boundaries to the user's owned list.
   void addCapturedHexes(List<List<List<double>>> boundaries) {
     userOwnHexBoundaries = [...userOwnHexBoundaries, ...boundaries];
+    _bumpRevision();
   }
 
   /// Integrates a single step-claimed hex into persistent state.
@@ -167,6 +193,7 @@ class HexTerritoryManager {
       userOwnHexBoundaries.add(boundary);
       userOwnDecayValues.add(0.0); // Fresh hex, no decay
     }
+    _bumpRevision();
   }
 
   List<double> _computeCenter(List<List<double>> boundary) {
@@ -249,6 +276,7 @@ class HexTerritoryManager {
       }
     }
 
+    if (changed) _bumpRevision();
     return changed;
   }
 

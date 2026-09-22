@@ -167,6 +167,7 @@ class TerritoryRealtimeService {
   final Set<String> _subscribedRegions = {};
   bool _isConnected = false;
   String? _userId;
+  DateTime? _lastHexEventAt;
 
   TerritoryRealtimeService({required String baseUrl}) : _baseUrl = baseUrl;
 
@@ -183,6 +184,12 @@ class TerritoryRealtimeService {
   Stream<void> get onReconnected => _reconnectedController.stream;
 
   bool get isConnected => _isConnected;
+
+  /// When the most recent `HexOwnershipChanged` push was received. Consumers
+  /// that also poll the viewport as a staleness backstop (Journey's 30s poll,
+  /// see #129) use this to skip a tick when SignalR is both connected and has
+  /// delivered a hex delta recently enough to be trusted over a fresh fetch.
+  DateTime? get lastHexEventAt => _lastHexEventAt;
 
   /// Number of connection attempts actually made (i.e. not short-circuited by
   /// the already-connected guard). Exposed only so a regression test can prove
@@ -328,9 +335,18 @@ class TerritoryRealtimeService {
         .toList();
 
     if (events.isNotEmpty) {
+      _lastHexEventAt = DateTime.now();
       _changeController.add(events);
     }
   }
+
+  /// Simulates a `HexOwnershipChanged` payload from the hub, exactly as
+  /// `connection.on('HexOwnershipChanged', ...)` would deliver it. Lets tests
+  /// verify [lastHexEventAt] freshness tracking without a live SignalR
+  /// connection (mirrors the [connectAttempts] test hook above).
+  @visibleForTesting
+  void debugSimulateHexChanges(List<Object?>? arguments) =>
+      _handleHexChanges(arguments);
 
   void _handleUserStats(List<Object?>? arguments) {
     if (arguments == null || arguments.isEmpty) return;
