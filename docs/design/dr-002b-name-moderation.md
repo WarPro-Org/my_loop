@@ -282,6 +282,26 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
 
 ---
 
+### 4.7 Implementation notes (PR 2) — deviations from the above
+
+- **Reporting a moderator returns `204`, not `400`.** A distinct answer would reveal who the
+  moderators are, contradicting §4.3. The report is simply not recorded.
+- **Threshold window.** Only reports with `CreatedAt >= case.OpenedAt` count. Without it, a name
+  a moderator restored would be re-hidden by the very reports that were already judged plus one.
+- **Renaming back to a confirmed-removed name** is refused (`400 "This name isn't allowed"`),
+  otherwise a player could re-adopt a name a moderator removed and the confirmed case would block
+  it from ever being re-hidden.
+- **Rescan skips names with a `Restored` or `Confirmed` case** — a moderator already decided.
+- **Alerts are queued, not sent in the request.** `IModerationAlerts.Raise` writes to a bounded
+  in-memory queue drained by a `BackgroundService`, so a report never waits on SMTP. A dropped
+  alert (queue full / restart) is recoverable: every alert is logged when raised and the case row
+  is the source of truth.
+- **`PATCH /api/users/{id}` gets `IModerationService` via `[FromServices]`**, not the constructor,
+  so existing `UsersController` constructions (tests, open PRs) are unaffected.
+- **Rescan uses offset paging ordered by `Id`**, not keyset on `Guid` (translation of `Guid`
+  comparison is not guaranteed). Hides never remove rows; a mid-scan registration can shift a page,
+  which is harmless because that name passed the blocklist at registration.
+
 ## 5. SignalR changes (PR 4)
 
 | Hub method (server → client) | Target | Payload |

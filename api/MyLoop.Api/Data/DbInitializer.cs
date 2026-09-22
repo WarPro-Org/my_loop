@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Data.Seeding;
 
 namespace MyLoop.Api.Data;
@@ -47,6 +48,17 @@ public static class DbInitializer
         {
             logger.LogWarning(ex,
                 "Startup schema sync failed (continuing; later queries may break if this was a real error)");
+        }
+
+        // Separate from the block above so a failure here is loud and attributable: the moderation
+        // endpoints would otherwise surface it only as 500s long after startup.
+        try
+        {
+            ApplyModerationSchema(db);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Moderation schema patch failed; name reports and moderation will not work");
         }
     }
 
@@ -224,6 +236,65 @@ public static class DbInitializer
 
     // Persisted, shared-across-all-users reverse-geocode cache (#121 / ML-ERR-024) — lets
     // /game-state's exploration stats return without ever awaiting Nominatim inline.
+    /// <summary>
+    /// Name moderation schema (DR-002b, #190) for databases created before it. One transaction —
+    /// Postgres DDL is transactional, so a failure leaves no half-applied schema. Additive only
+    /// (defaulted/nullable columns, new tables), so the previous build keeps working against it.
+    /// Must produce the same shape as AppDbContext's NameReport/NameModerationCase configuration.
+    /// </summary>
+    internal static void ApplyModerationSchema(AppDbContext db)
+    {
+        // EnableRetryOnFailure rejects bare user transactions; the DDL is idempotent, so a retry
+        // of the whole block is safe.
+        db.Database.CreateExecutionStrategy().Execute(() =>
+        {
+            using var tx = db.Database.BeginTransaction();
+            db.Database.ExecuteSqlRaw(ModerationSchemaDdl);
+            tx.Commit();
+        });
+    }
+
+    private static readonly string ModerationSchemaDdl = $@"
+            ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""NameHiddenAt"" timestamp with time zone NULL;
+            ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""ConfirmedNameStrikes"" integer NOT NULL DEFAULT 0;
+            ALTER TABLE ""Users"" ADD COLUMN IF NOT EXISTS ""NameLockedAt"" timestamp with time zone NULL;
+
+            CREATE TABLE IF NOT EXISTS ""NameReports"" (
+                ""Id"" uuid NOT NULL,
+                ""ReporterId"" uuid NOT NULL,
+                ""ReportedUserId"" uuid NOT NULL,
+                ""NameSnapshot"" character varying({GameConstants.MaxModeratedNameLength}) NOT NULL,
+                ""Reason"" smallint NOT NULL,
+                ""CreatedAt"" timestamp with time zone NOT NULL,
+                CONSTRAINT ""PK_NameReports"" PRIMARY KEY (""Id""),
+                CONSTRAINT ""FK_NameReports_Users_ReporterId"" FOREIGN KEY (""ReporterId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_NameReports_Users_ReportedUserId"" FOREIGN KEY (""ReportedUserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_NameReports_ReporterId_ReportedUserId_NameSnapshot""
+                ON ""NameReports"" (""ReporterId"", ""ReportedUserId"", ""NameSnapshot"");
+            CREATE INDEX IF NOT EXISTS ""IX_NameReports_ReportedUserId_NameSnapshot_CreatedAt""
+                ON ""NameReports"" (""ReportedUserId"", ""NameSnapshot"", ""CreatedAt"");
+            CREATE INDEX IF NOT EXISTS ""IX_NameReports_ReporterId_CreatedAt""
+                ON ""NameReports"" (""ReporterId"", ""CreatedAt"");
+
+            CREATE TABLE IF NOT EXISTS ""NameModerationCases"" (
+                ""Id"" uuid NOT NULL,
+                ""UserId"" uuid NOT NULL,
+                ""NameSnapshot"" character varying({GameConstants.MaxModeratedNameLength}) NOT NULL,
+                ""Source"" smallint NOT NULL,
+                ""Status"" smallint NOT NULL,
+                ""OpenedAt"" timestamp with time zone NOT NULL,
+                ""HiddenAt"" timestamp with time zone NULL,
+                ""ResolvedAt"" timestamp with time zone NULL,
+                ""ResolvedByUid"" character varying({GameConstants.MaxFirebaseUidLength}) NULL,
+                CONSTRAINT ""PK_NameModerationCases"" PRIMARY KEY (""Id""),
+                CONSTRAINT ""FK_NameModerationCases_Users_UserId"" FOREIGN KEY (""UserId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_NameModerationCases_UserId_NameSnapshot""
+                ON ""NameModerationCases"" (""UserId"", ""NameSnapshot"");
+            CREATE INDEX IF NOT EXISTS ""IX_NameModerationCases_Status""
+                ON ""NameModerationCases"" (""Status"");";
+
     private static void ApplyNeighborhoodNamesSchema(AppDbContext db)
     {
         db.Database.ExecuteSqlRaw(@"

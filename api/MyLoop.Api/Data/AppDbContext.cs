@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Entities;
 
 namespace MyLoop.Api.Data;
@@ -45,6 +46,12 @@ public class AppDbContext : DbContext
 
     /// <summary>Gets the set of persisted reverse-geocode results, one row per H3 neighborhood.</summary>
     public DbSet<NeighborhoodName> NeighborhoodNames => Set<NeighborhoodName>();
+
+    /// <summary>Player reports of other players' display names (DR-002b).</summary>
+    public DbSet<NameReport> NameReports => Set<NameReport>();
+
+    /// <summary>One review record per reported or rescanned (user, name) pair (DR-002b).</summary>
+    public DbSet<NameModerationCase> NameModerationCases => Set<NameModerationCase>();
 
     /// <summary>
     /// Configures the entity model: primary keys, unique constraints, and indexes
@@ -120,6 +127,32 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<NeighborhoodName>(e =>
         {
             e.HasKey(n => n.NeighborhoodId);
+        });
+
+        // Name moderation (DR-002b). Keep in step with DbInitializer.ApplyModerationSchema, which
+        // creates the same shape on databases that predate it (EnsureCreated never alters).
+        modelBuilder.Entity<User>(e =>
+        {
+            e.Property(u => u.ConfirmedNameStrikes).HasDefaultValue(0);
+        });
+
+        modelBuilder.Entity<NameReport>(e =>
+        {
+            e.Property(r => r.NameSnapshot).HasMaxLength(GameConstants.MaxModeratedNameLength);
+            e.HasOne<User>().WithMany().HasForeignKey(r => r.ReporterId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(r => r.ReportedUserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(r => new { r.ReporterId, r.ReportedUserId, r.NameSnapshot }).IsUnique(); // one report per reporter per name
+            e.HasIndex(r => new { r.ReportedUserId, r.NameSnapshot, r.CreatedAt }); // threshold count
+            e.HasIndex(r => new { r.ReporterId, r.CreatedAt }); // per-reporter daily limit
+        });
+
+        modelBuilder.Entity<NameModerationCase>(e =>
+        {
+            e.Property(c => c.NameSnapshot).HasMaxLength(GameConstants.MaxModeratedNameLength);
+            e.Property(c => c.ResolvedByUid).HasMaxLength(GameConstants.MaxFirebaseUidLength);
+            e.HasOne<User>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(c => new { c.UserId, c.NameSnapshot }).IsUnique(); // the "first report" claim
+            e.HasIndex(c => c.Status); // moderator queue
         });
     }
 }

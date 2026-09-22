@@ -10,6 +10,7 @@ builder.Services
     .AddMyLoopServices()
     .AddMyLoopPushNotifications(builder.Configuration)
     .AddMyLoopAuthentication(builder.Configuration)
+    .AddMyLoopModeration(builder.Configuration)
     .AddMyLoopRateLimiting()
     .AddMyLoopCors(builder.Configuration);
 

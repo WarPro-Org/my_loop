@@ -79,6 +79,18 @@ public class User
     /// <summary>Home country name (from reverse geocoding).</summary>
     public string HomeCountry { get; set; } = "";
 
+    /// <summary>
+    /// Set while <see cref="DisplayName"/> is a moderation placeholder ("Player#A7F3") that replaced
+    /// a hidden name; cleared when the player renames or a moderator restores (DR-002b, #190).
+    /// </summary>
+    public DateTime? NameHiddenAt { get; set; }
+
+    /// <summary>Hides a moderator confirmed. Reaching GameConstants.NameStrikesToLock locks renaming.</summary>
+    public int ConfirmedNameStrikes { get; set; }
+
+    /// <summary>Set when renaming is locked by confirmed strikes; cleared only by a moderator.</summary>
+    public DateTime? NameLockedAt { get; set; }
+
     /// <summary>Home continent code (from reverse geocoding).</summary>
     public string HomeContinent { get; set; } = "";
 

@@ -54,7 +54,11 @@ public class UserService : IUserService
         var user = await _db.Users.FindAsync(id);
         if (user == null) return null;
 
-        if (request.DisplayName != null) user.DisplayName = ValidationService.NormalizeDisplayName(request.DisplayName);
+        if (request.DisplayName != null)
+        {
+            user.DisplayName = ValidationService.NormalizeDisplayName(request.DisplayName);
+            user.NameHiddenAt = null; // a chosen name replaces any moderation placeholder (#190)
+        }
         if (request.Color != null) user.Color = request.Color;
         if (request.AvatarId != null) user.AvatarId = request.AvatarId.Value;
 

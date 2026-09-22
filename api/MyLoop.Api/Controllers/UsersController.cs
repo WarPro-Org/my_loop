@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
+using MyLoop.Api.Interfaces;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
 
@@ -16,6 +17,10 @@ namespace MyLoop.Api.Controllers;
 [Authorize]
 public class UsersController : ControllerBase
 {
+    private const string NameLockedCode = "name_locked";
+    private const string NameLockedMessage = "Your name can't be changed right now.";
+    private const string RemovedNameMessage = "This name isn't allowed";
+
     private readonly IUserService _userService;
     private readonly IValidationService _validation;
     private readonly IPushNotificationService _pushService;
@@ -158,7 +163,8 @@ public class UsersController : ControllerBase
     /// Update a user's avatar, color, or display name.
     /// </summary>
     [HttpPatch("{id:guid}")]
-    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request)
+    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request,
+        [FromServices] IModerationService moderation)
     {
         if (await DenySelf(id) is { } deny) return deny;
 
@@ -167,6 +173,7 @@ public class UsersController : ControllerBase
         {
             var nameError = _validation.ValidateDisplayName(request.DisplayName);
             if (nameError != null) return BadRequest(nameError);
+            if (await CheckRenameAllowed(id, request.DisplayName, moderation) is { } refused) return refused;
         }
         if (request.Color != null)
         {
@@ -183,6 +190,21 @@ public class UsersController : ControllerBase
         if (user == null) return NotFound();
         // Self-only (DenySelf above) → owner projection.
         return Ok(UserSelfResponse.FromUser(user));
+    }
+
+    /// <summary>
+    /// Moderation gates on renaming (DR-002b, #190): 409 name_locked while confirmed strikes lock
+    /// the name, and the generic refusal for a name a moderator already removed from this player.
+    /// </summary>
+    private async Task<IActionResult?> CheckRenameAllowed(Guid id, string requestedName, IModerationService moderation)
+    {
+        var user = await _userService.GetById(id);
+        if (user?.NameLockedAt != null)
+            return Conflict(new NameLockedError(NameLockedCode, NameLockedMessage));
+        var normalized = ValidationService.NormalizeDisplayName(requestedName);
+        if (await moderation.IsConfirmedRemovedNameAsync(id, normalized))
+            return BadRequest(RemovedNameMessage);
+        return null;
     }
 
     /// <summary>

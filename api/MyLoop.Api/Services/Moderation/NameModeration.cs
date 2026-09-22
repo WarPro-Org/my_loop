@@ -80,6 +80,15 @@ public static class NameModeration
         return false;
     }
 
+    /// <summary>
+    /// The name shown in place of a hidden one: "Player#" + the first hex digits of the user id.
+    /// Stable per user and derived from data that is already public in API responses. '#' can
+    /// never pass display-name validation, so no player can pick a placeholder-looking name.
+    /// </summary>
+    public static string PlaceholderFor(Guid userId) =>
+        GameConstants.HiddenNamePrefix
+        + userId.ToString("N")[..GameConstants.HiddenNameIdDigits].ToUpperInvariant();
+
     private static bool IsWholeWordMatch(string word) =>
         NameBlocklist.WholeWords.Contains(word) || ReservedWords.Contains(word);
 }
