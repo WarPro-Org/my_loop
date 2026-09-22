@@ -37,6 +37,7 @@ public static class ModerationExtensions
 
         services.AddScoped<INameReportService, NameReportService>();
         services.AddScoped<IModerationService, ModerationService>();
+        services.AddScoped<IBlockService, BlockService>();
         return services;
     }
 }

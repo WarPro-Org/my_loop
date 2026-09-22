@@ -359,6 +359,7 @@ public class ModerationFlowTests : IAsyncLifetime
             await db.Database.ExecuteSqlRawAsync(@"
                 DROP TABLE ""NameReports"";
                 DROP TABLE ""NameModerationCases"";
+                DROP TABLE ""UserBlocks"";
                 ALTER TABLE ""Users"" DROP COLUMN ""NameHiddenAt"", DROP COLUMN ""ConfirmedNameStrikes"", DROP COLUMN ""NameLockedAt"";");
             DbInitializer.ApplyModerationSchema(db);
             DbInitializer.ApplyModerationSchema(db); // idempotent: a second startup is a no-op
@@ -376,6 +377,16 @@ public class ModerationFlowTests : IAsyncLifetime
             Assert.False(await db.NameReports.AnyAsync(r => r.ReportedUserId == target));
             Assert.False(await db.NameModerationCases.AnyAsync(c => c.UserId == target));
         }
+
+        // UserBlocks from the patch: insertable and cascading.
+        var blocker = await SeedUser("Blocker");
+        var blocked = await SeedUser("Blocked");
+        await using (var db = NewDb())
+            Assert.Equal(BlockOutcome.Done, await new BlockService(db).BlockAsync(blocker, blocked));
+        await using (var db = NewDb())
+            await db.Users.Where(u => u.Id == blocked).ExecuteDeleteAsync();
+        await using (var db = NewDb())
+            Assert.False(await db.UserBlocks.AnyAsync());
     }
 
     [Fact]

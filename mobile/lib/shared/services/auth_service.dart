@@ -24,6 +24,7 @@ import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/notification_cache.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
+import 'package:myloop/shared/services/block_list_cache.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Authentication Service
@@ -154,6 +155,7 @@ class AuthService {
     await GameStateCache.clear();
     await TerritoryCache.clear();
     await NotificationCache.clear(); // notification inbox is user-bound too (#30)
+    await BlockListCache.clear(); // block list is user-bound (#190)
     // Only attempt Google sign-out if we previously initialized the SDK.
     if (_googleInitialized) {
       await GoogleSignIn.instance.signOut();

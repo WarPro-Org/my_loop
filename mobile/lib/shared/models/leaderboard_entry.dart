@@ -34,6 +34,17 @@ class LeaderboardEntry {
     required this.rank,
   });
 
+  /// A copy showing [name] instead — used to mask blocked players (#190).
+  LeaderboardEntry withDisplayName(String name) => LeaderboardEntry(
+        userId: userId,
+        displayName: name,
+        avatarId: avatarId,
+        color: color,
+        cellCount: cellCount,
+        areaM2: areaM2,
+        rank: rank,
+      );
+
   /// Deserializes a leaderboard entry from a JSON map returned by the API.
   factory LeaderboardEntry.fromJson(Map<String, dynamic> json) {
     return LeaderboardEntry(

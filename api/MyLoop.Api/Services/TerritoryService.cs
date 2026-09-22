@@ -1306,7 +1306,7 @@ public class TerritoryService : ITerritoryService
 
             foreach (var group in victimGroups)
             {
-                await _pushService.NotifyHexStolen(group.Key, thief.DisplayName, group.Count());
+                await _pushService.NotifyHexStolen(group.Key, thiefUserId, thief.DisplayName, group.Count());
             }
         }
         catch (Exception ex)

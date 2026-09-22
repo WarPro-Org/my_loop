@@ -19,6 +19,7 @@ import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/util/display_name.dart';
+import 'package:myloop/shared/services/block_list_cache.dart';
 
 /// Global key so child widgets (like home_tab) can open the end drawer.
 final homeScaffoldKey = GlobalKey<ScaffoldState>();
@@ -321,6 +322,7 @@ class _ProfileDrawer extends ConsumerWidget {
               await ProfileCache.clear();
               await GameStateCache.clear();
               await TerritoryCache.clear();
+              await BlockListCache.clear();
               try {
                 await api.deleteAccount(uid);
                 await FirebaseAuth.instance.currentUser?.delete();

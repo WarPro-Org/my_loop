@@ -17,6 +17,9 @@ import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/util/display_name.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
+import 'package:myloop/shared/services/block_list_cache.dart';
 
 /// The player's profile screen with identity, stats, and settings.
 class ProfileScreen extends ConsumerWidget {
@@ -79,6 +82,17 @@ class ProfileScreen extends ConsumerWidget {
                 label: 'Notifications',
                 onTap: () => context.push('/notifications'),
               ),
+              // App Store Guideline 1.2: players must be able to reach us.
+              _SettingsTile(
+                icon: Icons.support_agent_outlined,
+                label: 'Contact Support',
+                enabled: AppConstants.supportEmail.isNotEmpty,
+                onTap: () => launchUrl(Uri(
+                  scheme: 'mailto',
+                  path: AppConstants.supportEmail,
+                  query: 'subject=${Uri.encodeComponent(supportEmailSubject)}',
+                )),
+              ),
 
               const SizedBox(height: 24),
 
@@ -131,6 +145,7 @@ class ProfileScreen extends ConsumerWidget {
               await ProfileCache.clear();
               await GameStateCache.clear();
               await TerritoryCache.clear();
+              await BlockListCache.clear();
               await ref.read(territoryRealtimeProvider).disconnect();
               try {
                 await api.deleteAccount(uid);
@@ -307,12 +322,15 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
   }
 }
 
+const supportEmailSubject = 'MyLoop support';
+
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
   final Color? iconColor;
-  const _SettingsTile({required this.icon, required this.label, required this.onTap, this.iconColor});
+  final bool enabled;
+  const _SettingsTile({required this.icon, required this.label, required this.onTap, this.iconColor, this.enabled = true});
 
   @override
   Widget build(BuildContext context) {
@@ -329,6 +347,7 @@ class _SettingsTile extends StatelessWidget {
           leading: Icon(icon, color: iconColor ?? AppColors.dark),
           title: Text(label, style: TextStyle(fontWeight: FontWeight.w600, color: iconColor ?? AppColors.dark)),
           trailing: const Icon(Icons.chevron_right, color: AppColors.grey),
+          enabled: enabled,
           onTap: onTap,
         ),
       ),

@@ -91,7 +91,7 @@ public class PushNotificationDeadTokenTests : IAsyncLifetime
         await using var db = NewDb();
         var service = new PushNotificationService(db, sender, NullLogger<PushNotificationService>.Instance);
 
-        await service.NotifyHexStolen(userId, "Thief", stolenCount: 2);
+        await service.NotifyHexStolen(userId, Guid.NewGuid(), "Thief", stolenCount: 2);
 
         await using var check = NewDb();
         var remaining = await check.DeviceTokens.Where(t => t.UserId == userId).Select(t => t.Token).ToListAsync();
@@ -109,7 +109,7 @@ public class PushNotificationDeadTokenTests : IAsyncLifetime
         await using var db = NewDb();
         var service = new PushNotificationService(db, sender, NullLogger<PushNotificationService>.Instance);
 
-        await service.NotifyHexStolen(userId, "Thief", stolenCount: 3);
+        await service.NotifyHexStolen(userId, Guid.NewGuid(), "Thief", stolenCount: 3);
 
         var call = Assert.Single(sender.Calls);
         Assert.Equal(new[] { "token-a", "token-b", "token-c" }, call.OrderBy(t => t));
@@ -128,7 +128,7 @@ public class PushNotificationDeadTokenTests : IAsyncLifetime
         await using var db = NewDb();
         var service = new PushNotificationService(db, sender, NullLogger<PushNotificationService>.Instance);
 
-        await service.NotifyHexStolen(userId, "Thief", stolenCount: 1);
+        await service.NotifyHexStolen(userId, Guid.NewGuid(), "Thief", stolenCount: 1);
 
         Assert.Empty(sender.Calls);
     }
@@ -146,7 +146,7 @@ public class PushNotificationDeadTokenTests : IAsyncLifetime
 
         // Territory has already changed hands by the time this runs (post-commit) — a push
         // failure must never surface as an error on the thief's claim request.
-        await service.NotifyHexStolen(userId, "Thief", stolenCount: 1);
+        await service.NotifyHexStolen(userId, Guid.NewGuid(), "Thief", stolenCount: 1);
 
         await using var check = NewDb();
         Assert.Equal(1, await check.DeviceTokens.CountAsync(t => t.UserId == userId));

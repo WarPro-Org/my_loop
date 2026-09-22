@@ -21,6 +21,11 @@ class AppConstants {
   static const int minDisplayNameLength = 2;
   static const int maxDisplayNameLength = 20;
 
+  /// Support address for the in-app "Contact support" row (App Store Guideline 1.2 requires
+  /// published contact information). Supplied at build time so it never lives in the repo:
+  /// `flutter build ipa --dart-define=SUPPORT_EMAIL=...`. Empty = the row is shown disabled.
+  static const String supportEmail = String.fromEnvironment('SUPPORT_EMAIL');
+
   // --- Territory / Claims ---
   static const int minGpsPointsPerClaim = 10;
   static const double minWalkDistanceMeters = 200.0;

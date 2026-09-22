@@ -31,6 +31,18 @@ class TerritoryCell {
     this.decayProgress = 0.0,
   });
 
+  /// A copy showing [name] as the owner — used to mask blocked players (#190).
+  TerritoryCell withOwnerName(String name) => TerritoryCell(
+        cellId: cellId,
+        ownerId: ownerId,
+        ownerColor: ownerColor,
+        boundary: boundary,
+        ownerName: name,
+        cooldownExpiresAtUtc: cooldownExpiresAtUtc,
+        parentCellId: parentCellId,
+        decayProgress: decayProgress,
+      );
+
   /// Whether this cell is currently under cooldown protection.
   bool get isOnCooldown =>
       cooldownExpiresAtUtc != null &&

@@ -341,6 +341,24 @@ The same address must be the App Store Connect Support URL/contact.
 
 ---
 
+### 7.1 Implementation notes (PR 3) — deviations from the above
+
+- **Support address is a build flag**, `--dart-define=SUPPORT_EMAIL=…` (decision 2026-09-22), like
+  `API_URL`: the address never lives in the repo. A build without it shows the row disabled —
+  **release/TestFlight builds must pass it**, and it must match App Store Connect.
+- **Masking changes the name only, not the avatar.** Avatars are one of 12 fixed emoji, not
+  user-generated content, so there is nothing to moderate in them.
+- **Inbox masking moves to PR 4**, which adds `actorUserId` to inbox items — masking needs the id.
+  PR 3 masks the leaderboard, map hex popup and the player's profile screen.
+- **Leaderboard "is this me?" now compares user ids, not display names.** Names are not unique
+  (DR-002c), so another player with my name was highlighted as me and could not be tapped; masking
+  would also break a name comparison.
+- **Stale-fetch race fixed:** a slow block-list fetch at sign-in could overwrite (in state and on
+  disk) a block made while it was in flight. The provider counts local edits and discards a fetch
+  that started before one. Regression test fails without the fix.
+- **Found, out of scope:** the login screen's Terms/Privacy links point at the dev ngrok tunnel
+  (`login_screen.dart:154,160`) — dead links in a production build, and an App Store review risk.
+
 ## 8. Cross-stack contract table
 
 | Boundary | .NET (name : type) | Flutter (name : type) |

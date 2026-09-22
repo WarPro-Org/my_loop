@@ -37,3 +37,6 @@ public sealed record RescanResponse(int Scanned, int Hidden);
 
 /// <summary>Machine-readable error for a rename refused because renaming is locked.</summary>
 public sealed record NameLockedError(string Code, string Message);
+
+/// <summary>Body of <c>GET /api/users/me/blocks</c>.</summary>
+public sealed record BlockListResponse(IReadOnlyList<Guid> BlockedUserIds);

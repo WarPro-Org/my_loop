@@ -127,6 +127,8 @@ public static class GameConstants
     public const int MaxNameReportsPerReporterPerDay = 10;
     /// <summary>Moderator-confirmed hides that lock renaming until a moderator unlocks it.</summary>
     public const int NameStrikesToLock = 2;
+    /// <summary>Most players one account may block (bounds the list every client downloads).</summary>
+    public const int MaxBlocksPerUser = 200;
     /// <summary>Users loaded per page by the moderator rescan.</summary>
     public const int NameRescanPageSize = 500;
     /// <summary>Column size for stored name snapshots — above MaxDisplayNameLength so legacy names fit.</summary>

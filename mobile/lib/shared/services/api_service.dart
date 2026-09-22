@@ -367,6 +367,29 @@ class ApiService {
     return response.data as Map<String, dynamic>;
   }
 
+  /// Ids of the players the signed-in user has blocked (DR-002b, #190).
+  Future<Set<String>> getBlockedUserIds() async {
+    final response = await _dio.get('/api/users/me/blocks');
+    final ids = (response.data as Map<String, dynamic>)['blockedUserIds'] as List;
+    return ids.cast<String>().toSet();
+  }
+
+  /// Blocks [userId]: their name is masked for the caller. Idempotent on the server.
+  Future<void> blockUser(String userId) async {
+    await _dio.put('/api/users/$userId/block');
+  }
+
+  /// Unblocks [userId]. Idempotent on the server.
+  Future<void> unblockUser(String userId) async {
+    await _dio.delete('/api/users/$userId/block');
+  }
+
+  /// Reports [userId]'s display name. [reason] is the wire value
+  /// ("offensive" | "impersonation" | "other").
+  Future<void> reportName(String userId, String reason) async {
+    await _dio.post('/api/users/$userId/name-report', data: {'reason': reason});
+  }
+
   /// Permanently deletes the user account and all associated data.
   Future<void> deleteAccount(String userId) async {
     await _dio.delete('/api/users/$userId');

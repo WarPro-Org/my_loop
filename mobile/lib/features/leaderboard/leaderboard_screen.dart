@@ -14,6 +14,7 @@ import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
+import 'package:myloop/features/moderation/blocked_users.dart';
 
 /// Scoped leaderboard providers — one per tab.
 final cityLeaderboardProvider = FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) async {
@@ -168,16 +169,23 @@ class _ScopedLeaderboard extends ConsumerWidget {
           ],
         ),
       ),
-      data: (entries) => Column(
-        children: [
-          if (entries.length >= 3) _TopThreePodium(top3: entries.sublist(0, 3)),
-          const SizedBox(height: 12),
-          Expanded(child: _RankingList(
-            players: entries.length > 3 ? entries.sublist(3) : (entries.length < 3 ? entries : []),
-            currentUserName: user.displayName,
-          )),
-        ],
-      ),
+      data: (raw) {
+        // Blocked players are masked for this viewer only (#190); ranks and counts are unchanged.
+        final blocked = ref.watch(blockedUsersProvider);
+        final entries = [
+          for (final e in raw) e.withDisplayName(displayNameFor(blocked, e.userId, e.displayName)),
+        ];
+        return Column(
+          children: [
+            if (entries.length >= 3) _TopThreePodium(top3: entries.sublist(0, 3)),
+            const SizedBox(height: 12),
+            Expanded(child: _RankingList(
+              players: entries.length > 3 ? entries.sublist(3) : (entries.length < 3 ? entries : []),
+              currentUserId: user.userId,
+            )),
+          ],
+        );
+      },
     );
   }
 }
@@ -257,8 +265,9 @@ class _PodiumItem extends StatelessWidget {
 
 class _RankingList extends StatelessWidget {
   final List<LeaderboardEntry> players;
-  final String currentUserName;
-  const _RankingList({required this.players, required this.currentUserName});
+  /// Matched by id, not name: names are not unique (DR-002c) and blocked names are masked.
+  final String? currentUserId;
+  const _RankingList({required this.players, required this.currentUserId});
 
   @override
   Widget build(BuildContext context) {
@@ -268,7 +277,7 @@ class _RankingList extends StatelessWidget {
       separatorBuilder: (_, _) => const Divider(height: 1, color: AppColors.greyLight),
       itemBuilder: (context, index) {
         final p = players[index];
-        final isMe = p.displayName == currentUserName;
+        final isMe = p.userId == currentUserId;
 
         return GestureDetector(
           behavior: HitTestBehavior.opaque,

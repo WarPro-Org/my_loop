@@ -29,6 +29,7 @@ import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/notification_service.dart';
+import 'package:myloop/features/moderation/blocked_users.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -538,8 +539,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     return inside;
   }
 
-  void _showHexOwnerSheet(TerritoryCell cell) {
+  void _showHexOwnerSheet(TerritoryCell rawCell) {
     final profile = ref.read(userProfileProvider);
+    // A blocked owner is shown as "Blocked player" to this viewer only (#190).
+    final ownerName = displayNameFor(ref.read(blockedUsersProvider), rawCell.ownerId, rawCell.ownerName);
+    final cell = rawCell.withOwnerName(ownerName);
     final isOwn = cell.ownerId == profile.userId;
     // Show owner's actual color only for own hexes; black for others
     final ownerColor = isOwn
