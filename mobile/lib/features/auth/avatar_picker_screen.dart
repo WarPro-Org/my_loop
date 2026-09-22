@@ -15,6 +15,7 @@ import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
+import 'package:myloop/shared/util/display_name.dart';
 
 /// Screen where new players create their in-game identity.
 ///
@@ -75,6 +76,9 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
                       onChanged: (_) => setState(() {}),
                       decoration: InputDecoration(
                         hintText: 'Your display name',
+                        errorText: _nameController.text.trim().isEmpty
+                            ? null
+                            : validateDisplayName(_nameController.text),
                         prefixIcon: const Icon(Icons.person),
                         filled: true,
                         fillColor: AppColors.white,
@@ -167,7 +171,7 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
               // Continue button
               BigButton(
                 label: "LET'S GO! 🚀",
-                onPressed: _nameController.text.trim().isEmpty
+                onPressed: validateDisplayName(_nameController.text) != null
                     ? () {}
                     : () => _registerAndContinue(),
               ),

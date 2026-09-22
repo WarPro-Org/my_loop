@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
+import 'package:myloop/shared/util/display_name.dart';
 
 /// Screen for users who prefer not to use Google/Apple sign-in.
 ///
@@ -29,7 +30,7 @@ class _LocalSignupScreenState extends State<LocalSignupScreen> {
     super.initState();
     _nameController.addListener(() {
       final name = _nameController.text.trim();
-      final valid = name.length >= 2 && name.length <= 20 && RegExp(r"^[a-zA-Z0-9 \-_']+$").hasMatch(name);
+      final valid = validateDisplayName(name) == null;
       if (valid != _isValid) setState(() => _isValid = valid);
     });
   }
