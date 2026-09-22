@@ -4,6 +4,8 @@
 /// profile show [blockedPlayerLabel]. It never affects gameplay.
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
@@ -15,6 +17,8 @@ final _log = Logger('BlockedUsers');
 const blockedPlayerLabel = 'Blocked player';
 const blockOfflineError = "You're offline — connect to change who you block";
 const blockFailedError = "Couldn't update your block list — try again";
+const blockedConfirmation = 'Player blocked — their name is hidden for you';
+const unblockedConfirmation = 'Player unblocked';
 
 /// The name to show for [userId]: [blockedPlayerLabel] when blocked, otherwise [name]. Pure.
 String displayNameFor(Set<String> blocked, String userId, String name) =>
@@ -33,7 +37,8 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
     // Rebuild (and reload) only when the signed-in account changes, not on every stat update.
     final userId = ref.watch(userProfileProvider.select((p) => p.userId));
     if (userId == null || userId.isEmpty) return const {};
-    _load(userId);
+    // Deliberately not awaited: build() must return synchronously; _load sets state when done.
+    unawaited(_load(userId));
     return const {};
   }
 
@@ -67,10 +72,12 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
     final api = ref.read(apiServiceProvider);
     try {
       blocking ? await api.blockUser(userId) : await api.unblockUser(userId);
-    } catch (e) {
+    } catch (e, s) {
       if (ref.mounted) state = previous;
       if (isServerUnreachable(e)) return blockOfflineError;
-      return ApiService.extractApiError(e) ?? blockFailedError;
+      final serverReason = ApiService.extractApiError(e);
+      if (serverReason == null) _log.warning('Block update failed unexpectedly', e, s);
+      return serverReason ?? blockFailedError;
     }
     final owner = ref.read(userProfileProvider).userId;
     if (owner != null && ref.mounted) await BlockListCache.save(owner, state);

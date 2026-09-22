@@ -3,9 +3,12 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/moderation/blocked_users.dart';
 import 'package:myloop/shared/services/api_service.dart';
+
+final _log = Logger('PlayerActions');
 
 /// Why a name is being reported. [name] is the API wire value.
 enum NameReportReason {
@@ -17,6 +20,11 @@ enum NameReportReason {
   final String label;
 }
 
+const playerOptionsTooltip = 'Player options';
+const reportNameLabel = 'Report name';
+const blockPlayerLabel = 'Block player';
+const unblockPlayerLabel = 'Unblock player';
+const reportReasonPrompt = 'Why are you reporting this name?';
 const reportThanksMessage = "Thanks — we'll review this name";
 const reportOfflineError = "You're offline — connect to report a name";
 const reportFailedError = "Couldn't send your report — try again";
@@ -27,9 +35,11 @@ Future<String> submitNameReport(ApiService api, String userId, NameReportReason 
   try {
     await api.reportName(userId, reason.name);
     return reportThanksMessage;
-  } catch (e) {
+  } catch (e, s) {
     if (isServerUnreachable(e)) return reportOfflineError;
-    return ApiService.extractApiError(e) ?? reportFailedError;
+    final serverReason = ApiService.extractApiError(e);
+    if (serverReason == null) _log.warning('Name report failed unexpectedly', e, s);
+    return serverReason ?? reportFailedError;
   }
 }
 
@@ -44,14 +54,14 @@ class PlayerActionsMenu extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isBlocked = ref.watch(blockedUsersProvider).contains(userId);
     return PopupMenuButton<_PlayerAction>(
-      tooltip: 'Player options',
+      tooltip: playerOptionsTooltip,
       icon: const Icon(Icons.more_vert),
       onSelected: (action) => _onSelected(context, ref, action),
       itemBuilder: (_) => [
-        const PopupMenuItem(value: _PlayerAction.report, child: Text('Report name')),
+        const PopupMenuItem(value: _PlayerAction.report, child: Text(reportNameLabel)),
         isBlocked
-            ? const PopupMenuItem(value: _PlayerAction.unblock, child: Text('Unblock player'))
-            : const PopupMenuItem(value: _PlayerAction.block, child: Text('Block player')),
+            ? const PopupMenuItem(value: _PlayerAction.unblock, child: Text(unblockPlayerLabel))
+            : const PopupMenuItem(value: _PlayerAction.block, child: Text(blockPlayerLabel)),
       ],
     );
   }
@@ -67,10 +77,10 @@ class PlayerActionsMenu extends ConsumerWidget {
         messenger.showSnackBar(SnackBar(content: Text(message)));
       case _PlayerAction.block:
         final error = await notifier.block(userId);
-        messenger.showSnackBar(SnackBar(content: Text(error ?? 'Player blocked — their name is hidden for you')));
+        messenger.showSnackBar(SnackBar(content: Text(error ?? blockedConfirmation)));
       case _PlayerAction.unblock:
         final error = await notifier.unblock(userId);
-        messenger.showSnackBar(SnackBar(content: Text(error ?? 'Player unblocked')));
+        messenger.showSnackBar(SnackBar(content: Text(error ?? unblockedConfirmation)));
     }
   }
 
@@ -84,7 +94,7 @@ class PlayerActionsMenu extends ConsumerWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
-                child: Text('Why are you reporting this name?', style: Theme.of(ctx).textTheme.titleLarge),
+                child: Text(reportReasonPrompt, style: Theme.of(ctx).textTheme.titleLarge),
               ),
               for (final reason in NameReportReason.values)
                 ListTile(

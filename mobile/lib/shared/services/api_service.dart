@@ -387,7 +387,7 @@ class ApiService {
   /// Reports [userId]'s display name. [reason] is the wire value
   /// ("offensive" | "impersonation" | "other").
   Future<void> reportName(String userId, String reason) async {
-    await _dio.post('/api/users/$userId/name-report', data: {'reason': reason});
+    await _dio.post('/api/users/$userId/name-reports', data: {'reason': reason});
   }
 
   /// Permanently deletes the user account and all associated data.

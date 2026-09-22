@@ -85,7 +85,7 @@ class ProfileScreen extends ConsumerWidget {
               // App Store Guideline 1.2: players must be able to reach us.
               _SettingsTile(
                 icon: Icons.support_agent_outlined,
-                label: 'Contact Support',
+                label: contactSupportLabel,
                 enabled: AppConstants.supportEmail.isNotEmpty,
                 onTap: () => launchUrl(Uri(
                   scheme: 'mailto',
@@ -323,6 +323,7 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
 }
 
 const supportEmailSubject = 'MyLoop support';
+const contactSupportLabel = 'Contact Support';
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
