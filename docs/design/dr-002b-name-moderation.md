@@ -81,8 +81,21 @@ Tiers are therefore derived, not hand-sorted:
   English words (ass, cock, nazi…). Reserved staff words live in `NameModeration`.
 - **Dropped** = terms that *are* common names (dick, regina, anita) and identity terms (gay,
   lesbian, bisexual, trans, …) — self-description is never blocked; slurs are.
-- Result: 900 severe, 381 whole-word, 0 corpus names blocked. A test asserts every generated
-  term is fold-stable under the C# `Fold`, so the script and the API cannot drift.
+- Result: 898 severe, 383 whole-word, 7 exceptions.
+
+**Review fixes (#193 agent review).** The first corpus was Anglo-heavy, and `shit`/`fuk` blocked
+Harshit, Rakshit, Kshitij, Ashita, Fukuda, Fukuoka…, which matters for the beta's
+Bangalore/Mumbai/Tokyo players:
+- `shit` and `fuk` are whole-word only. Compounds such as *bullshit* and *shithead* stay
+  substring matches.
+- The generator adds a curated South and East Asian name list and **fails** if any severe term
+  hits a corpus name not covered by an exception.
+- Exceptions apply **per word** (removed before matching), so "Scunthorpe United" passes.
+- Reserved words also match with trailing digits ("Admin2", "Moderator1"), and the brand
+  `myloop` is reserved anywhere in a name ("MyLoopSupport").
+- `ſ ƒ ħ ŧ ƀ ƶ ǥ` fold to their Latin reading.
+- `scripts/moderation/fold_vectors.json` is asserted by both the generator and the xUnit suite,
+  so the two folds cannot drift apart. (The old fold-stability test could not detect that drift.)
 
 ---
 

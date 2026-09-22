@@ -26,7 +26,8 @@ public static class NameModeration
     private static readonly FrozenDictionary<char, string> ExplicitFolds = new Dictionary<char, string>
     {
         ['ł'] = "l", ['ø'] = "o", ['đ'] = "d", ['ß'] = "ss", ['æ'] = "ae", ['œ'] = "oe",
-        ['ı'] = "i", ['ð'] = "d", ['þ'] = "th",
+        ['ı'] = "i", ['ð'] = "d", ['þ'] = "th", ['ſ'] = "s", ['ƒ'] = "f", ['ħ'] = "h", ['ŧ'] = "t",
+        ['ƀ'] = "b", ['ƶ'] = "z", ['ǥ'] = "g",
     }.ToFrozenDictionary();
 
     private static readonly FrozenDictionary<char, char> LeetFolds = new Dictionary<char, char>
@@ -36,13 +37,23 @@ public static class NameModeration
     }.ToFrozenDictionary();
 
     private static readonly char[] WordSeparators = [' ', '-', '_', '\''];
+    private static readonly char[] Digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+    /// <summary>The brand is reserved anywhere in a name ("MyLoopSupport", "TheMyLoopTeam").</summary>
+    private const string ReservedBrand = "myloop";
 
     /// <summary>
     /// Lowercase, strip accents, map leetspeak. Input must already be
     /// <see cref="ValidationService.NormalizeDisplayName"/> output. Must stay identical to
     /// <c>fold()</c> in scripts/moderation/build_name_blocklist.py, which pre-folds the terms.
     /// </summary>
-    public static string Fold(string normalizedName)
+    public static string Fold(string normalizedName) => Fold(normalizedName, mapLeetspeak: true);
+
+    /// <param name="mapLeetspeak">
+    /// False keeps digits as digits, so a reserved word followed by a number ("Moderator1") can be
+    /// recognised before '1' becomes 'i'.
+    /// </param>
+    private static string Fold(string normalizedName, bool mapLeetspeak)
     {
         var lowered = new StringBuilder(normalizedName.Length);
         foreach (var c in normalizedName.ToLowerInvariant())
@@ -55,7 +66,7 @@ public static class NameModeration
         foreach (var c in lowered.ToString().Normalize(NormalizationForm.FormD))
         {
             if (CharUnicodeInfo.GetUnicodeCategory(c) == UnicodeCategory.NonSpacingMark) continue;
-            folded.Append(LeetFolds.TryGetValue(c, out var plain) ? plain : c);
+            folded.Append(mapLeetspeak && LeetFolds.TryGetValue(c, out var plain) ? plain : c);
         }
         return folded.ToString();
     }
@@ -65,14 +76,32 @@ public static class NameModeration
     /// separator-stripped name, or a whole-word/reserved term as a complete word (or as the
     /// whole name once separators are removed, so "my_loop" and "a-s-s" still match).
     /// </summary>
-    public static bool IsBlocked(string normalizedName)
+    public static bool IsBlocked(string normalizedName) =>
+        IsReserved(normalizedName) || MatchesBlocklist(normalizedName);
+
+    /// <summary>
+    /// Staff impersonation: a reserved word as a whole word even with trailing digits ("Admin2",
+    /// "Moderator1"), or the brand anywhere ("MyLoopSupport").
+    /// </summary>
+    private static bool IsReserved(string normalizedName)
     {
-        var words = Fold(normalizedName).Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
+        var words = Fold(normalizedName, mapLeetspeak: false).Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
+        if (string.Concat(words).Contains(ReservedBrand, StringComparison.Ordinal)) return true;
+        return words.Any(w => ReservedWords.Contains(w.TrimEnd(Digits)));
+    }
+
+    private static bool MatchesBlocklist(string normalizedName)
+    {
+        // Exception words (real names/places that contain a severe term) are removed before
+        // matching, so they also pass inside longer names ("Scunthorpe United", "Harshit Kumar").
+        var words = Fold(normalizedName)
+            .Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => !NameBlocklist.Exceptions.Contains(w))
+            .ToArray();
         var joined = string.Concat(words);
+        if (joined.Length == 0) return false;
 
-        if (NameBlocklist.Exceptions.Contains(joined)) return false;
         if (IsWholeWordMatch(joined) || words.Any(IsWholeWordMatch)) return true;
-
         foreach (var term in NameBlocklist.SevereSubstrings)
         {
             if (joined.Contains(term, StringComparison.Ordinal)) return true;

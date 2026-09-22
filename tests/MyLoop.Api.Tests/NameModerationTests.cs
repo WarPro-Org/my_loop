@@ -1,3 +1,4 @@
+using System.Text.Json;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Services;
 using MyLoop.Api.Services.Moderation;
@@ -16,7 +17,13 @@ public class NameModerationTests
     [Theory]
     [InlineData("Hitler")]
     [InlineData("H1tl3r")]             // leetspeak
-    [InlineData("xXshitXx")]           // severe term embedded
+    [InlineData("xXfuckXx")]           // severe term embedded
+    [InlineData("Shit")]               // whole-word tier (not substring: Harshit, Kshitij)
+    [InlineData("\u017Fhit")]          // ſ (long s) folds to s
+    [InlineData("\u0192uck")]          // ƒ folds to f
+    [InlineData("Admin2")]             // reserved word + trailing digits
+    [InlineData("Moderator1")]         // digits checked before leetspeak turns 1 into i
+    [InlineData("MyLoopSupport")]      // brand anywhere
     [InlineData("s-h-i-t")]            // separators stripped before substring match
     [InlineData("Fuckface")]
     [InlineData("N1gg3r")]
@@ -56,7 +63,19 @@ public class NameModerationTests
     [InlineData("Regina")]             // a name, dropped from the list
     [InlineData("Sega Fan")]
     [InlineData("Pipari")]             // Finnish "pepper"
-    [InlineData("Jean-Luc_2")]
+    [InlineData("Harshit")]            // #193 review: South Asian names containing "shit"
+    [InlineData("Rakshit Kumar")]
+    [InlineData("Kshitij")]
+    [InlineData("Ashita")]
+    [InlineData("Fukuda")]             // Japanese names containing "fuk"
+    [InlineData("Fukuoka Fan")]
+    [InlineData("Scunthorpe United")]  // exception word inside a longer name
+    [InlineData("Slutsky")]
+    [InlineData("Sporn")]
+    [InlineData("Cazzola")]
+    [InlineData("Cumming")]
+    [InlineData("Admiral")]            // reserved words stay whole-word
+        [InlineData("Jean-Luc_2")]
     [InlineData("Łukasz")]
     public void Real_names_and_innocent_words_are_accepted(string name) =>
         Assert.Null(_validation.ValidateDisplayName(name));
@@ -68,6 +87,31 @@ public class NameModerationTests
     [InlineData("Straße", "strasse")]
     public void Fold_lowercases_strips_accents_and_maps_leetspeak(string input, string expected) =>
         Assert.Equal(expected, NameModeration.Fold(input));
+
+    public static TheoryData<string, string> FoldVectors()
+    {
+        // scripts/moderation/fold_vectors.json is also asserted by build_name_blocklist.py before it
+        // generates anything, so the Python and C# folds are held to one shared table.
+        var data = new TheoryData<string, string>();
+        foreach (var pair in JsonSerializer.Deserialize<string[][]>(ReadRepoFile("scripts/moderation/fold_vectors.json"))!)
+            data.Add(pair[0], pair[1]);
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(FoldVectors))]
+    public void Fold_matches_the_shared_vectors(string input, string expected) =>
+        Assert.Equal(expected, NameModeration.Fold(input));
+
+    private static string ReadRepoFile(string relativePath)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        {
+            var candidate = Path.Combine(dir.FullName, relativePath);
+            if (File.Exists(candidate)) return File.ReadAllText(candidate);
+        }
+        throw new FileNotFoundException($"{relativePath} not found above {AppContext.BaseDirectory}");
+    }
 
     [Fact]
     public void Generated_terms_are_fold_stable_so_the_script_and_the_api_agree()

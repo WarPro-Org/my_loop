@@ -103,7 +103,7 @@ class UserProfileNotifier extends Notifier<UserProfile> {
         await ref.read(apiServiceProvider).updateUser(userId: userId, displayName: canonical);
       } catch (e, s) {
         if (isServerUnreachable(e)) return displayNameOfflineError;
-        final serverReason = ApiService.extractApiError(e);
+        final serverReason = ApiService.clientErrorReason(e);
         // A server reason is an expected refusal; anything else is a real failure worth a log.
         if (serverReason == null) _log.warning('Rename failed unexpectedly', e, s);
         return serverReason ?? displayNameSaveFailedError;
