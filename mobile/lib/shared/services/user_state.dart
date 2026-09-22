@@ -5,9 +5,12 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/util/display_name.dart';
+
+final _log = Logger('UserProfile');
 
 /// Immutable snapshot of the current user's profile.
 class UserProfile {
@@ -98,9 +101,12 @@ class UserProfileNotifier extends Notifier<UserProfile> {
     if (userId != null) {
       try {
         await ref.read(apiServiceProvider).updateUser(userId: userId, displayName: canonical);
-      } catch (e) {
+      } catch (e, s) {
         if (isServerUnreachable(e)) return displayNameOfflineError;
-        return ApiService.extractApiError(e) ?? displayNameSaveFailedError;
+        final serverReason = ApiService.extractApiError(e);
+        // A server reason is an expected refusal; anything else is a real failure worth a log.
+        if (serverReason == null) _log.warning('Rename failed unexpectedly', e, s);
+        return serverReason ?? displayNameSaveFailedError;
       }
     }
     state = state.copyWith(displayName: canonical);
