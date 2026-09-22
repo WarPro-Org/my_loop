@@ -78,12 +78,13 @@ public partial class ValidationService : IValidationService
 
     /// <summary>
     /// Latin script only (#189): ASCII, Latin-1 letters (minus × U+00D7 and ÷ U+00F7),
-    /// Latin Extended-A/B and Latin Extended Additional — French, German, Nordic, Polish,
+    /// Latin Extended-A/B (minus the click letters U+01C0–U+01C3 ǀ ǁ ǂ ǃ, which read as | || ǂ !)
+    /// and Latin Extended Additional — French, German, Nordic, Polish,
     /// Czech, Romanian, Turkish, Vietnamese. Other scripts stay out so Cyrillic/Greek
     /// look-alikes ("Аdmin") cannot impersonate. Combining marks left after NFC are rejected.
     /// Mirrors displayNamePattern in mobile/lib/shared/util/display_name.dart.
     /// </summary>
-    [GeneratedRegex(@"^[A-Za-z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u1E00-\u1EFF \-_']+$")]
+    [GeneratedRegex(@"^[A-Za-z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u01BF\u01C4-\u024F\u1E00-\u1EFF \-_']+$")]
     private static partial Regex MyDisplayNameRegex();
 
     [GeneratedRegex(@"^#[0-9A-Fa-f]{6}$")]

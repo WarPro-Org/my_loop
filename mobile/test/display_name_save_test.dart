@@ -89,6 +89,21 @@ void main() {
     expect(container.read(userProfileProvider).displayName, 'Robin');
   });
 
+  test('a server error page is never shown as the reason', () async {
+    final request = RequestOptions(path: '/api/users/u1');
+    final gatewayError = DioException(
+      requestOptions: request,
+      type: DioExceptionType.badResponse,
+      response: Response(requestOptions: request, statusCode: 502, data: '<html>Bad Gateway</html>'),
+    );
+    final container = containerWith(_FakeApi(() async => throw gatewayError));
+
+    final error = await container.read(userProfileProvider.notifier).updateDisplayName('Kai');
+
+    expect(error, displayNameSaveFailedError);
+    expect(container.read(userProfileProvider).displayName, 'Robin');
+  });
+
   test('a rename while offline keeps the old name and says why', () async {
     final container = containerWith(_FakeApi(() async => throw _unreachable()));
 

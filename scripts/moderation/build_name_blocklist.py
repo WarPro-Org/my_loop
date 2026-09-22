@@ -20,6 +20,7 @@ Sources are pinned to commits so a re-run is reproducible. Usage:
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import unicodedata
@@ -42,9 +43,10 @@ OUT = (pathlib.Path(__file__).resolve().parents[2]
        / "api/MyLoop.Api/Constants/NameBlocklist.g.cs")
 
 # Always substring-matched, regardless of corpus hits. Each was checked against the name corpus.
-# Deliberately NOT here: rapist (therapist), pussy (pussycat), penis (Penistone), cock/dick (surnames).
+# Deliberately NOT here: rapist (therapist), pussy (pussycat), penis (Penistone), cock/dick (surnames),
+# shit (Harshit, Kshitij, Ashita…) and fuk (Fukuda, Fukuoka…) — those are whole-word only (#193 review).
 CORE = [
-    "fuck", "fuk", "cunt", "shit", "nigger", "nigga", "hitler", "whore", "slut", "retard",
+    "fuck", "cunt", "nigger", "nigga", "hitler", "whore", "slut", "retard",
     "faggot", "fagot", "bitch", "bastard", "wanker", "porn", "motherfuck", "cocksuck", "asshole",
     "arsehole", "dildo", "jizz", "pedophil", "paedophil", "goebbels", "himmler", "vagina",
     "arschloch", "hurensohn", "fotze", "schlampe", "wichser", "connard", "salope", "encule",
@@ -53,7 +55,7 @@ CORE = [
 ]
 # English words that are insults/sexual terms, so the ordinary-word filter must keep them.
 KEEP_WHOLE_WORD = [
-    "ass", "arse", "tit", "tits", "cum", "fag", "fags", "twat", "cock", "cocks", "anal", "anus",
+    "shit", "fuk", "ass", "arse", "tit", "tits", "cum", "fag", "fags", "twat", "cock", "cocks", "anal", "anus",
     "boob", "boobs", "clit", "coon", "coons", "kike", "milf", "nazi", "nazis", "nude", "orgy",
     "poof", "poon", "quim", "sex", "smut", "spic", "wank", "horny", "pedo", "rape", "rapist",
     "homo", "dyke", "heil", "penis", "pussy", "chink", "gook", "tranny", "negro", "semen",
@@ -82,10 +84,35 @@ IDENTITY = [
     "gay", "lesbian", "bisexual", "homosexual", "heterosexual", "queer", "trans", "transsexual",
     "transgender", "sexuality", "sexual", "intersex", "travesti", "lesbica",
 ]
-EXCEPTIONS = ["scunthorpe", "penistone"]
+# Whole words that are real names/places containing a severe term. Matched per word, so
+# "Scunthorpe United" passes too. Generation fails if a CORE term hits an uncovered name.
+EXCEPTIONS = ["scunthorpe", "penistone", "slutsky", "sporn", "cazzola", "cumming", "bastardo"]
+
+# The NAMES corpus is Anglo-heavy; these cover players the beta actually has (Bangalore,
+# Mumbai, Delhi, Tokyo seed cities) so collisions like Harshit→"shit" are measured, not missed.
+EXTRA_NAMES = [
+    # South Asian
+    "Harshit", "Rakshit", "Kshitij", "Nishit", "Ashit", "Dikshit", "Ashita", "Harshita",
+    "Nishita", "Rakshita", "Kshitiz", "Aarav", "Vivaan", "Aditya", "Arjun", "Ishaan", "Rohan",
+    "Ananya", "Diya", "Saanvi", "Aadhya", "Priya", "Pooja", "Ankita", "Shikha", "Sakshi",
+    "Kumar", "Sharma", "Verma", "Gupta", "Singh", "Patel", "Reddy", "Nair", "Iyer", "Menon",
+    "Chatterjee", "Banerjee", "Mukherjee", "Bhattacharya", "Deshpande", "Kulkarni", "Joshi",
+    "Pandey", "Tiwari", "Mishra", "Chauhan", "Rathore", "Shekhawat", "Suresh", "Ramesh",
+    "Mahesh", "Dinesh", "Rajesh", "Ganesh", "Lokesh", "Nitesh", "Hitesh", "Ritesh", "Mukesh",
+    "Kamlesh", "Sunita", "Anita", "Kavita", "Lalita", "Arpita", "Shweta", "Swati", "Pankaj",
+    "Fatima", "Ayesha", "Zainab", "Imran", "Farhan", "Arshad", "Ashfaq", "Mushtaq",
+    # East Asian (romanised)
+    "Fukuda", "Fukushima", "Fukuyama", "Fukui", "Fukuoka", "Fukumoto", "Fukuzawa", "Hitomi",
+    "Takeshi", "Yuki", "Hiro", "Hiroshi", "Satoshi", "Kenji", "Sakura", "Haruki", "Shinji",
+    "Shiho", "Shiori", "Kazuki", "Daisuke", "Tanaka", "Suzuki", "Watanabe", "Ito", "Kobayashi",
+    "Matsumoto", "Shimizu", "Yamashita", "Ishikawa", "Nakamura", "Shun", "Chen", "Wang",
+    "Zhang", "Xiao", "Zhou", "Huang", "Kim", "Park", "Choi", "Jung", "Kang", "Cho", "Yoon",
+    "Nguyen", "Tran", "Pham", "Phuc", "Phuong", "Dang", "Bui",
+]
 
 EXPLICIT = {"ł": "l", "ø": "o", "đ": "d", "ß": "ss", "æ": "ae", "œ": "oe", "ı": "i", "ð": "d",
-            "þ": "th"}
+            "þ": "th", "ſ": "s", "ƒ": "f", "ħ": "h", "ŧ": "t", "ƀ": "b", "ƶ": "z", "ǥ": "g"}
+FOLD_VECTORS = pathlib.Path(__file__).resolve().parent / "fold_vectors.json"
 LEET = {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "@": "a", "$": "s"}
 SEPARATORS = re.compile(r"[ \-_'’.]+")
 LATIN_FOLDED = re.compile(r"^[a-z0-9]+$")
@@ -110,9 +137,18 @@ def fetch(url: str) -> list[str]:
         return [line.strip() for line in response.read().decode("utf-8").splitlines() if line.strip()]
 
 
+def check_fold_vectors() -> None:
+    """The same table is asserted by NameModerationTests, so the two folds cannot drift."""
+    for raw, expected in json.loads(FOLD_VECTORS.read_text(encoding="utf-8")):
+        actual = fold(raw)
+        if actual != expected:
+            raise SystemExit(f"fold({raw!r}) = {actual!r}, expected {expected!r}")
+
+
 def main() -> None:
+    check_fold_vectors()
     raw_terms = {joined(t) for lang in LANGS for t in fetch(LDNOOBW.format(lang=lang))}
-    names = {joined(n) for url in NAMES for n in fetch(url)}
+    names = {joined(n) for url in NAMES for n in fetch(url)} | {joined(n) for n in EXTRA_NAMES}
     words = {w.lower() for w in fetch(WORDS) if len(w) >= MIN_WHOLE_WORD_LENGTH}
 
     core = {joined(t) for t in CORE}
@@ -133,10 +169,12 @@ def main() -> None:
             whole.add(term)
     whole |= keep - severe
 
-    render(sorted(severe), sorted(whole - severe), sorted(joined(e) for e in EXCEPTIONS))
-    name_hits = sorted(n for n in names if any(s in n for s in severe))
-    print(f"severe={len(severe)} whole={len(whole - severe)} exceptions={len(EXCEPTIONS)}")
-    print(f"corpus names containing a severe term: {name_hits}")
+    exceptions = {joined(e) for e in EXCEPTIONS}
+    name_hits = sorted(n for n in names - exceptions if any(t in n for t in severe))
+    if name_hits:
+        raise SystemExit(f"severe terms hit real names — move the term or add an exception: {name_hits}")
+    render(sorted(severe), sorted(whole - severe), sorted(exceptions))
+    print(f"severe={len(severe)} whole={len(whole - severe)} exceptions={len(exceptions)}")
 
 
 def render(severe: list[str], whole: list[str], exceptions: list[str]) -> None:
@@ -178,7 +216,7 @@ public static class NameBlocklist
 {block(whole)}
     }}.ToFrozenSet(StringComparer.Ordinal);
 
-    /// <summary>Folded, separator-stripped names that are never blocked.</summary>
+    /// <summary>Folded words that are never blocked (real names/places containing a severe term).</summary>
     public static readonly FrozenSet<string> Exceptions = new[]
     {{
 {block(exceptions)}
