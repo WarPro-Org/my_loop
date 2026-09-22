@@ -22,6 +22,8 @@ void main() {
       '陈伟': displayNameCharactersError,
       'Ali×2': displayNameCharactersError,
       'Ann÷': displayNameCharactersError,
+      'Hi\u01C3\u01C3\u01C3': displayNameCharactersError, // ǃ reads as "!"
+      'Adm\u01C0n': displayNameCharactersError, // ǀ reads as "|"
       'Zé́': displayNameCharactersError,
       'Bob😀': displayNameCharactersError,
       'Bob.': displayNameCharactersError,
