@@ -32,6 +32,12 @@ void main() {
     }
   });
 
+  test('legacy out-of-catalogue ids map to a savable id (the emoji already shown)', () {
+    expect(catalogueAvatarId(30), avatarEmojis.length - 1);
+    expect(catalogueAvatarId(-1), 0);
+    expect(catalogueAvatarId(5), 5);
+  });
+
   test('avatar catalogue has no duplicates', () {
     expect(avatarEmojis.toSet().length, avatarEmojis.length);
   });
