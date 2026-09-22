@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
@@ -145,7 +146,7 @@ public class LeaderboardConsistencyTests : IAsyncLifetime
         Guid newcomer;
         await using (var db = NewDb())
         {
-            var registered = await new UserService(db, Mock.Of<IValidationService>()).Register(
+            var registered = await new UserService(db, Mock.Of<IValidationService>(), NullLogger<UserService>.Instance).Register(
                 new RegisterRequest { DisplayName = "New", Color = "#222222" },
                 $"uid-new-{Guid.NewGuid()}", "google");
             newcomer = registered.Id;
@@ -169,7 +170,7 @@ public class LeaderboardConsistencyTests : IAsyncLifetime
         var me = await SeedRankedUser(90, 2, yesterday);
 
         await using var db = NewDb();
-        var profile = await new UserService(db, Mock.Of<IValidationService>()).GetRichProfile(me);
+        var profile = await new UserService(db, Mock.Of<IValidationService>(), NullLogger<UserService>.Instance).GetRichProfile(me);
 
         Assert.NotNull(profile);
         Assert.Equal(2, profile!.CurrentRank);
