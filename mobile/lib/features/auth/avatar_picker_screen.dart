@@ -253,7 +253,10 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Registration failed: $e'), backgroundColor: AppColors.red),
+          SnackBar(
+            content: Text('Registration failed: ${ApiService.extractApiError(e) ?? e}'),
+            backgroundColor: AppColors.red,
+          ),
         );
       }
     }

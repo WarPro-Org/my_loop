@@ -160,6 +160,7 @@ class ProfileScreen extends ConsumerWidget {
     final profile = ref.read(userProfileProvider);
     final controller = TextEditingController(text: profile.displayName);
     String? errorText;
+    var saving = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -189,21 +190,32 @@ class ProfileScreen extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    final name = controller.text.trim();
-                    // Validate before the optimistic update: the save is fire-and-forget, so a
-                    // name the API rejects would otherwise show locally but never persist (#189).
-                    final validated = validateDisplayName(name);
-                    if (validated != null) {
-                      setSheetState(() => errorText = validated);
-                      return;
-                    }
-                    ref.read(userProfileProvider.notifier).updateDisplayName(name);
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Name updated!'), backgroundColor: AppColors.primary),
-                    );
-                  },
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final name = controller.text.trim();
+                          final validated = validateDisplayName(name);
+                          if (validated != null) {
+                            setSheetState(() => errorText = validated);
+                            return;
+                          }
+                          final messenger = ScaffoldMessenger.of(context);
+                          setSheetState(() => saving = true);
+                          // Awaited: the API can refuse a name the client can't pre-check (#190).
+                          final error = await ref.read(userProfileProvider.notifier).updateDisplayName(name);
+                          if (!ctx.mounted) return;
+                          if (error != null) {
+                            setSheetState(() {
+                              saving = false;
+                              errorText = error;
+                            });
+                            return;
+                          }
+                          Navigator.pop(ctx);
+                          messenger.showSnackBar(
+                            const SnackBar(content: Text('Name updated!'), backgroundColor: AppColors.primary),
+                          );
+                        },
                   child: const Text('SAVE'),
                 ),
               ),

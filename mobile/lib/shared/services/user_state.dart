@@ -87,11 +87,24 @@ class UserProfileNotifier extends Notifier<UserProfile> {
     _persistUpdate(avatarId: avatarId, color: color);
   }
 
-  /// Updates display name.
-  void updateDisplayName(String name) {
+  /// Saves a new display name. Returns null on success, or a message to show the player.
+  ///
+  /// Waits for the API instead of updating optimistically: the server can refuse a name the
+  /// client cannot pre-check (the moderation blocklist, #190), and a fire-and-forget save
+  /// would show the new name locally while the server kept the old one.
+  Future<String?> updateDisplayName(String name) async {
     final canonical = canonicalDisplayName(name);
+    final userId = state.userId;
+    if (userId != null) {
+      try {
+        await ref.read(apiServiceProvider).updateUser(userId: userId, displayName: canonical);
+      } catch (e) {
+        if (isServerUnreachable(e)) return displayNameOfflineError;
+        return ApiService.extractApiError(e) ?? displayNameSaveFailedError;
+      }
+    }
     state = state.copyWith(displayName: canonical);
-    _persistUpdate(displayName: canonical);
+    return null;
   }
 
   /// Fire-and-forget API call to persist profile changes.

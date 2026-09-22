@@ -20,6 +20,8 @@ const displayNameTooShortError =
 const displayNameTooLongError =
     'Name must be ${AppConstants.maxDisplayNameLength} characters or less';
 const displayNameCharactersError = 'Only letters, numbers, spaces, hyphens and apostrophes allowed';
+const displayNameOfflineError = "You're offline — connect to change your name";
+const displayNameSaveFailedError = "Couldn't save your name — try again";
 
 const _smartApostrophe = '\u2019';
 
