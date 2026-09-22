@@ -280,10 +280,17 @@ public class ModerationFlowTests : IAsyncLifetime
 
         await using (var db = NewDb())
         {
-            Assert.True(await Moderation(db).IsConfirmedRemovedNameAsync(target, "Second Bad"));
+            Assert.Equal(RenameCheck.Locked, await Moderation(db).CheckRenameAsync(target, "Anything"));
             Assert.True(await Moderation(db).UnlockNameAsync(target));
         }
         Assert.Null((await LoadUser(target)).NameLockedAt);
+
+        // Unlocked, the player may rename — but not back to a name a moderator removed.
+        await using (var db = NewDb())
+        {
+            Assert.Equal(RenameCheck.RemovedName, await Moderation(db).CheckRenameAsync(target, "Second Bad"));
+            Assert.Equal(RenameCheck.Allowed, await Moderation(db).CheckRenameAsync(target, "Fresh Name"));
+        }
     }
 
     [Fact]

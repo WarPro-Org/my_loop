@@ -300,10 +300,10 @@ public class ModerationUnitTests
 
     // ---- Rename lock (PATCH /api/users/{id}) ---------------------------------------------
 
-    private static UsersController UsersControllerFor(Guid userId, User stored)
+    private static UsersController UsersControllerFor(Guid userId)
     {
+        var stored = new User { Id = userId, FirebaseUid = "uid", DisplayName = "Robin", Color = "#00D4AA" };
         var users = new Mock<IUserService>();
-        users.Setup(u => u.GetById(userId)).ReturnsAsync(stored);
         users.Setup(u => u.UpdateProfile(userId, It.IsAny<UpdateUserRequest>())).ReturnsAsync(stored);
         var currentUser = new Mock<ICurrentUser>();
         currentUser.Setup(c => c.TryGetUserIdAsync()).ReturnsAsync(userId);
@@ -313,42 +313,56 @@ public class ModerationUnitTests
             NullLogger<UsersController>.Instance);
     }
 
-    private static User StoredUser(Guid id, DateTime? lockedAt) =>
-        new() { Id = id, FirebaseUid = "uid", DisplayName = "Robin", Color = "#00D4AA", NameLockedAt = lockedAt };
+    private static Mock<IModerationService> RenameGate(Guid userId, RenameCheck check)
+    {
+        var moderation = new Mock<IModerationService>();
+        moderation.Setup(m => m.CheckRenameAsync(userId, It.IsAny<string>())).ReturnsAsync(check);
+        return moderation;
+    }
 
     [Fact]
     public async Task Rename_while_locked_is_refused_with_name_locked()
     {
         var id = Guid.NewGuid();
-        var controller = UsersControllerFor(id, StoredUser(id, lockedAt: DateTime.UtcNow));
 
-        var result = await controller.Update(id, new UpdateUserRequest { DisplayName = "Kai" }, Mock.Of<IModerationService>());
+        var result = await UsersControllerFor(id).Update(id, new UpdateUserRequest { DisplayName = "Kai" },
+            RenameGate(id, RenameCheck.Locked).Object);
 
         var conflict = Assert.IsType<ConflictObjectResult>(result);
         Assert.Equal("name_locked", Assert.IsType<NameLockedError>(conflict.Value).Code);
     }
 
     [Fact]
-    public async Task A_locked_player_can_still_change_avatar_and_colour()
+    public async Task Renaming_back_to_a_name_a_moderator_removed_is_refused()
     {
         var id = Guid.NewGuid();
-        var controller = UsersControllerFor(id, StoredUser(id, lockedAt: DateTime.UtcNow));
 
-        var result = await controller.Update(id, new UpdateUserRequest { AvatarId = 3 }, Mock.Of<IModerationService>());
+        var result = await UsersControllerFor(id).Update(id, new UpdateUserRequest { DisplayName = "Kai" },
+            RenameGate(id, RenameCheck.RemovedName).Object);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task An_allowed_rename_is_saved()
+    {
+        var id = Guid.NewGuid();
+
+        var result = await UsersControllerFor(id).Update(id, new UpdateUserRequest { DisplayName = "Kai" },
+            RenameGate(id, RenameCheck.Allowed).Object);
 
         Assert.IsType<OkObjectResult>(result);
     }
 
     [Fact]
-    public async Task Renaming_back_to_a_name_a_moderator_removed_is_refused()
+    public async Task Changing_only_avatar_or_colour_skips_the_rename_gate()
     {
         var id = Guid.NewGuid();
-        var moderation = new Mock<IModerationService>();
-        moderation.Setup(m => m.IsConfirmedRemovedNameAsync(id, "Kai")).ReturnsAsync(true);
-        var controller = UsersControllerFor(id, StoredUser(id, lockedAt: null));
+        var moderation = RenameGate(id, RenameCheck.Locked);
 
-        var result = await controller.Update(id, new UpdateUserRequest { DisplayName = "Kai" }, moderation.Object);
+        var result = await UsersControllerFor(id).Update(id, new UpdateUserRequest { AvatarId = 3 }, moderation.Object);
 
-        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
+        moderation.Verify(m => m.CheckRenameAsync(It.IsAny<Guid>(), It.IsAny<string>()), Times.Never);
     }
 }

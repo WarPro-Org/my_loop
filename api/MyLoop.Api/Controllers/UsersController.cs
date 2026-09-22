@@ -173,7 +173,13 @@ public class UsersController : ControllerBase
         {
             var nameError = _validation.ValidateDisplayName(request.DisplayName);
             if (nameError != null) return BadRequest(nameError);
-            if (await CheckRenameAllowed(id, request.DisplayName, moderation) is { } refused) return refused;
+            switch (await moderation.CheckRenameAsync(id, request.DisplayName))
+            {
+                case RenameCheck.Locked:
+                    return Conflict(new NameLockedError(NameLockedCode, NameLockedMessage));
+                case RenameCheck.RemovedName:
+                    return BadRequest(RemovedNameMessage);
+            }
         }
         if (request.Color != null)
         {
@@ -190,21 +196,6 @@ public class UsersController : ControllerBase
         if (user == null) return NotFound();
         // Self-only (DenySelf above) → owner projection.
         return Ok(UserSelfResponse.FromUser(user));
-    }
-
-    /// <summary>
-    /// Moderation gates on renaming (DR-002b, #190): 409 name_locked while confirmed strikes lock
-    /// the name, and the generic refusal for a name a moderator already removed from this player.
-    /// </summary>
-    private async Task<IActionResult?> CheckRenameAllowed(Guid id, string requestedName, IModerationService moderation)
-    {
-        var user = await _userService.GetById(id);
-        if (user?.NameLockedAt != null)
-            return Conflict(new NameLockedError(NameLockedCode, NameLockedMessage));
-        var normalized = ValidationService.NormalizeDisplayName(requestedName);
-        if (await moderation.IsConfirmedRemovedNameAsync(id, normalized))
-            return BadRequest(RemovedNameMessage);
-        return null;
     }
 
     /// <summary>
