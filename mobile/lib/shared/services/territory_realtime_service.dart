@@ -271,11 +271,33 @@ class TerritoryRealtimeService {
   }
 
   /// Subscribe to a geographic region by its H3 res-3 parent cell ID.
+  ///
+  /// Marks the region subscribed only after `invoke` succeeds. Marking it
+  /// first (the previous behavior) left the client believing it was
+  /// subscribed even when the hub call failed — `updateRegions` skips
+  /// regions already in [_subscribedRegions], so a failed join was never
+  /// retried on the next viewport update (#139 D9).
   Future<void> joinRegion(String regionId) async {
     if (!_isConnected || _subscribedRegions.contains(regionId)) return;
+    await invokeJoinRegion(regionId);
     _subscribedRegions.add(regionId);
-    await _hubConnection?.invoke('JoinRegion', args: [regionId]);
   }
+
+  /// Performs the hub invoke for [joinRegion]. Extracted into its own
+  /// overridable method so tests can simulate a failed join without a live
+  /// SignalR connection.
+  @visibleForTesting
+  Future<void> invokeJoinRegion(String regionId) =>
+      _hubConnection!.invoke('JoinRegion', args: [regionId]);
+
+  /// Test-only: marks the service connected without a live hub connection,
+  /// so [joinRegion]'s failure-handling can be exercised in isolation.
+  @visibleForTesting
+  set debugConnected(bool value) => _isConnected = value;
+
+  /// Test-only snapshot of the currently subscribed region ids.
+  @visibleForTesting
+  Set<String> get subscribedRegionsForTest => Set.unmodifiable(_subscribedRegions);
 
   /// Unsubscribe from a region.
   Future<void> leaveRegion(String regionId) async {

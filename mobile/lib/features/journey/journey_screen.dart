@@ -15,6 +15,7 @@ import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
+import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
@@ -65,6 +66,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   final _mapKey = GlobalKey<_JourneyMapState>();
   bool _isSubmitting = false;
   bool _controlsVisible = true;
+  final _snackbars = JourneySnackbarPresenter();
 
   Future<void> _onStopCapture() async {
     if (_isSubmitting) return;
@@ -87,7 +89,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
     // If user hasn't walked at all
     if (path.length < 2 && claimedCount == 0) {
-      _showSnackbar('Walk a bit more to capture territory!', Colors.orange);
+      _showNotice('Walk a bit more to capture territory!', Colors.orange);
       return;
     }
 
@@ -134,7 +136,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         }
       }
     } catch (e) {
-      _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red);
+      _showError('Error: ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -191,13 +193,16 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     );
   }
 
-  void _showSnackbar(String message, Color color) {
+  /// Queues a non-error message; see [JourneySnackbarPresenter] for why only
+  /// errors may replace anything.
+  void _showNotice(String message, Color color) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: color),
-      );
+    _snackbars.showNotice(ScaffoldMessenger.of(context), message, color);
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    _snackbars.showError(ScaffoldMessenger.of(context), message);
   }
 
   @override
@@ -207,17 +212,8 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final topPadding = MediaQuery.of(context).padding.top;
 
     ref.listen(journeyControllerProvider, (prev, next) {
-      if (next.error != null && next.error != prev?.error) {
-        _showSnackbar(next.error!, AppColors.red);
-      }
-      // Level-up celebration
-      if (next.levelUpTo != null && next.levelUpTo != prev?.levelUpTo) {
-        _showSnackbar('🎉 Level Up! You reached Level ${next.levelUpTo}!', const Color(0xFFFFD700));
-      }
-      // Achievement unlock
-      if (next.achievementUnlocked != null && next.achievementUnlocked != prev?.achievementUnlocked) {
-        _showSnackbar('🏆 Achievement: ${next.achievementUnlocked}', const Color(0xFF8B5CF6));
-      }
+      if (!mounted) return;
+      _snackbars.onJourneyChanged(ScaffoldMessenger.of(context), prev, next);
     });
 
     final mockEnabled = kDebugMode && ref.watch(mockWalkConfigProvider).enabled;
@@ -563,10 +559,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _showHexOwnerSheet(TerritoryCell cell) {
     final profile = ref.read(userProfileProvider);
     final isOwn = cell.ownerId == profile.userId;
-    // Show owner's actual color only for own hexes; black for others
-    final ownerColor = isOwn
-        ? Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000)
-        : const Color(0xFF1A1A1A);
+    // Show owner's actual color only for own hexes; neutral for others. A hex
+    // captured or step-claimed this session is in the store before its colour
+    // is, so this must tolerate a blank value instead of throwing.
+    final ownerColor =
+        isOwn ? AppColors.fromHex(cell.ownerColor) : AppColors.hexUnknownOwner;
 
     showModalBottomSheet(
       context: context,

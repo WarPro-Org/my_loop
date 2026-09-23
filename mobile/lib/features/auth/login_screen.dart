@@ -151,13 +151,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     TextSpan(
                       text: 'Terms',
                       style: const TextStyle(decoration: TextDecoration.underline, fontWeight: FontWeight.w600),
-                      recognizer: TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse('https://destitute-living-bullpen.ngrok-free.dev/terms')),
+                      recognizer: TapGestureRecognizer()..onTap = () => launchUrl(apiPageUri(apiBaseUrl, termsOfServicePath)),
                     ),
                     const TextSpan(text: ' & '),
                     TextSpan(
                       text: 'Privacy Policy',
                       style: const TextStyle(decoration: TextDecoration.underline, fontWeight: FontWeight.w600),
-                      recognizer: TapGestureRecognizer()..onTap = () => launchUrl(Uri.parse('https://destitute-living-bullpen.ngrok-free.dev/privacy')),
+                      recognizer: TapGestureRecognizer()..onTap = () => launchUrl(apiPageUri(apiBaseUrl, privacyPolicyPath)),
                     ),
                   ],
                 ),

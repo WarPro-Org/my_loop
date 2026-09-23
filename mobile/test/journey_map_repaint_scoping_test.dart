@@ -81,7 +81,10 @@ void main() {
       expect(manager.hexRevision.value, before + 1);
     });
 
-    test('applyRealtimeChanges bumps only when the event list is non-empty', () {
+    test('applyRealtimeChanges bumps only when it changed a known cell', () {
+      // Since the #112 keyed store, an event for a cell this client never
+      // loaded is a no-op (nothing visible to repaint), so seed the cell.
+      manager.updateFromCells([_cell(999)]);
       final before = manager.hexRevision.value;
       expect(manager.applyRealtimeChanges(const []), isFalse);
       expect(manager.hexRevision.value, before, reason: 'no events → no repaint needed');

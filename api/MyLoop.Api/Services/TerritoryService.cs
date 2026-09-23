@@ -768,7 +768,7 @@ public class TerritoryService : ITerritoryService
         }).ToList();
     }
 
-    public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng)
+    public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId)
     {
         // Group by res-8 neighborhood — use average of actual cell centers for geocoding
         var areas = await _db.ExploredCells
