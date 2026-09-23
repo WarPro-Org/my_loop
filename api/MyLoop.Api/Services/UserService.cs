@@ -9,11 +9,13 @@ public class UserService : IUserService
 {
     private readonly AppDbContext _db;
     private readonly IValidationService _validation;
+    private readonly ILogger<UserService> _logger;
 
-    public UserService(AppDbContext db, IValidationService validation)
+    public UserService(AppDbContext db, IValidationService validation, ILogger<UserService> logger)
     {
         _db = db;
         _validation = validation;
+        _logger = logger;
     }
 
     public async Task<User> Register(RegisterRequest request, string firebaseUid, string authProvider)
@@ -71,13 +73,47 @@ public class UserService : IUserService
 
     public async Task<bool> DeleteAccount(Guid userId)
     {
-        var user = await _db.Users.FindAsync(userId);
-        if (user == null) return false;
+        // The purge is 8 separate ExecuteDeleteAsync statements plus the user row's own
+        // delete — wrapped in one transaction (under CreateExecutionStrategy so Neon's
+        // EnableRetryOnFailure can still retry a dropped connection) so a mid-sequence
+        // failure leaves nothing deleted instead of an orphaned partial purge (#122).
+        var strategy = _db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            _db.ChangeTracker.Clear();
+            await using var transaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                var user = await _db.Users.FindAsync(userId);
+                if (user == null)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
 
-        await DeleteUserData(userId);
-        _db.Users.Remove(user);
-        await _db.SaveChangesAsync();
-        return true;
+                await DeleteUserData(userId);
+                _db.Users.Remove(user);
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return true;
+            }
+            catch
+            {
+                // Preserve the original exception for the execution strategy to classify —
+                // a rollback on a dropped connection would otherwise throw and mask it.
+                try
+                {
+                    await transaction.RollbackAsync();
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogWarning(rollbackEx,
+                        "Rollback after a failed account deletion also failed for user {UserId}; surfacing the original error",
+                        userId);
+                }
+                throw;
+            }
+        });
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -106,17 +142,33 @@ public class UserService : IUserService
 
     private async Task CreateInitialLeaderboardEntry(Guid userId)
     {
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var totalUsers = await _db.Users.CountAsync();
+        // Join the CURRENT visible snapshot, not raw UTC today: a today-dated row written
+        // before the day's first refresh would become the newest "snapshot" and hide the
+        // real board from every reader until the refresh runs (#125).
+        var snapshotDate = await LeaderboardService.LatestSnapshotDate(_db);
+
+        // Rank the newcomer the way every reader computes rank (#167): count of strictly higher
+        // cell counts, plus one. They have zero cells, so that is however many players on this
+        // snapshot have captured anything — and all other zero-cell players get the same number,
+        // because they are genuinely tied.
+        //
+        // This used to be the total user count (#139 D7), which invented a rank twice over: it
+        // counted users with no row on this snapshot at all, so a newcomer could be told they were
+        // 1000th on a 51-row board, and it handed every zero-cell player a different rank. The
+        // value is short-lived — the next leaderboard refresh overwrites it — but it is what the
+        // profile tile shows a brand-new player, which is the one moment they have no other
+        // reference for whether the number is sane.
+        var rank = await _db.LeaderboardEntries
+            .CountAsync(l => l.Date == snapshotDate && l.CellCount > 0) + 1;
 
         _db.Set<LeaderboardEntry>().Add(new LeaderboardEntry
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            Date = today,
+            Date = snapshotDate,
             CellCount = 0,
             AreaM2 = 0,
-            Rank = totalUsers,
+            Rank = rank,
         });
         await _db.SaveChangesAsync();
     }
@@ -125,12 +177,16 @@ public class UserService : IUserService
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
+        // Same blank-window fallback as the leaderboard (#125): between UTC midnight and the
+        // day's first refresh "today" has no rows, which zeroed the profile's rank tile.
+        var snapshotDate = await LeaderboardService.LatestSnapshotDate(_db);
+
         var entry = await _db.LeaderboardEntries
-            .Where(l => l.Date == today && l.UserId == userId)
+            .Where(l => l.Date == snapshotDate && l.UserId == userId)
             .FirstOrDefaultAsync();
 
         var totalPlayers = await _db.LeaderboardEntries
-            .Where(l => l.Date == today)
+            .Where(l => l.Date == snapshotDate)
             .CountAsync();
 
         return (entry?.Rank ?? 0, totalPlayers);

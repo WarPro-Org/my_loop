@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Data;
@@ -41,12 +42,17 @@ public class DecayProgressTests : IAsyncLifetime
     {
         var missions = new Mock<IMissionService> { DefaultValue = DefaultValue.Empty };
         var achievements = new Mock<IAchievementService> { DefaultValue = DefaultValue.Empty };
+        var hex = new Mock<IHexGridService>();
+        // Viewport queries prune by parent region first (#114); cover the seeded cells' parent.
+        hex.Setup(h => h.GetRegionIdsForBbox(
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
+            .Returns([1L]);
         return new TerritoryService(
-            db, Mock.Of<IHexGridService>(), Mock.Of<IGeoService>(),
+            db, hex.Object, Mock.Of<IGeoService>(),
             Mock.Of<ITerritoryNotifier>(), Mock.Of<IPathValidationService>(),
             Mock.Of<IPushNotificationService>(),
             new GeocodingService(new HttpClient(), NullLogger<GeocodingService>.Instance),
-            missions.Object, achievements.Object, NullLogger<TerritoryService>.Instance);
+            missions.Object, achievements.Object, Mock.Of<IServiceScopeFactory>(), NullLogger<TerritoryService>.Instance);
     }
 
     private const long SlowDecayCellId = 9101L; // 90-day cell, e.g. captured abroad
@@ -91,7 +97,7 @@ public class DecayProgressTests : IAsyncLifetime
         var userId = await SeedUserWithTwoCells();
 
         await using var db = NewDb();
-        var cells = await NewService(db).GetTerritoriesInViewport(12.0, 77.0, 13.0, 78.0);
+        var cells = (await NewService(db).GetTerritoriesInViewport(12.0, 77.0, 13.0, 78.0)).Cells;
 
         var slow = cells.Single(c => c.CellId == SlowDecayCellId);
         var local = cells.Single(c => c.CellId == LocalCellId);

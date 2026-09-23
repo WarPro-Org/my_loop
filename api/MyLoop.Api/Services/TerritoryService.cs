@@ -20,13 +20,14 @@ public class TerritoryService : ITerritoryService
     private readonly GeocodingService _geocoding;
     private readonly IMissionService _missionService;
     private readonly IAchievementService _achievementService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TerritoryService> _logger;
 
     public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo,
         ITerritoryNotifier notifier, IPathValidationService pathValidator,
         IPushNotificationService pushService, GeocodingService geocoding,
         IMissionService missionService, IAchievementService achievementService,
-        ILogger<TerritoryService> logger)
+        IServiceScopeFactory scopeFactory, ILogger<TerritoryService> logger)
     {
         _db = db;
         _hexGrid = hexGrid;
@@ -37,6 +38,7 @@ public class TerritoryService : ITerritoryService
         _geocoding = geocoding;
         _missionService = missionService;
         _achievementService = achievementService;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -117,7 +119,7 @@ public class TerritoryService : ITerritoryService
             // only fills interior hexes and awards the one-time distance XP computed below;
             // it must not re-add DistanceKm or WalkDistance mission progress, which the
             // batch-step drain already accumulated during the walk.
-            await UpdateUserStats(userId, transfers);
+            await UpdateUserStats(userId, transfers, gameDay);
 
             // Record exploration for all captured cells (single batched upsert)
             var newExplorations = await RecordExplorationBatch(userId, cells.Select(c => c.CellId));
@@ -588,14 +590,27 @@ public class TerritoryService : ITerritoryService
         return commit.Response;
     }
 
-    public async Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
+    public async Task<TerritoryViewportResult> GetTerritoriesInViewport(
         double minLat, double minLng, double maxLat, double maxLng)
     {
-        var filtered = await _db.TerritoryCells
-            .AsNoTracking()
+        // Bucket-first pruning per docs/architecture/spatial-model.md (#114): filter on the
+        // indexed res-3 ParentCellId set covering the bbox, then refine by center coords.
+        // ORDER BY CellId makes the capped result deterministic — an unordered Take let
+        // Postgres return a different arbitrary subset each poll, so dense-city viewports
+        // flickered as hexes popped in and out. Fetch one row past the cap to learn whether
+        // the viewport was truncated without a second COUNT query.
+        var regionIds = _hexGrid.GetRegionIdsForBbox(minLat, minLng, maxLat, maxLng).ToList();
+
+        // Empty = "viewport too wide to prune" (see IHexGridService) — coordinate filter only.
+        var cells = _db.TerritoryCells.AsNoTracking().AsQueryable();
+        if (regionIds.Count > 0)
+            cells = cells.Where(t => regionIds.Contains(t.ParentCellId));
+
+        var filtered = await cells
             .Where(t => t.CenterLat >= minLat && t.CenterLat <= maxLat
                      && t.CenterLng >= minLng && t.CenterLng <= maxLng)
-            .Take(GameConstants.MaxViewportCells)
+            .OrderBy(t => t.CellId)
+            .Take(GameConstants.MaxViewportCells + 1)
             .Select(t => new
             {
                 t.CellId, t.BoundaryJson, t.OwnerId,
@@ -608,17 +623,24 @@ public class TerritoryService : ITerritoryService
             })
             .ToListAsync();
 
-        return filtered.Select(t => new TerritoryCellResponse
+        return new TerritoryViewportResult
         {
-            CellId = t.CellId,
-            Boundary = JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
-            OwnerId = t.OwnerId,
-            OwnerColor = t.OwnerColor,
-            OwnerName = t.OwnerName,
-            CooldownExpiresAtUtc = t.CooldownExpiresAt,
-            ParentCellId = t.ParentCellId,
-            DecayProgress = ComputeDecayProgress(t.LastRefreshedAt, t.DecayDays),
-        }).ToList();
+            Truncated = filtered.Count > GameConstants.MaxViewportCells,
+            Cells = filtered
+                .Take(GameConstants.MaxViewportCells)
+                .Select(t => new TerritoryCellResponse
+                {
+                    CellId = t.CellId,
+                    Boundary = JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
+                    OwnerId = t.OwnerId,
+                    OwnerColor = t.OwnerColor,
+                    OwnerName = t.OwnerName,
+                    CooldownExpiresAtUtc = t.CooldownExpiresAt,
+                    ParentCellId = t.ParentCellId,
+                    DecayProgress = ComputeDecayProgress(t.LastRefreshedAt, t.DecayDays),
+                })
+                .ToList(),
+        };
     }
 
     /// <summary>
@@ -648,7 +670,10 @@ public class TerritoryService : ITerritoryService
         var since = DateTime.UtcNow.AddDays(-clampedDays);
 
         var stolen = await _db.CellTransfers
-            .Where(t => t.FromUserId == userId && t.TransferredAt >= since)
+            // Decay releases write FromUserId == ToUserId audit rows (#104) — losing a hex
+            // to the reaper is not a theft and must not appear in the revenge list.
+            .Where(t => t.FromUserId == userId && t.Reason != TransferReason.Decay
+                     && t.TransferredAt >= since)
             .OrderByDescending(t => t.TransferredAt)
             .Select(t => new StolenCellDetail
             {
@@ -766,7 +791,7 @@ public class TerritoryService : ITerritoryService
         }).ToList();
     }
 
-    public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng)
+    public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId)
     {
         // Group by res-8 neighborhood — use average of actual cell centers for geocoding
         var areas = await _db.ExploredCells
@@ -796,15 +821,30 @@ public class TerritoryService : ITerritoryService
             .Select(g => new { NeighborhoodId = g.Key, OwnedCount = g.Count() })
             .ToDictionaryAsync(x => x.NeighborhoodId, x => x.OwnedCount);
 
-        // Geocode neighborhoods in parallel-safe manner:
-        // First pass: resolve names (cached hits are instant, uncached queued)
+        // Resolve area names from the persisted, shared-across-all-users cache instead of calling
+        // Nominatim inline on this hot path (`/game-state` — every login and every walk-end,
+        // ML-ERR-024): a neighborhood not yet in the table gets an immediate lat/lng fallback
+        // name here, and the real name is resolved in the background so the NEXT caller —
+        // themselves or anyone else who has explored the same neighborhood — gets it for free.
+        var neighborhoodIds = areas.Select(a => a.NeighborhoodId).ToList();
+        var persistedNames = await _db.NeighborhoodNames
+            .AsNoTracking()
+            .Where(n => neighborhoodIds.Contains(n.NeighborhoodId))
+            .ToDictionaryAsync(n => n.NeighborhoodId, n => n.AreaName);
+
         var results = new List<ExplorationNeighborhood>();
-        var geocodeTasks = new List<(int Index, Task<string> Task)>();
+        var unresolved = new List<(long NeighborhoodId, double Lat, double Lng)>();
 
         foreach (var a in areas.OrderByDescending(a => a.ExploredCount))
         {
             var percent = Math.Round(a.ExploredCount * 100.0 / GameConstants.CellsPerNeighborhood, 1);
             ownedByNeighborhood.TryGetValue(a.NeighborhoodId, out var owned);
+
+            if (!persistedNames.TryGetValue(a.NeighborhoodId, out var areaName))
+            {
+                areaName = GeocodingService.FallbackName(a.AvgLat, a.AvgLng);
+                unresolved.Add((a.NeighborhoodId, a.AvgLat, a.AvgLng));
+            }
 
             results.Add(new ExplorationNeighborhood
             {
@@ -815,32 +855,12 @@ public class TerritoryService : ITerritoryService
                 OwnedCount = owned,
                 TotalCount = GameConstants.CellsPerNeighborhood,
                 Percent = Math.Min(percent, 100.0),
-                AreaName = "", // Will be filled below
+                AreaName = areaName,
             });
-
-            geocodeTasks.Add((results.Count - 1, _geocoding.GetAreaName(a.AvgLat, a.AvgLng)));
         }
 
-        // Await all geocoding (throttled internally, but cached hits resolve instantly)
-        // Cap at 5 seconds total — return what we have if Nominatim is slow
-        var allNames = Task.WhenAll(geocodeTasks.Select(t => t.Task));
-        if (await Task.WhenAny(allNames, Task.Delay(5000)) == allNames)
-        {
-            var names = await allNames;
-            for (int i = 0; i < geocodeTasks.Count; i++)
-                results[geocodeTasks[i].Index].AreaName = names[i];
-        }
-        else
-        {
-            // Timeout — fill in whatever completed
-            for (int i = 0; i < geocodeTasks.Count; i++)
-            {
-                if (geocodeTasks[i].Task.IsCompletedSuccessfully)
-                    results[geocodeTasks[i].Index].AreaName = geocodeTasks[i].Task.Result;
-                else
-                    results[geocodeTasks[i].Index].AreaName = $"Area {i + 1}";
-            }
-        }
+        if (unresolved.Count > 0)
+            ResolveNeighborhoodNamesInBackground(unresolved);
 
         // Merge neighborhoods that geocode to the same area name
         var merged = results
@@ -860,6 +880,45 @@ public class TerritoryService : ITerritoryService
             .ToList();
 
         return merged;
+    }
+
+    /// <summary>
+    /// Resolves and persists names for neighborhoods not yet in <see cref="AppDbContext.NeighborhoodNames"/>,
+    /// detached from the request that triggered it (fire-and-forget — <see cref="GetExplorationStats"/>
+    /// has already returned its response by the time this runs). Uses its own DI scope because the
+    /// request's <see cref="AppDbContext"/> is disposed once the HTTP response completes; <see cref="_geocoding"/>
+    /// and <see cref="_logger"/> are safe to reuse past that point since both are process-lifetime.
+    /// A failed lookup is logged and simply leaves the neighborhood unresolved for the next caller to retry.
+    /// </summary>
+    private void ResolveNeighborhoodNamesInBackground(List<(long NeighborhoodId, double Lat, double Lng)> unresolved)
+    {
+        _ = Task.Run(async () =>
+        {
+            foreach (var (neighborhoodId, geoLat, geoLng) in unresolved)
+            {
+                try
+                {
+                    var name = await _geocoding.GetAreaName(geoLat, geoLng);
+
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    // Upsert: two concurrent requests can race to resolve the same neighborhood
+                    // for the first time; whichever commits first wins and the second is a
+                    // harmless duplicate write, not a constraint violation.
+                    await db.Database.ExecuteSqlAsync($"""
+                        INSERT INTO "NeighborhoodNames" ("NeighborhoodId", "AreaName", "ResolvedAt")
+                        VALUES ({neighborhoodId}, {name}, {DateTime.UtcNow})
+                        ON CONFLICT ("NeighborhoodId")
+                        DO UPDATE SET "AreaName" = EXCLUDED."AreaName", "ResolvedAt" = EXCLUDED."ResolvedAt"
+                        """);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Background neighborhood-name resolution failed for {NeighborhoodId}", neighborhoodId);
+                }
+            }
+        });
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -1140,7 +1199,7 @@ public class TerritoryService : ITerritoryService
         return GameConstants.GetDecayDaysForDistance(distanceKm);
     }
 
-    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers)
+    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers, DateOnly gameDay)
     {
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return;
@@ -1154,14 +1213,12 @@ public class TerritoryService : ITerritoryService
         // this walk's full GPS distance before this loop-claim runs, so re-adding it here
         // would double-count distance on every walk-and-loop journey.
 
-        UpdateStreak(user);
+        UpdateStreak(user, gameDay);
         await DecrementVictimHexCounts(userId, transfers);
     }
 
-    private static void UpdateStreak(User user)
-    {
-        UpdateStreak(user, DateOnly.FromDateTime(DateTime.UtcNow));
-    }
+    // No parameterless UpdateStreak overload: every caller must pass the resolved game day
+    // (GameDay.Resolve), or the loop and batch paths drift onto different "todays" (#106, #88).
 
     /// <summary>
     /// Updates the user's streak using the supplied date as "today".

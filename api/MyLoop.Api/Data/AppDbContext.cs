@@ -43,6 +43,9 @@ public class AppDbContext : DbContext
     /// <summary>Gets the set of unlocked achievements per user.</summary>
     public DbSet<UserAchievement> UserAchievements => Set<UserAchievement>();
 
+    /// <summary>Gets the set of persisted reverse-geocode results, one row per H3 neighborhood.</summary>
+    public DbSet<NeighborhoodName> NeighborhoodNames => Set<NeighborhoodName>();
+
     /// <summary>
     /// Configures the entity model: primary keys, unique constraints, and indexes
     /// for efficient query patterns used by the game.
@@ -62,7 +65,29 @@ public class AppDbContext : DbContext
             e.HasKey(t => t.CellId);
             e.HasIndex(t => t.OwnerId); // fast lookup: "give me all cells owned by this user"
             e.HasIndex(t => new { t.CenterLat, t.CenterLng }); // viewport queries (will upgrade to point+GiST via raw SQL)
-            e.HasIndex(t => t.ParentCellId); // geohash-style partition pruning by area
+            // Bucket-first viewport query: prune by res-3 parent, refine by center (#114).
+            // The ParentCellId prefix also serves the old single-column lookups.
+            e.HasIndex(t => new { t.ParentCellId, t.CenterLat, t.CenterLng });
+            e.HasIndex(t => new { t.ParentCellId, t.OwnerId }); // per-region ownership (spatial-model.md)
+            // Stored generated column so the hourly decay scan is an indexed range
+            // predicate instead of a per-row interval computation (#104).
+            // Computed in UTC-naive timestamp space: timestamptz + interval is only STABLE
+            // in Postgres (timezone-dependent), which generated columns reject; the AT TIME
+            // ZONE 'UTC' projection makes the expression immutable.
+            e.Property(t => t.DecayAt)
+                .HasColumnType("timestamp without time zone")
+                .HasComputedColumnSql(
+                    @"(""LastRefreshedAt"" AT TIME ZONE 'UTC') + make_interval(days => ""DecayDays"")",
+                    stored: true);
+            e.HasIndex(t => t.DecayAt);
+        });
+
+        // Claim: the per-day cap count (UserId + CreatedAt window) runs inside EVERY claim
+        // transaction, and claim history groups over the same predicate — without this index
+        // both degrade to per-claim seq scans as claim volume grows (#124)
+        modelBuilder.Entity<Claim>(e =>
+        {
+            e.HasIndex(c => new { c.UserId, c.CreatedAt });
         });
 
         // CellTransfer: ownership history for revenge/recapture features
@@ -103,6 +128,12 @@ public class AppDbContext : DbContext
         {
             e.HasIndex(a => a.UserId); // fast: "all achievements for user"
             e.HasIndex(a => new { a.UserId, a.AchievementId }).IsUnique(); // prevent duplicates
+        });
+
+        // NeighborhoodName: one persisted reverse-geocode result per neighborhood, shared by all users
+        modelBuilder.Entity<NeighborhoodName>(e =>
+        {
+            e.HasKey(n => n.NeighborhoodId);
         });
     }
 }

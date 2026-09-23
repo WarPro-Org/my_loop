@@ -72,8 +72,13 @@ class ProfileSlice extends Notifier<ProfileState> {
     return const ProfileState();
   }
 
-  /// Full hydration from game-state endpoint (login / app resume).
+  /// Full hydration from game-state endpoint (login / app resume / post-walk).
+  ///
+  /// A missing or non-positive `rank` keeps the current rank instead of
+  /// zeroing it: game-state reports 0 when its rank query failed, and the
+  /// Home tile should keep the last live rank rather than drop to "—" (#171).
   void hydrate(Map<String, dynamic> data) {
+    final rank = data['rank'] as int? ?? 0;
     applyStats(
       hexCount: data['hexCount'] as int? ?? 0,
       totalHexesCaptured: data['totalHexesCaptured'] as int? ?? 0,
@@ -81,7 +86,7 @@ class ProfileSlice extends Notifier<ProfileState> {
       streak: data['streak'] as int? ?? 0,
       isStreakActive: data['isStreakActive'] as bool? ?? false,
       distanceKm: (data['distanceKm'] as num?)?.toDouble() ?? 0,
-      rank: data['rank'] as int? ?? 0,
+      rank: rank > 0 ? rank : state.rank,
     );
   }
 
@@ -110,7 +115,7 @@ class ProfileSlice extends Notifier<ProfileState> {
     );
   }
 
-  /// Update rank (from leaderboard fetch — not pushed via SignalR).
+  /// Overwrites only the rank (rank is not pushed via SignalR).
   void updateRank(int newRank) {
     state = state.copyWith(rank: newRank);
   }

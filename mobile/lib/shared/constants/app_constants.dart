@@ -34,6 +34,18 @@ class AppConstants {
   static const int hexRefreshIntervalSeconds = 30;
   static const int maxCachedCells = 1000;
 
+  /// While a live SignalR hex delta arrived more recently than this, the
+  /// periodic viewport poll is redundant — the push is the freshness source
+  /// of truth and the poll only exists as a reconnect/staleness backstop
+  /// (issue #129).
+  static const int realtimeFreshnessSeconds = 60;
+
+  /// Upper bound on how long the viewport-poll back-off may keep skipping
+  /// (#129). Hex deltas carry no cooldown and can't reach regions this client
+  /// hasn't joined, so even a fresh feed can't keep the map correct forever;
+  /// this caps that lag at a few poll intervals.
+  static const int viewportPollMaxBackoffSeconds = 120;
+
   // --- Preview ---
   static const int maxPreviewPathPoints = 500;
 

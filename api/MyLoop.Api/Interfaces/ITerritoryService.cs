@@ -24,9 +24,10 @@ public interface ITerritoryService
         Guid userId, string? clientLocalDate, List<BatchStepPoint> points, Guid walkSessionId);
 
     /// <summary>
-    /// Gets all territory cells within a map viewport bounding box.
+    /// Gets the territory cells within a map viewport bounding box (deterministically
+    /// ordered, capped) plus whether the cap truncated the result.
     /// </summary>
-    Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
+    Task<TerritoryViewportResult> GetTerritoriesInViewport(
         double minLat, double minLng, double maxLat, double maxLng);
 
     /// <summary>
@@ -53,7 +54,7 @@ public interface ITerritoryService
     /// Gets exploration stats: for each neighborhood near the user,
     /// returns the number of cells explored vs total cells in that neighborhood.
     /// </summary>
-    Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng);
+    Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId);
 
     /// <summary>
     /// Gets a user's claim history — one entry per claim submission.
