@@ -133,6 +133,11 @@ class UserProfileNotifier extends Notifier<UserProfile> {
     );
   }
 
+  /// The signed-in user's id right now, or null once signed out. Lets an
+  /// async flow that captured the notifier re-check who is signed in after an
+  /// await, without needing a `Ref`/`WidgetRef` that may have been disposed.
+  String? get currentUserId => state.userId;
+
   /// Resets profile to default (used on sign-out).
   void clear() {
     state = const UserProfile();
