@@ -128,6 +128,32 @@ void main() {
     expect(container.read(userProfileProvider).rank, _preWalkRank);
   });
 
+  // PR #171 round 2, finding 1. A player who skipped "set home" (or whose reverse
+  // geocode failed) has no city. Game-state now ranks them on the global board
+  // instead of the bogus #1 an empty-city count produced; the server-side
+  // regression test is GameStateCitylessRankTests. This locks the client half of
+  // the contract: that global rank reaches the Home tile unchanged.
+  testWidgets('a city-less player gets the global rank game-state reports', (tester) async {
+    const globalRank = 42;
+    final api = _FakeApi(gameStateRank: globalRank);
+    final (ref, container) = await _pumpWithRef(tester, api);
+
+    await tester.runAsync(() => refreshProfileAfterWalk(ref, isMounted: () => true));
+
+    expect(container.read(userProfileProvider).rank, globalRank);
+    expect(api.leaderboardCalls, 0);
+  });
+
+  testWidgets('an explicit rank of 0 (server rank query failed) keeps the current rank',
+      (tester) async {
+    final api = _FakeApi(gameStateRank: 0);
+    final (ref, container) = await _pumpWithRef(tester, api);
+
+    await tester.runAsync(() => refreshProfileAfterWalk(ref, isMounted: () => true));
+
+    expect(container.read(userProfileProvider).rank, _preWalkRank);
+  });
+
   testWidgets('does not touch the profile once the screen is gone', (tester) async {
     final api = _FakeApi(gameStateRank: _liveRank);
     final (ref, container) = await _pumpWithRef(tester, api);

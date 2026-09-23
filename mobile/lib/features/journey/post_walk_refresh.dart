@@ -15,7 +15,9 @@ import 'package:myloop/shared/state/profile_slice.dart';
 /// current hex counts, whereas the leaderboard endpoint serves the snapshot that
 /// `LeaderboardRefreshWorker` recomputes only every few minutes (#109). Reading the
 /// snapshot right after a claim would overwrite the fresh rank with the pre-walk
-/// one. A rank of 0 means game-state had none (offline, or no rank yet), so the
+/// one. A player with no home city gets their GLOBAL rank from game-state (the
+/// same fallback the leaderboard applies), never a placeholder #1. A rank of 0
+/// means game-state had none (offline, or the server's rank query failed), so the
 /// profile keeps its current rank instead of showing "#0".
 ///
 /// [isMounted] is checked after the network await so a screen that was closed
