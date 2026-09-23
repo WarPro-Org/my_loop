@@ -63,6 +63,7 @@ public class DecayCleanupService : BackgroundService
             // so a broadcast failure can't be retried into a double-release. Clients that
             // miss it self-heal on their next viewport poll.
             await notifier.NotifyHexesReleasedAsync(ToReleaseEvents(released));
+            await TryPushOwnerStatsAsync(db, notifier, released, ct);
         }
 
         var brokenStreaks = await BreakStaleStreaksAsync(db, GameConstants.StreakBreakUtcGraceDays, ct);
@@ -70,6 +71,54 @@ public class DecayCleanupService : BackgroundService
         {
             _logger.LogInformation("Streak cleanup: broke {Count} stale streaks", brokenStreaks);
         }
+    }
+
+    /// <summary>
+    /// Owner stats push is best-effort: a failure must not skip this run's streak cleanup,
+    /// and the client's next game-state fetch corrects a missed push anyway.
+    /// </summary>
+    private async Task TryPushOwnerStatsAsync(
+        AppDbContext db, ITerritoryNotifier notifier, IReadOnlyCollection<DecayedCellRow> released,
+        CancellationToken ct)
+    {
+        try
+        {
+            await PushOwnerStatsAsync(db, notifier, released, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Decay cleanup: failed to push post-release owner stats");
+        }
+    }
+
+    /// <summary>
+    /// Pushes each affected owner's post-release ABSOLUTE stats (UserStatsDelta) to their
+    /// personal group, so their HexCount display drops with the release instead of staying
+    /// stale until the next game-state fetch — parity with the theft path's victim push.
+    /// Must run after the release commits and outside its retried block
+    /// (database-retry-resilience rule 5). Absolute values make a duplicate or reordered
+    /// push harmless.
+    /// </summary>
+    internal static async Task PushOwnerStatsAsync(
+        AppDbContext db, ITerritoryNotifier notifier, IEnumerable<DecayedCellRow> released,
+        CancellationToken ct)
+    {
+        var ownerIds = released.Select(r => r.OwnerId).Distinct().ToArray();
+        if (ownerIds.Length == 0) return;
+
+        var owners = await db.Users.AsNoTracking()
+            .Where(u => ownerIds.Contains(u.Id))
+            .Select(u => new
+            {
+                u.Id,
+                Delta = new UserStatsDelta(
+                    u.HexCount, u.TotalHexesCaptured, u.TotalHexesStolen,
+                    u.Streak, u.IsStreakActive, u.DistanceKm),
+            })
+            .ToListAsync(ct);
+
+        foreach (var owner in owners)
+            await notifier.NotifyUserStatsAsync(owner.Id, owner.Delta);
     }
 
     /// <summary>
@@ -107,6 +156,11 @@ public class DecayCleanupService : BackgroundService
     /// insert, and delete then act on exactly that set, preserving the HexCount-drift fix
     /// (#78): an owner is only ever decremented by the number of their cells actually
     /// deleted this run.
+    ///
+    /// Accepted gap: if a commit lands but its acknowledgement is lost and the strategy
+    /// re-runs the block, the retry returns only still-decayed rows, so the first batch's
+    /// HexesReleased broadcast is never sent. The database stays exact (no double
+    /// decrement, no duplicate audit rows); clients drop the ghosts on their next poll.
     /// </summary>
     internal static async Task<List<DecayedCellRow>> ReleaseDecayedCellsAsync(
         AppDbContext db, int batchSize, CancellationToken ct)

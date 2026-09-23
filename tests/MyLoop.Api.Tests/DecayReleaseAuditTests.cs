@@ -116,6 +116,13 @@ public class DecayReleaseAuditTests : IAsyncLifetime
         Assert.Equal(userId, audit.FromUserId);
         Assert.Equal(userId, audit.ToUserId);
         Assert.Equal(Guid.Empty, audit.ClaimId);
+
+        // The owner's post-commit stats push carries the decremented HexCount.
+        var notifier = new Mock<ITerritoryNotifier>();
+        await DecayCleanupService.PushOwnerStatsAsync(
+            check, notifier.Object, released, CancellationToken.None);
+        notifier.Verify(n => n.NotifyUserStatsAsync(userId,
+            It.Is<UserStatsDelta>(d => d.HexCount == 1)), Times.Once);
     }
 
     [Fact]
