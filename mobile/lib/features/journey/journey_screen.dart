@@ -14,6 +14,7 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
+import 'package:myloop/features/journey/reconnect_hex_resync.dart';
 import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
@@ -370,14 +371,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _subscribeRealtime() {
     final realtimeService = ref.read(territoryRealtimeProvider);
     // Missed hex-ownership deltas during a disconnect are never replayed by
-    // the hub — re-fetch the map's own snapshot on every reconnect so a
-    // player never keeps showing territory they've actually lost (#111).
-    // Repaint rides hexManager.hexRevision (bumped by loadUserOwnHexes), not a
-    // screen-wide setState (#129).
-    _reconnectSub = realtimeService.onReconnected.listen((_) {
-      _hexManager.loadUserOwnHexes();
-      _refreshViewportHexes();
-    });
+    // the hub — re-fetch the player's own hexes on every reconnect so a stolen
+    // hex never keeps showing as theirs (#111).
+    _reconnectSub = resyncOwnHexesOnReconnect(
+      onReconnected: realtimeService.onReconnected,
+      hexes: _hexManager,
+    );
     // Decay releases (#104): drop the reaper's hexes from the map immediately —
     // without this the app renders ghost territory until the next viewport poll.
     // Repaint rides hexManager.hexRevision (bumped by removeCells), not a
