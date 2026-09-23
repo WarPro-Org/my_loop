@@ -355,7 +355,7 @@ public class UsersController : ControllerBase
         var achievements = await _achievementService.GetAllForUser(id);
 
         // Exploration
-        var exploration = await _territoryService.GetExplorationStats(id, 0, 0);
+        var exploration = await _territoryService.GetExplorationStats(id);
 
         // Rank (city leaderboard) — count of users strictly ahead, not a full city roster load.
         // Ties share a rank (two users with the same HexCount both get the same number), matching
