@@ -133,6 +133,59 @@ public class LeaderboardConsistencyTests : IAsyncLifetime
         Assert.Equal(2, board.MyRank!.Rank);
     }
 
+    /// <summary>
+    /// #139 D7: a newcomer's seeded rank used to be the total user count, which invented a number
+    /// twice over — it counted users with no row on the visible snapshot, and it gave every
+    /// zero-cell player a different rank when they are tied. It must now be count-of-strictly-higher
+    /// plus one, the same rule every reader applies (#167).
+    /// </summary>
+    [Fact]
+    public async Task A_newcomers_seeded_rank_counts_only_players_ahead_of_them()
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        // Two players have captured something; one other already has zero cells.
+        await SeedRankedUser(100, 1, today);
+        await SeedRankedUser(90, 2, today);
+        await SeedRankedUser(0, 3, today);
+
+        // Extra users with NO row on this snapshot — the old total-count rank would have
+        // included them and inflated the newcomer's position.
+        await using (var noise = NewDb())
+        {
+            for (var i = 0; i < 5; i++)
+            {
+                noise.Users.Add(new User
+                {
+                    Id = Guid.NewGuid(),
+                    FirebaseUid = $"uid-offboard-{Guid.NewGuid()}",
+                    DisplayName = "Offboard",
+                    Color = "#333333",
+                });
+            }
+            await noise.SaveChangesAsync();
+        }
+
+        Guid newcomer;
+        await using (var db = NewDb())
+        {
+            var registered = await new UserService(db, Mock.Of<IValidationService>(), NullLogger<UserService>.Instance)
+                .Register(
+                    new RegisterRequest { DisplayName = "New", Color = "#222222" },
+                    $"uid-new-{Guid.NewGuid()}", "google");
+            newcomer = registered.Id;
+        }
+
+        await using var check = NewDb();
+        var entry = await check.LeaderboardEntries
+            .SingleAsync(l => l.UserId == newcomer && l.Date == today);
+
+        // Exactly two players have CellCount > 0, so the newcomer is 3rd — not 9th (the
+        // total user count), and tied with the existing zero-cell player rather than behind it.
+        Assert.Equal(3, entry.Rank);
+        Assert.Equal(0, entry.CellCount);
+    }
+
     [Fact]
     public async Task Signup_during_the_blank_window_does_not_hide_the_latest_snapshot()
     {
