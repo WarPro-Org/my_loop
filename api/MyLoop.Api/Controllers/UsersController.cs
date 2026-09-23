@@ -232,7 +232,9 @@ public class UsersController : ControllerBase
     /// per <see cref="GameConstants.HomeChangeCooldownDays"/> and audited (anti-cheat, #84).
     /// </summary>
     [HttpPost("{id:guid}/home")]
-    public async Task<IActionResult> SetHome([FromRoute] Guid id, [FromBody] SetHomeRequest request)
+    public async Task<IActionResult> SetHome(
+        [FromRoute] Guid id, [FromBody] SetHomeRequest request,
+        CancellationToken cancellationToken = default)
     {
         if (await DenySelf(id) is { } deny) return deny;
 
@@ -265,8 +267,10 @@ public class UsersController : ControllerBase
                 id, user.HomeLat, user.HomeLng, request.Lat, request.Lng);
         }
 
-        // Reverse geocode to get city/state/country
-        var location = await _geocoding.GetLocationInfo(request.Lat, request.Lng);
+        // Reverse geocode to get city/state/country. Bounded wait on the shared throttle: if
+        // background geocoding holds it too long this returns an empty location and the home is
+        // saved without a place name, rather than timing out onboarding on the client.
+        var location = await _geocoding.GetLocationInfo(request.Lat, request.Lng, cancellationToken);
 
         user.HomeLat = request.Lat;
         user.HomeLng = request.Lng;
