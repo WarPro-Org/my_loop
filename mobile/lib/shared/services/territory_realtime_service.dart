@@ -56,6 +56,23 @@ class HexChangeEvent {
   }
 }
 
+/// Event emitted when the decay reaper releases hexes (region-scoped, #104).
+/// Without it, released territory keeps rendering until the next viewport poll.
+/// Ids travel as strings: H3 ids exceed 2^53 and the region keys are already strings.
+class HexesReleasedEvent {
+  final String parentCellId;
+  final List<String> h3Indexes;
+
+  HexesReleasedEvent({required this.parentCellId, required this.h3Indexes});
+
+  factory HexesReleasedEvent.fromJson(Map<String, dynamic> json) {
+    return HexesReleasedEvent(
+      parentCellId: json['parentCellId'] as String? ?? '',
+      h3Indexes: (json['h3Indexes'] as List? ?? []).map((e) => e.toString()).toList(),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Personal delta event classes
 // ─────────────────────────────────────────────────────────────────────────────
@@ -159,6 +176,7 @@ class TerritoryRealtimeService {
   final String _baseUrl;
   HubConnection? _hubConnection;
   final _changeController = StreamController<List<HexChangeEvent>>.broadcast();
+  final _releasedController = StreamController<HexesReleasedEvent>.broadcast();
   final _userStatsController = StreamController<UserStatsDelta>.broadcast();
   final _xpController = StreamController<XpDelta>.broadcast();
   final _missionController = StreamController<MissionDelta>.broadcast();
@@ -168,10 +186,18 @@ class TerritoryRealtimeService {
   bool _isConnected = false;
   String? _userId;
 
+  /// Started when the most recent region-feed push (`HexOwnershipChanged` or
+  /// `HexesReleased`) arrived; null
+  /// when none has arrived on the current connection. A [Stopwatch] (not
+  /// `DateTime.now()`) so a device clock change can't make an old push look
+  /// fresh — wall-clock differences go negative when the clock moves back.
+  Stopwatch? _sinceLastHexEvent;
+
   TerritoryRealtimeService({required String baseUrl}) : _baseUrl = baseUrl;
 
   // ── Public streams ──
   Stream<List<HexChangeEvent>> get onHexChanges => _changeController.stream;
+  Stream<HexesReleasedEvent> get onHexesReleased => _releasedController.stream;
   Stream<UserStatsDelta> get onUserStats => _userStatsController.stream;
   Stream<XpDelta> get onXp => _xpController.stream;
   Stream<MissionDelta> get onMissions => _missionController.stream;
@@ -183,6 +209,23 @@ class TerritoryRealtimeService {
   Stream<void> get onReconnected => _reconnectedController.stream;
 
   bool get isConnected => _isConnected;
+
+  /// Monotonic time since the most recent region-feed push
+  /// (`HexOwnershipChanged` or `HexesReleased`) on the CURRENT connection, or null when none has arrived or the hub is not
+  /// connected. Journey's viewport-poll back-off (#129) reads this; it is
+  /// reset whenever the connection closes, starts reconnecting, reconnects,
+  /// or is disconnected at logout, because deltas sent while the socket was
+  /// down are lost (#111) and a previous session's push must never vouch for
+  /// the next one.
+  Duration? get timeSinceLastHexEvent =>
+      _isConnected ? _sinceLastHexEvent?.elapsed : null;
+
+  /// Whether every id in [regionIds] has a confirmed `JoinRegion` on the
+  /// current connection (a region is only marked subscribed after its join
+  /// succeeds, #139 D9). Lets a consumer tell whether live deltas can cover
+  /// the cells it is showing.
+  bool isSubscribedToAll(Set<String> regionIds) =>
+      _subscribedRegions.containsAll(regionIds);
 
   /// Number of connection attempts actually made (i.e. not short-circuited by
   /// the already-connected guard). Exposed only so a regression test can prove
@@ -219,8 +262,9 @@ class TerritoryRealtimeService {
         .build();
     _hubConnection = connection;
 
-    // Public event
+    // Public events
     connection.on('HexOwnershipChanged', _handleHexChanges);
+    connection.on('HexesReleased', _handleHexesReleased);
 
     // Personal events
     connection.on('UserStatsDelta', _handleUserStats);
@@ -228,16 +272,10 @@ class TerritoryRealtimeService {
     connection.on('MissionDelta', _handleMissions);
     connection.on('AchievementUnlocked', _handleAchievements);
 
-    connection.onclose(({error}) {
-      _isConnected = false;
-      _log.warning('Connection closed: $error');
-    });
-
-    connection.onreconnected(({connectionId}) {
-      _isConnected = true;
-      _log.info('Reconnected: $connectionId');
-      _resubscribeAll().then((_) => _reconnectedController.add(null));
-    });
+    connection.onclose(({error}) => _handleClosed(error));
+    connection.onreconnecting(({error}) => _handleReconnecting(error));
+    connection.onreconnected(
+        ({connectionId}) => _handleReconnected(connectionId));
 
     try {
       await connection.start();
@@ -264,11 +302,33 @@ class TerritoryRealtimeService {
   }
 
   /// Subscribe to a geographic region by its H3 res-3 parent cell ID.
+  ///
+  /// Marks the region subscribed only after `invoke` succeeds. Marking it
+  /// first (the previous behavior) left the client believing it was
+  /// subscribed even when the hub call failed — `updateRegions` skips
+  /// regions already in [_subscribedRegions], so a failed join was never
+  /// retried on the next viewport update (#139 D9).
   Future<void> joinRegion(String regionId) async {
     if (!_isConnected || _subscribedRegions.contains(regionId)) return;
+    await invokeJoinRegion(regionId);
     _subscribedRegions.add(regionId);
-    await _hubConnection?.invoke('JoinRegion', args: [regionId]);
   }
+
+  /// Performs the hub invoke for [joinRegion]. Extracted into its own
+  /// overridable method so tests can simulate a failed join without a live
+  /// SignalR connection.
+  @visibleForTesting
+  Future<void> invokeJoinRegion(String regionId) =>
+      _hubConnection!.invoke('JoinRegion', args: [regionId]);
+
+  /// Test-only: marks the service connected without a live hub connection,
+  /// so [joinRegion]'s failure-handling can be exercised in isolation.
+  @visibleForTesting
+  set debugConnected(bool value) => _isConnected = value;
+
+  /// Test-only snapshot of the currently subscribed region ids.
+  @visibleForTesting
+  Set<String> get subscribedRegionsForTest => Set.unmodifiable(_subscribedRegions);
 
   /// Unsubscribe from a region.
   Future<void> leaveRegion(String regionId) async {
@@ -300,6 +360,7 @@ class TerritoryRealtimeService {
     }
     _subscribedRegions.clear();
     _isConnected = false;
+    _resetHexFeedFreshness();
     _userId = null;
     await _hubConnection?.stop();
     _hubConnection = null;
@@ -308,12 +369,52 @@ class TerritoryRealtimeService {
   void dispose() {
     disconnect();
     _changeController.close();
+    _releasedController.close();
     _userStatsController.close();
     _xpController.close();
     _missionController.close();
     _achievementController.close();
     _reconnectedController.close();
   }
+
+  // ── Connection lifecycle handlers ──
+
+  void _handleClosed(Exception? error) {
+    _isConnected = false;
+    _resetHexFeedFreshness();
+    _log.warning('Connection closed: $error');
+  }
+
+  /// `withAutomaticReconnect()` keeps the socket down for the whole retry
+  /// window; treating that window as connected let consumers trust a stale
+  /// delta stream and skip the poll that would have caught up.
+  void _handleReconnecting(Exception? error) {
+    _isConnected = false;
+    _resetHexFeedFreshness();
+    _log.warning('Connection lost, reconnecting: $error');
+  }
+
+  void _handleReconnected(String? connectionId) {
+    _isConnected = true;
+    // Deltas sent during the outage were never delivered; nothing received
+    // before it may vouch for the current map.
+    _resetHexFeedFreshness();
+    _log.info('Reconnected: $connectionId');
+    _resubscribeAll().then((_) => _reconnectedController.add(null));
+  }
+
+  void _resetHexFeedFreshness() => _sinceLastHexEvent = null;
+
+  void _markHexFeedFresh() => _sinceLastHexEvent = Stopwatch()..start();
+
+  /// Test-only: drives the hub's `onreconnecting` callback without a live
+  /// connection.
+  @visibleForTesting
+  void debugSimulateReconnecting() => _handleReconnecting(null);
+
+  /// Test-only: drives the hub's `onclose` callback without a live connection.
+  @visibleForTesting
+  void debugSimulateClosed() => _handleClosed(null);
 
   // ── Event handlers ──
 
@@ -328,9 +429,38 @@ class TerritoryRealtimeService {
         .toList();
 
     if (events.isNotEmpty) {
+      _markHexFeedFresh();
       _changeController.add(events);
     }
   }
+
+  void _handleHexesReleased(List<Object?>? arguments) {
+    if (arguments == null || arguments.isEmpty) return;
+    final raw = arguments[0];
+    if (raw is! Map<String, dynamic>) return;
+    final event = HexesReleasedEvent.fromJson(raw);
+    if (event.h3Indexes.isNotEmpty) {
+      // A release is a real region-feed delta on the current connection, so
+      // it proves the feed is live exactly like HexOwnershipChanged does.
+      _markHexFeedFresh();
+      _releasedController.add(event);
+      _log.fine('HexesReleased: ${event.h3Indexes.length} in ${event.parentCellId}');
+    }
+  }
+
+  /// Simulates a `HexOwnershipChanged` payload from the hub, exactly as
+  /// `connection.on('HexOwnershipChanged', ...)` would deliver it. Lets tests
+  /// verify [timeSinceLastHexEvent] freshness tracking without a live SignalR
+  /// connection (mirrors the [connectAttempts] test hook above).
+  @visibleForTesting
+  void debugSimulateHexChanges(List<Object?>? arguments) =>
+      _handleHexChanges(arguments);
+
+  /// Simulates a `HexesReleased` payload from the hub (see
+  /// [debugSimulateHexChanges]).
+  @visibleForTesting
+  void debugSimulateHexesReleased(List<Object?>? arguments) =>
+      _handleHexesReleased(arguments);
 
   void _handleUserStats(List<Object?>? arguments) {
     if (arguments == null || arguments.isEmpty) return;

@@ -77,6 +77,24 @@ class JourneyState {
     this.rejectionCount = 0,
   });
 
+  /// Copies the state, with one deliberate asymmetry: [error], [levelUpTo] and
+  /// [achievementUnlocked] are **one-shot**. They are assigned bare rather than
+  /// `x ?? this.x`, so any copy that does not re-supply them clears them, and a
+  /// later GPS tick drops them within a second or so.
+  ///
+  /// That is load-bearing, not an oversight. `journey_screen` surfaces all three
+  /// as snackbars via a listener (`JourneySnackbarPresenter.onJourneyChanged`)
+  /// guarded on `next.x != prev?.x`. If they
+  /// persisted, a second *identical* message — the same rejection reason twice,
+  /// the same achievement re-reported — would compare equal to the previous
+  /// value and be silently suppressed. Clearing between occurrences is what
+  /// makes the repeat visible.
+  ///
+  /// So do NOT "tidy" these three into `?? this.x` (#139 D5). The safety of the
+  /// current shape depends on consumers *listening* for transitions; a consumer
+  /// that instead reads these during `build` will miss them, and should use
+  /// [rejectionCount] — which is cumulative — rather than [error]. (The debug
+  /// mock-walk HUD reads [error] in build and knowingly accepts the flicker.)
   JourneyState copyWith({
     JourneyStatus? status,
     List<List<double>>? path,
