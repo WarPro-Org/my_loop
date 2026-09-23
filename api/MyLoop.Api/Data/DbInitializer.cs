@@ -215,6 +215,17 @@ public static class DbInitializer
             CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Decay""
             ON ""TerritoryCells"" (""LastRefreshedAt"", ""DecayDays"")");
 
+        // Bucket-first viewport query (#114): prune by res-3 parent, refine by center.
+        // The composite's prefix covers the old single-column ParentCellId index, so drop it.
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId_CenterLat_CenterLng""
+            ON ""TerritoryCells"" (""ParentCellId"", ""CenterLat"", ""CenterLng"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId_OwnerId""
+            ON ""TerritoryCells"" (""ParentCellId"", ""OwnerId"")");
+        db.Database.ExecuteSqlRaw(
+            @"DROP INDEX IF EXISTS ""IX_TerritoryCells_ParentCellId""");
+
         // Daily claim-cap count + claim-history grouping both filter Claims by
         // (UserId, CreatedAt); the cap check runs inside EVERY claim transaction (#124).
         db.Database.ExecuteSqlRaw(@"
