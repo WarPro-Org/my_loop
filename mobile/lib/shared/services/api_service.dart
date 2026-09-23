@@ -259,17 +259,12 @@ class ApiService {
     return list.map((j) => TerritoryCell.fromJson(j)).toList();
   }
 
-  /// Gets exploration stats for neighborhoods near a GPS point.
-  /// Returns explored % for each nearby neighborhood (H3 res 8).
+  /// Gets exploration stats for all of the user's explored neighborhoods.
+  /// Returns explored % for each neighborhood (H3 res 8).
   Future<List<ExplorationNeighborhood>> getExplorationStats({
     required String userId,
-    required double lat,
-    required double lng,
   }) async {
-    final response = await _dio.get(
-      '/api/territories/exploration/$userId',
-      queryParameters: {'lat': lat, 'lng': lng},
-    );
+    final response = await _dio.get('/api/territories/exploration/$userId');
     final list = response.data as List;
     return list.map((j) => ExplorationNeighborhood.fromJson(j as Map<String, dynamic>)).toList();
   }

@@ -117,7 +117,7 @@ public class ExplorationNeighborhoodNameCacheTests : IAsyncLifetime
         var geocoding = new GeocodingService(new HttpClient(handler), NullLogger<GeocodingService>.Instance);
 
         var sw = Stopwatch.StartNew();
-        var stats = await NewService(geocoding).GetExplorationStats(userId, 0, 0);
+        var stats = await NewService(geocoding).GetExplorationStats(userId);
         sw.Stop();
 
         // The stub handler takes 3s to respond; a call that awaited it inline could not
@@ -136,7 +136,7 @@ public class ExplorationNeighborhoodNameCacheTests : IAsyncLifetime
         var handler = new SlowNominatimHandler(TimeSpan.FromMilliseconds(200));
         var geocoding = new GeocodingService(new HttpClient(handler), NullLogger<GeocodingService>.Instance);
 
-        var first = await NewService(geocoding).GetExplorationStats(userId, 0, 0);
+        var first = await NewService(geocoding).GetExplorationStats(userId);
         Assert.StartsWith("Area (", Assert.Single(first).AreaName);
 
         // Background resolution is fire-and-forget; poll for it to land rather than sleep a
@@ -155,7 +155,7 @@ public class ExplorationNeighborhoodNameCacheTests : IAsyncLifetime
         // below must NOT trigger another background resolution for an already-persisted name.
         Assert.Equal(1, handler.CallCount);
 
-        var second = await NewService(geocoding).GetExplorationStats(userId, 0, 0);
+        var second = await NewService(geocoding).GetExplorationStats(userId);
         Assert.Equal("Realname Heights", Assert.Single(second).AreaName);
         Assert.Equal(1, handler.CallCount);
     }
