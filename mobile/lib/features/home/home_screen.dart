@@ -1,21 +1,16 @@
 ﻿/// Home screen shell - main navigation container for authenticated users.
 library;
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/features/auth/user_session_teardown.dart';
 import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
-import 'package:myloop/shared/services/api_service.dart';
-import 'package:myloop/shared/services/auth_service.dart';
-import 'package:myloop/shared/services/game_state_cache.dart';
-import 'package:myloop/shared/services/profile_cache.dart';
-import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
@@ -49,7 +44,7 @@ class HomeScreen extends ConsumerWidget {
           AchievementsScreen(),
         ],
       ),
-      endDrawer: const _ProfileDrawer(),
+      endDrawer: const ProfileDrawer(),
       floatingActionButton: currentIndex == 0
         ? ValueListenableBuilder<bool>(
             valueListenable: homeFabVisible,
@@ -65,8 +60,9 @@ class HomeScreen extends ConsumerWidget {
 }
 
 /// Sidebar drawer for profile settings (no stats — those stay on homepage).
-class _ProfileDrawer extends ConsumerWidget {
-  const _ProfileDrawer();
+@visibleForTesting
+class ProfileDrawer extends ConsumerWidget {
+  const ProfileDrawer({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -211,9 +207,7 @@ class _ProfileDrawer extends ConsumerWidget {
             iconColor: AppColors.red,
             onTap: () async {
               Navigator.pop(context);
-              final uid = ref.read(userProfileProvider).userId;
-              ref.read(userProfileProvider.notifier).clear();
-              await ref.read(authServiceProvider).signOut(uid);
+              await ref.read(userSessionTeardownProvider).signOut();
               if (context.mounted) context.go('/login');
             },
           ),
@@ -313,20 +307,7 @@ class _ProfileDrawer extends ConsumerWidget {
             onPressed: () async {
               Navigator.pop(ctx); // close dialog
               Navigator.pop(context); // close drawer
-              final profile = ref.read(userProfileProvider);
-              final api = ref.read(apiServiceProvider);
-              final uid = profile.userId;
-              if (uid == null) return;
-              await ProfileCache.clear();
-              await GameStateCache.clear();
-              await TerritoryCache.clear();
-              try {
-                await api.deleteAccount(uid);
-                await FirebaseAuth.instance.currentUser?.delete();
-              } catch (_) {
-                // Firebase delete may fail if re-auth needed — account is already gone server-side
-                await FirebaseAuth.instance.signOut();
-              }
+              await ref.read(userSessionTeardownProvider).deleteAccount();
               if (context.mounted) context.go('/login');
             },
             child: Text('Delete', style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w700)),

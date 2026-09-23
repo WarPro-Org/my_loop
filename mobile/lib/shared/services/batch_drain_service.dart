@@ -34,6 +34,11 @@ class BatchDrainService {
 
   Timer? _drainTimer;
   bool _draining = false;
+
+  /// Completes when the in-flight [_tryDrain] (if any) has finished, including its
+  /// post-ACK [StepClaimQueue.removeProcessed]. [dispose] awaits it so a caller tearing
+  /// the write layer down (sign-out) knows no drain can touch the queue afterwards.
+  Completer<void>? _inFlightDrain;
   int _consecutiveFailures = 0;
   /// When set and still in the future, [_tryDrain] refuses to hit the network. The periodic
   /// timer keeps ticking but is gated on this, so backoff is honoured without stacking retries.
@@ -117,6 +122,7 @@ class BatchDrainService {
     if (_backoffUntil != null && _now().isBefore(_backoffUntil!)) return false;
 
     _draining = true;
+    final inFlight = _inFlightDrain = Completer<void>();
     var peeked = const <QueuedStepPoint>[];
     try {
       final points = _queue.peek(_maxBatchSize);
@@ -184,6 +190,7 @@ class BatchDrainService {
       return false;
     } finally {
       _draining = false;
+      inFlight.complete();
     }
   }
 
@@ -200,9 +207,15 @@ class BatchDrainService {
     _backoffUntil = _now().add(Duration(seconds: backoffSeconds));
   }
 
-  void dispose() {
+  /// Stops the drain timer and completes once any in-flight drain has finished.
+  ///
+  /// Callers that only need the timer stopped (end of walk) may ignore the future;
+  /// callers that must guarantee nothing touches the queue afterwards (sign-out /
+  /// account deletion, #110) must await it.
+  Future<void> dispose() async {
     _disposed = true;
     stop();
+    await _inFlightDrain?.future;
     _resultController.close();
     _rejectionController.close();
   }

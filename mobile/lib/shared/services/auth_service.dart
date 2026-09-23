@@ -20,11 +20,6 @@ library;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:myloop/shared/services/game_state_cache.dart';
-import 'package:myloop/shared/services/notification_cache.dart';
-import 'package:myloop/shared/services/profile_cache.dart';
-import 'package:myloop/shared/services/step_claim_queue.dart';
-import 'package:myloop/shared/services/territory_cache.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Authentication Service
@@ -140,10 +135,10 @@ class AuthService {
 
   /// Signs the user out of both Firebase and the federated provider.
   ///
-  /// [userId] is the server user id of the account signing out (the caller
-  /// must read it before clearing its own provider state) so the step-claim
-  /// WAL for that account can be cleared. It may be `null` if no profile was
-  /// ever loaded this session, in which case there is no queue to clear.
+  /// This is auth only. Device-local state bound to the account (offline
+  /// caches, the step-claim WAL and the live walk) is torn down by
+  /// `UserSessionTeardown`, which every sign-out and account-deletion path
+  /// goes through before calling this (#110).
   ///
   /// Order matters:
   ///   1. Sign out of Google (if it was used) so the next sign-in shows the
@@ -152,28 +147,19 @@ class AuthService {
   ///
   /// After this call, [authStateChanges] emits `null`, triggering navigation
   /// back to the login screen via the auth state listener.
-  Future<void> signOut(String? userId) async {
-    // Drop the cached offline profile, home cards, and territories so the next
-    // user can't inherit this session on a later offline launch — profile/session
-    // (#19), missions/exploration cards (#34), and own-hex territories (#33).
-    await ProfileCache.clear();
-    await GameStateCache.clear();
-    await TerritoryCache.clear();
-    await NotificationCache.clear(); // notification inbox is user-bound too (#30)
-    // Undrained GPS points must not survive into the next account's session on
-    // this device — the next account's queue is a separate per-user file
-    // regardless, but clearing on sign-out also means a re-login by the same
-    // user doesn't resubmit a stale walk (#110).
-    if (userId != null) {
-      final queue = StepClaimQueue();
-      await queue.init(userId);
-      await queue.clear();
-    }
+  Future<void> signOut() async {
     // Only attempt Google sign-out if we previously initialized the SDK.
     if (_googleInitialized) {
       await GoogleSignIn.instance.signOut();
     }
     await _auth.signOut();
+  }
+
+  /// Deletes the signed-in Firebase user. Called after the server has deleted
+  /// the account; throws if Firebase requires a recent re-authentication, in
+  /// which case the caller falls back to [signOut].
+  Future<void> deleteCurrentUser() async {
+    await _auth.currentUser?.delete();
   }
 }
 

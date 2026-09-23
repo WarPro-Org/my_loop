@@ -155,6 +155,11 @@ class JourneyController extends Notifier<JourneyState> {
 
   static const int _loopCheckInterval = 5;
 
+  /// Bumped by [abandonForSignOut]. A [startJourney] that was mid-await when the
+  /// account signed out compares against it and aborts instead of wiring a write
+  /// layer (queue + drain + GPS) for an account that is no longer signed in.
+  int _sessionGeneration = 0;
+
   @override
   JourneyState build() => const JourneyState();
 
@@ -178,7 +183,9 @@ class JourneyController extends Notifier<JourneyState> {
         return;
       }
 
+      final generation = _sessionGeneration;
       final pos = await locationService.getCurrentPosition();
+      if (generation != _sessionGeneration) return;
       _startTime = DateTime.now();
       // New walk → new session id; every point and the loop claim carry it (#56).
       _walkSessionId = const Uuid().v4();
@@ -193,7 +200,8 @@ class JourneyController extends Notifier<JourneyState> {
         rejectionCount: 0,
       );
 
-      await _initWriteLayer();
+      await _initWriteLayer(generation);
+      if (generation != _sessionGeneration) return;
       _positionSub = locationService.startTracking().listen(_onPosition);
       _startElapsedTimer();
     } catch (e) {
@@ -204,7 +212,7 @@ class JourneyController extends Notifier<JourneyState> {
   List<List<double>> stopJourney() {
     _positionSub?.cancel();
     _timer?.cancel();
-    _disposeWriteLayer();
+    unawaited(_disposeWriteLayer());
     _resetTrackingState();
     final path = state.path;
     state = state.copyWith(
@@ -281,12 +289,18 @@ class JourneyController extends Notifier<JourneyState> {
   StreamSubscription<String>? _rejectionSub;
 
   /// Initialize the persistent queue and drain service for this walk.
-  Future<void> _initWriteLayer() async {
+  ///
+  /// [generation] is the [_sessionGeneration] the walk started under; if the
+  /// account signs out while the queue file is opening, the half-built layer is
+  /// dropped rather than attached to this controller.
+  Future<void> _initWriteLayer(int generation) async {
     final userId = ref.read(userProfileProvider).userId;
     if (userId == null) return;
 
-    _queue = StepClaimQueue();
-    await _queue!.init(userId);
+    final queue = StepClaimQueue();
+    await queue.init(userId);
+    if (generation != _sessionGeneration) return;
+    _queue = queue;
 
     final api = ref.read(apiServiceProvider);
     _drainService = BatchDrainService(
@@ -371,14 +385,62 @@ class JourneyController extends Notifier<JourneyState> {
   /// Number of points pending in queue (for UI indicator).
   int get pendingQueueSize => _queue?.length ?? 0;
 
-  void _disposeWriteLayer() {
+  /// Stops the drain layer. The returned future completes once any in-flight
+  /// drain has finished; end-of-walk callers ignore it, sign-out awaits it.
+  Future<void> _disposeWriteLayer() {
     _drainSub?.cancel();
     _rejectionSub?.cancel();
-    _drainService?.dispose();
+    final drained = _drainService?.dispose() ?? Future<void>.value();
     _drainService = null;
     _drainSub = null;
     _rejectionSub = null;
     // Keep _queue alive — points persist on disk for next app launch
+    return drained;
+  }
+
+  /// Tears down this account's live write layer on sign-out / account deletion
+  /// (#110) and wipes its queued GPS points. Safe to call with no walk active.
+  ///
+  /// This must act on the controller's OWN [StepClaimQueue] instance. Clearing
+  /// through a second instance leaves this one's in-memory points, GPS
+  /// subscription and drain timer alive: the next drain ACK or GPS point rewrites
+  /// the file, and — since the server takes the claim owner from the JWT — the
+  /// next drain after another account signs in claims these points as theirs.
+  ///
+  /// Order: stop new points (GPS + timer) → stop the drain and await any
+  /// in-flight batch (its post-ACK rewrite must land before the clear) → clear
+  /// memory + disk on the same instance → reset to idle. [userId] is the
+  /// outgoing account; when no walk opened a queue this session its leftover
+  /// file (e.g. from an app kill mid-walk) is cleared instead — no live instance
+  /// exists then, so a fresh one cannot race anything.
+  Future<void> abandonForSignOut(String? userId) async {
+    _sessionGeneration++;
+    final positionSub = _positionSub;
+    _positionSub = null;
+    _timer?.cancel();
+    _timer = null;
+    final queue = _queue;
+    _queue = null;
+    // Disposed synchronously so no new drain can start while we await below.
+    final drained = _disposeWriteLayer();
+    try {
+      await positionSub?.cancel();
+      await drained;
+      if (queue != null) {
+        // StepClaimQueue.clear empties memory before touching disk, so even a
+        // failed disk write leaves nothing in memory for a later drain.
+        await queue.clear();
+      } else if (userId != null) {
+        final leftover = StepClaimQueue();
+        await leftover.init(userId);
+        await leftover.clear();
+      }
+    } finally {
+      _resetTrackingState();
+      _walkSessionId = null;
+      _startTime = null;
+      state = const JourneyState();
+    }
   }
 
   // ────────────────────────────────────────────────────────────────────────────

@@ -115,7 +115,8 @@ void main() {
     await a.enqueue(_pt('a-2'));
     expect(a.length, 2);
 
-    // Simulate AuthService.signOut(userId) clearing the outgoing account's WAL.
+    // Sign-out clears the outgoing account's live queue instance (see
+    // user_session_teardown_test.dart for the end-to-end teardown).
     await a.clear();
 
     final b = StepClaimQueue();
