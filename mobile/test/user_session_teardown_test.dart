@@ -235,9 +235,6 @@ void main() {
           avatarId: 0,
           color: '#FF0000',
           displayName: userId,
-          hexCount: 0,
-          streak: 0,
-          distanceKm: 0,
         );
   }
 

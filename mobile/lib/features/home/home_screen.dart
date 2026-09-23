@@ -12,6 +12,7 @@ import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
 /// Global key so child widgets (like home_tab) can open the end drawer.
@@ -67,7 +68,8 @@ class ProfileDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider);
-    final title = getTitleForHexes(profile.hexCount);
+    final hexCount = ref.watch(profileSliceProvider.select((s) => s.hexCount));
+    final title = getTitleForHexes(hexCount);
     final avatarColor = Color(int.parse(profile.color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
     return Drawer(

@@ -3,9 +3,11 @@
 /// Once `POST /api/leaderboard/refresh` was removed, the leaderboard snapshot is
 /// only recomputed by the server's background worker (every few minutes). The
 /// post-walk refresh used to re-read that snapshot via `getLeaderboard` and write
-/// its `myRank` into `userProfileProvider.rank`, overwriting the LIVE rank that
-/// game-state hydration had just fetched — so a player who climbed the city
-/// board still saw their pre-walk rank. The fix takes the rank from game-state.
+/// its `myRank` into the Home rank, overwriting the LIVE rank that game-state
+/// hydration had just fetched — so a player who climbed the city board still
+/// saw their pre-walk rank. The fix takes the rank from game-state. Since #113
+/// the rank lives in `profileSliceProvider` (the sole owner of game stats), so
+/// that is what these tests read.
 ///
 /// It FAILS against the pre-fix logic (rank ends up as the stale snapshot's 5).
 library;
@@ -19,6 +21,7 @@ import 'package:myloop/features/journey/post_walk_refresh.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -85,6 +88,8 @@ Future<(WidgetRef, ProviderContainer)> _pumpWithRef(
         avatarId: 0,
         color: '#000000',
         displayName: 'Player',
+      );
+  container.read(profileSliceProvider.notifier).applyStats(
         hexCount: 100,
         streak: 3,
         distanceKm: 10,
@@ -112,9 +117,9 @@ void main() {
 
     await tester.runAsync(() => refreshProfileAfterWalk(ref, isMounted: () => true));
 
-    final profile = container.read(userProfileProvider);
-    expect(profile.rank, _liveRank);
-    expect(profile.hexCount, 140);
+    final stats = container.read(profileSliceProvider);
+    expect(stats.rank, _liveRank);
+    expect(stats.hexCount, 140);
     expect(api.leaderboardCalls, 0,
         reason: 'the leaderboard snapshot is not refreshed per claim any more (#109)');
   });
@@ -125,7 +130,7 @@ void main() {
 
     await tester.runAsync(() => refreshProfileAfterWalk(ref, isMounted: () => true));
 
-    expect(container.read(userProfileProvider).rank, _preWalkRank);
+    expect(container.read(profileSliceProvider).rank, _preWalkRank);
   });
 
   // PR #171 round 2, finding 1. A player who skipped "set home" (or whose reverse
@@ -140,7 +145,7 @@ void main() {
 
     await tester.runAsync(() => refreshProfileAfterWalk(ref, isMounted: () => true));
 
-    expect(container.read(userProfileProvider).rank, globalRank);
+    expect(container.read(profileSliceProvider).rank, globalRank);
     expect(api.leaderboardCalls, 0);
   });
 
@@ -151,17 +156,20 @@ void main() {
 
     await tester.runAsync(() => refreshProfileAfterWalk(ref, isMounted: () => true));
 
-    expect(container.read(userProfileProvider).rank, _preWalkRank);
+    expect(container.read(profileSliceProvider).rank, _preWalkRank);
   });
 
-  testWidgets('does not touch the profile once the screen is gone', (tester) async {
+  // The slice is written by hydration itself, not by the screen, so the fresh
+  // stats land even when the screen closed mid-refresh (single owner, #113).
+  testWidgets('a screen closed mid-refresh still leaves the fresh stats in the slice',
+      (tester) async {
     final api = _FakeApi(gameStateRank: _liveRank);
     final (ref, container) = await _pumpWithRef(tester, api);
 
     await tester.runAsync(() => refreshProfileAfterWalk(ref, isMounted: () => false));
 
-    final profile = container.read(userProfileProvider);
-    expect(profile.rank, _preWalkRank);
-    expect(profile.hexCount, 100);
+    final stats = container.read(profileSliceProvider);
+    expect(stats.rank, _liveRank);
+    expect(stats.hexCount, 140);
   });
 }

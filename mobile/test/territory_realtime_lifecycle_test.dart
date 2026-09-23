@@ -122,9 +122,6 @@ void main() {
             avatarId: 0,
             color: '#FF0000',
             displayName: 'Walker',
-            hexCount: 0,
-            streak: 0,
-            distanceKm: 0,
           );
       await tester.pumpAndSettle();
 

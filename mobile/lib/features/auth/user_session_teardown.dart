@@ -20,6 +20,7 @@ import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 
 final _log = Logger('UserSessionTeardown');
 
@@ -70,6 +71,9 @@ class UserSessionTeardown {
       () => _ref.read(journeyControllerProvider.notifier).abandonForSignOut(uid),
     );
     _ref.read(userProfileProvider.notifier).clear();
+    // In-memory game stats (#113/#172): without this the next account shows the
+    // previous one's hex count, streak, distance and rank until it hydrates.
+    _ref.invalidate(profileSliceProvider);
     // The hub connection is app-lifecycle-scoped (#102) — ending the session is
     // the one place it must actually be torn down.
     await _bestEffort(
