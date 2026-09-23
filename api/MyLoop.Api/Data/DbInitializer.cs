@@ -28,7 +28,7 @@ public static class DbInitializer
         DatabaseSeeder.EnsureTodayLeaderboard(db);
     }
 
-    private static void ApplySchemaPatches(AppDbContext db, IHexGridService hexGrid, ILogger logger)
+    internal static void ApplySchemaPatches(AppDbContext db, IHexGridService hexGrid, ILogger logger)
     {
         // The DDL is idempotent (IF NOT EXISTS) because EnsureCreated won't add columns/tables to an
         // existing database. A throw here is unlikely to be a benign "already exists" — surface it
@@ -211,11 +211,6 @@ public static class DbInitializer
             ON ""TerritoryCells"" USING BRIN (""CenterLat"", ""CenterLng"")
             WITH (pages_per_range = 128)");
 
-        // Index for the decay cleanup query (avoids a full table scan).
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Decay""
-            ON ""TerritoryCells"" (""LastRefreshedAt"", ""DecayDays"")");
-
         // Daily claim-cap count + claim-history grouping both filter Claims by
         // (UserId, CreatedAt); the cap check runs inside EVERY claim transaction (#124).
         db.Database.ExecuteSqlRaw(@"
@@ -241,6 +236,9 @@ public static class DbInitializer
     /// DecayAt generated column + index that make the hourly reaper scan indexable
     /// (the old per-row interval predicate forced a full-table scan; its helper index
     /// on (LastRefreshedAt, DecayDays) never served the predicate and is dropped).
+    /// Nothing may CREATE that old index any more: a non-concurrent build takes a SHARE
+    /// lock that blocks claim writes, and rebuilding it only to drop it here would repeat
+    /// on every cold start. The DROP stays so existing databases are cleaned up.
     /// Idempotent — safe on every startup and on fresh EnsureCreated databases.
     /// </summary>
     internal static void ApplyDecayReleaseSchema(AppDbContext db)

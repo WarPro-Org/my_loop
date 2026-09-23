@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Data;
@@ -193,5 +194,75 @@ public class DecayReleaseAuditTests : IAsyncLifetime
         var released = await DecayCleanupService.ReleaseDecayedCellsAsync(
             db, DecayCleanupService.DecayBatchSize, CancellationToken.None);
         Assert.Contains(released, r => r.CellId == 6001L && r.OwnerId == userId);
+    }
+
+    /// <summary>
+    /// Review fix for #104: ApplyTerritoryIndexes used to CREATE the old
+    /// (LastRefreshedAt, DecayDays) index and ApplyDecayReleaseSchema then DROPPED it — a full
+    /// B-tree build (SHARE lock blocking claim writes) thrown away on every cold start. Runs
+    /// the real startup patch path twice (first boot + a restart) with an event trigger that
+    /// records every index actually built, so a build-then-drop is caught even though the
+    /// end state looks the same.
+    /// </summary>
+    [Fact]
+    public async Task Startup_schema_patches_never_build_the_dropped_decay_index()
+    {
+        await using var db = NewDb();
+        await db.Database.ExecuteSqlRawAsync(@"CREATE TABLE ""_IndexBuildLog"" (""Identity"" text NOT NULL)");
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE FUNCTION log_index_builds() RETURNS event_trigger LANGUAGE plpgsql AS $fn$
+            BEGIN
+                INSERT INTO ""_IndexBuildLog"" (""Identity"")
+                SELECT object_identity FROM pg_event_trigger_ddl_commands()
+                WHERE object_identity IS NOT NULL;
+            END
+            $fn$");
+        await db.Database.ExecuteSqlRawAsync(@"
+            CREATE EVENT TRIGGER log_index_builds ON ddl_command_end
+            WHEN TAG IN ('CREATE INDEX') EXECUTE FUNCTION log_index_builds()");
+
+        var logger = new WarningRecordingLogger();
+        var hexGrid = Mock.Of<IHexGridService>();
+        DbInitializer.ApplySchemaPatches(db, hexGrid, logger); // first boot
+        DbInitializer.ApplySchemaPatches(db, hexGrid, logger); // restart / Neon wake
+
+        // ApplySchemaPatches swallows failures into a warning; a swallowed failure would
+        // make the index assertions below meaningless.
+        Assert.Empty(logger.Warnings);
+
+        var oldIndexBuilds = await db.Database.SqlQueryRaw<int>(@"
+            SELECT COUNT(*)::int AS ""Value"" FROM ""_IndexBuildLog""
+            WHERE ""Identity"" LIKE '%""IX_TerritoryCells_Decay""'").SingleAsync();
+        Assert.Equal(0, oldIndexBuilds);
+
+        var oldIndexPresent = await db.Database.SqlQueryRaw<bool>(@"
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = 'TerritoryCells' AND indexname = 'IX_TerritoryCells_Decay'
+            ) AS ""Value""").SingleAsync();
+        var replacementPresent = await db.Database.SqlQueryRaw<bool>(@"
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = 'TerritoryCells' AND indexname = 'IX_TerritoryCells_DecayAt'
+            ) AS ""Value""").SingleAsync();
+        Assert.False(oldIndexPresent);
+        Assert.True(replacementPresent);
+    }
+
+    private sealed class WarningRecordingLogger : ILogger
+    {
+        public List<string> Warnings { get; } = [];
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= LogLevel.Warning)
+                Warnings.Add($"{formatter(state, exception)} {exception}");
+        }
     }
 }
