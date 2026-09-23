@@ -14,7 +14,9 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
+import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
+import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
@@ -45,6 +47,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   final _mapKey = GlobalKey<_JourneyMapState>();
   bool _isSubmitting = false;
   bool _controlsVisible = true;
+  final _snackbars = JourneySnackbarPresenter();
 
   Future<void> _onStopCapture() async {
     if (_isSubmitting) return;
@@ -67,7 +70,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
     // If user hasn't walked at all
     if (path.length < 2 && claimedCount == 0) {
-      _showSnackbar('Walk a bit more to capture territory!', Colors.orange);
+      _showNotice('Walk a bit more to capture territory!', Colors.orange);
       return;
     }
 
@@ -114,7 +117,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         }
       }
     } catch (e) {
-      _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red);
+      _showError('Error: ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -171,13 +174,16 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     );
   }
 
-  void _showSnackbar(String message, Color color) {
+  /// Queues a non-error message; see [JourneySnackbarPresenter] for why only
+  /// errors may replace anything.
+  void _showNotice(String message, Color color) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: color),
-      );
+    _snackbars.showNotice(ScaffoldMessenger.of(context), message, color);
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    _snackbars.showError(ScaffoldMessenger.of(context), message);
   }
 
   @override
@@ -187,17 +193,8 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final topPadding = MediaQuery.of(context).padding.top;
 
     ref.listen(journeyControllerProvider, (prev, next) {
-      if (next.error != null && next.error != prev?.error) {
-        _showSnackbar(next.error!, AppColors.red);
-      }
-      // Level-up celebration
-      if (next.levelUpTo != null && next.levelUpTo != prev?.levelUpTo) {
-        _showSnackbar('🎉 Level Up! You reached Level ${next.levelUpTo}!', const Color(0xFFFFD700));
-      }
-      // Achievement unlock
-      if (next.achievementUnlocked != null && next.achievementUnlocked != prev?.achievementUnlocked) {
-        _showSnackbar('🏆 Achievement: ${next.achievementUnlocked}', const Color(0xFF8B5CF6));
-      }
+      if (!mounted) return;
+      _snackbars.onJourneyChanged(ScaffoldMessenger.of(context), prev, next);
     });
 
     final mockEnabled = kDebugMode && ref.watch(mockWalkConfigProvider).enabled;
@@ -322,7 +319,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   final MapController _mapController = MapController();
   Position? _initialPosition;
   LatLng? _fallbackCenter;
-  Timer? _locationTimer;
   Timer? _hexRefreshTimer;
   bool _mapReady = false;
   bool _followUser = true;
@@ -332,7 +328,9 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   bool _solidHexes = false;
   List<List<List<double>>> _capturedHexBoundaries = [];
   late HexTerritoryManager _hexManager;
+  final ViewportPollBackoff _pollBackoff = ViewportPollBackoff();
   StreamSubscription<List<HexChangeEvent>>? _realtimeSub;
+  StreamSubscription<HexesReleasedEvent>? _releasedSub;
   StreamSubscription<void>? _reconnectSub;
 
   @override
@@ -344,22 +342,23 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     _acquireLocation();
     _hexRefreshTimer = Timer.periodic(
       const Duration(seconds: AppConstants.hexRefreshIntervalSeconds),
-      (_) => _refreshViewportHexes(),
+      (_) => _pollViewportHexesIfStale(),
     );
     _subscribeRealtime();
   }
 
   @override
   void dispose() {
-    _locationTimer?.cancel();
     _hexRefreshTimer?.cancel();
     _realtimeSub?.cancel();
+    _releasedSub?.cancel();
     _reconnectSub?.cancel();
     // Do NOT disconnect territoryRealtimeProvider here — the hub connection is
     // app-lifecycle-scoped (connected at login, disconnected at logout), not
     // scoped to this screen. Killing it here left the app deaf to live stats/
     // XP/mission/achievement pushes for the rest of the session (#102). Only
     // this screen's own subscriptions come down with it.
+    _hexManager.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -373,15 +372,24 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     // Missed hex-ownership deltas during a disconnect are never replayed by
     // the hub — re-fetch the map's own snapshot on every reconnect so a
     // player never keeps showing territory they've actually lost (#111).
+    // Repaint rides hexManager.hexRevision (bumped by loadUserOwnHexes), not a
+    // screen-wide setState (#129).
     _reconnectSub = realtimeService.onReconnected.listen((_) {
-      _hexManager.loadUserOwnHexes().then((_) {
-        if (mounted) setState(() {});
-      });
+      _hexManager.loadUserOwnHexes();
       _refreshViewportHexes();
     });
+    // Decay releases (#104): drop the reaper's hexes from the map immediately —
+    // without this the app renders ghost territory until the next viewport poll.
+    // Repaint rides hexManager.hexRevision (bumped by removeCells), not a
+    // screen-wide setState (#129).
+    _releasedSub = realtimeService.onHexesReleased
+        .listen((event) => _hexManager.removeCells(event.h3Indexes));
     _realtimeSub = realtimeService.onHexChanges.listen((events) {
-      final changed = _hexManager.applyRealtimeChanges(events);
-      if (changed && mounted) setState(() {});
+      // Repaint is driven by hexManager.hexRevision (ValueListenableBuilder in
+      // _buildMap), not a screen-wide setState — a bare setState here used to
+      // rebuild the entire map subtree (tile layer, polyline, HUD, controls)
+      // on every SignalR delta (issue #129).
+      _hexManager.applyRealtimeChanges(events);
 
       // Detect thefts from the current user → add in-app notifications
       final userId = ref.read(userProfileProvider).userId;
@@ -425,7 +433,8 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         await _hexManager.loadUserOwnHexes();
         await _hexManager.loadWideArea(pos.latitude, pos.longitude);
         _updateRealtimeRegions();
-        if (mounted) setState(() {});
+        // No setState here — the hex loads above bump hexManager.hexRevision,
+        // which the map's ValueListenableBuilder repaints on directly.
       } else if (mounted) {
         setState(() => _locationError = true);
       }
@@ -434,39 +443,50 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     }
   }
 
+  /// Timer-tick entry point for the periodic viewport poll. This poll is the
+  /// only thing that loads the viewport after a pan/zoom, draws hexes a
+  /// realtime event had no boundary for, restores cooldowns, and joins new
+  /// regions — so it is skipped only when [ViewportPollBackoff] confirms the
+  /// live feed covers the unchanged viewport (#129). A just-submitted claim
+  /// ([forceReloadHexes]) calls [_refreshViewportHexes] directly and always
+  /// runs.
+  Future<void> _pollViewportHexesIfStale() async {
+    if (!_mapReady) return;
+    final skip = _pollBackoff.shouldSkipTick(
+      viewport: _mapController.camera.visibleBounds,
+      realtime: ref.read(territoryRealtimeProvider),
+      hexes: _hexManager,
+    );
+    if (skip) return;
+    await _refreshViewportHexes();
+  }
+
   Future<void> _refreshViewportHexes() async {
     if (!_mapReady) return;
     // LOD: Only load other players' individual hexes at zoom 14+
     // At lower zoom, only the user's own hexes (preloaded) are visible
     if (_currentZoom < 14.0) return;
     final bounds = _mapController.camera.visibleBounds;
-    await _hexManager.loadViewport(
+    final loaded = await _hexManager.loadViewport(
       minLat: bounds.south, minLng: bounds.west,
       maxLat: bounds.north, maxLng: bounds.east,
     );
+    if (!mounted) return;
+    if (loaded) _pollBackoff.recordSuccessfulPoll(bounds);
     _updateRealtimeRegions();
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _refreshPosition() async {
-    final journey = ref.read(journeyControllerProvider);
-    if (journey.status == JourneyStatus.tracking) return;
-    try {
-      final locationService = ref.read(locationServiceProvider);
-      final pos = await locationService.getCurrentPosition();
-      if (mounted && pos.latitude.isFinite && pos.longitude.isFinite) {
-        setState(() => _initialPosition = pos);
-        if (_mapReady && _followUser) {
-          _mapController.move(LatLng(pos.latitude, pos.longitude), _mapController.camera.zoom);
-        }
-      }
-    } catch (_) {}
+    // No setState here — loadViewport bumps hexManager.hexRevision, which the
+    // map's ValueListenableBuilder repaints on directly.
   }
 
   @override
   void didUpdateWidget(covariant _JourneyMap old) {
     super.didUpdateWidget(old);
-    _manageLocationPolling();
+    // The map's follow-user position derives entirely from
+    // journeyControllerProvider's currentPosition (already updated per GPS
+    // stream sample — journey_controller.dart's _onPosition) via this
+    // widget-prop update. A separate 5s polling timer used to duplicate this
+    // with its own getCurrentPosition() calls, doubling GPS radio wakeups for
+    // no data gain while a walk was being tracked (#129).
     _followCurrentPosition();
     _integrateNewStepClaims(old.journey, widget.journey);
   }
@@ -477,22 +497,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     if (next.claimedMeta.length <= prev.claimedMeta.length) return;
     // Process only the new claims since last update
     final newClaims = next.claimedMeta.sublist(prev.claimedMeta.length);
-    bool hadStolen = false;
     for (final meta in newClaims) {
       _hexManager.integrateStepClaim(meta.boundary, meta.cellId, meta.wasStolen);
-      if (meta.wasStolen) hadStolen = true;
     }
-    // If a stolen hex was removed from others, trigger map repaint
-    if (hadStolen && mounted) setState(() {});
-  }
-
-  void _manageLocationPolling() {
-    if (widget.journey.status == JourneyStatus.tracking && _locationTimer == null) {
-      _locationTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshPosition());
-    } else if (widget.journey.status != JourneyStatus.tracking && _locationTimer != null) {
-      _locationTimer?.cancel();
-      _locationTimer = null;
-    }
+    // No setState here — integrateStepClaim bumps hexManager.hexRevision,
+    // which the map's ValueListenableBuilder repaints on directly.
   }
 
   void _followCurrentPosition() {
@@ -510,15 +519,14 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   }
 
   void forceReloadHexes() {
-    _hexManager.loadUserOwnHexes().then((_) {
-      if (mounted) setState(() {});
-    });
+    // No setState in either branch below — loadUserOwnHexes/loadViewport/
+    // loadWideArea all bump hexManager.hexRevision, which the map's
+    // ValueListenableBuilder repaints on directly.
+    _hexManager.loadUserOwnHexes();
     if (_mapReady) {
       _refreshViewportHexes();
     } else if (_initialPosition != null) {
-      _hexManager.loadWideArea(_initialPosition!.latitude, _initialPosition!.longitude).then((_) {
-        if (mounted) setState(() {});
-      });
+      _hexManager.loadWideArea(_initialPosition!.latitude, _initialPosition!.longitude);
     }
   }
 
@@ -553,10 +561,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _showHexOwnerSheet(TerritoryCell cell) {
     final profile = ref.read(userProfileProvider);
     final isOwn = cell.ownerId == profile.userId;
-    // Show owner's actual color only for own hexes; black for others
-    final ownerColor = isOwn
-        ? Color(int.parse(cell.ownerColor.replaceFirst('#', ''), radix: 16) | 0xFF000000)
-        : const Color(0xFF1A1A1A);
+    // Show owner's actual color only for own hexes; neutral for others. A hex
+    // captured or step-claimed this session is in the store before its colour
+    // is, so this must tolerate a blank value instead of throwing.
+    final ownerColor =
+        isOwn ? AppColors.fromHex(cell.ownerColor) : AppColors.hexUnknownOwner;
 
     showModalBottomSheet(
       context: context,
@@ -663,15 +672,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       children: [
         _buildTileLayer(),
         if (_useSatellite) _buildLabelsLayer(),
-        ..._buildOtherPlayerHexes(),
-        if (_hexManager.userOwnHexBoundaries.isNotEmpty)
-          AnimatedHexOverlay(
-            hexBoundaries: _hexManager.userOwnHexBoundaries,
-            userColor: userColor,
-            currentZoom: _currentZoom,
-            solidMode: _solidHexes,
-            decayValues: _hexManager.userOwnDecayValues,
-          ),
+        // Other-players' + own owned-hex layers repaint from hexManager's
+        // hexRevision alone, not the screen-wide setState the other map
+        // layers rebuild from — a SignalR delta, viewport poll, or step
+        // claim no longer forces the tile layer / polyline / HUD / controls
+        // to rebuild too (issue #129 / ML-ERR-032).
+        _buildHexLayers(userColor),
         // Walk-through claimed hexes — appear instantly as user walks
         if (journey.claimedHexBoundaries.isNotEmpty)
           AnimatedHexOverlay(
@@ -698,9 +704,40 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
             solidMode: _solidHexes,
           ),
         if (journey.path.length > 1) _buildPathPolyline(journey),
-        if (_currentZoom >= 15) _buildCooldownMarkers(),
+        // Cooldown chips read hexManager.allCells, so they repaint from
+        // hexRevision too — otherwise they'd silently go stale once the bare
+        // setState calls that used to cover them were removed above.
+        if (_currentZoom >= 15)
+          ValueListenableBuilder<int>(
+            valueListenable: _hexManager.hexRevision,
+            builder: (context, revision, child) => _buildCooldownMarkers(),
+          ),
         _buildPositionMarker(journey, profile, userColor),
       ],
+    );
+  }
+
+  /// Other-players' hexes + the user's own owned hexes, scoped to a single
+  /// `ValueListenableBuilder` on `hexManager.hexRevision` so these are the
+  /// only layers that repaint on a hex mutation (see call site comment).
+  Widget _buildHexLayers(Color userColor) {
+    return RepaintBoundary(
+      child: ValueListenableBuilder<int>(
+        valueListenable: _hexManager.hexRevision,
+        builder: (context, revision, child) => Stack(
+          children: [
+            ..._buildOtherPlayerHexes(),
+            if (_hexManager.userOwnHexBoundaries.isNotEmpty)
+              AnimatedHexOverlay(
+                hexBoundaries: _hexManager.userOwnHexBoundaries,
+                userColor: userColor,
+                currentZoom: _currentZoom,
+                solidMode: _solidHexes,
+                decayValues: _hexManager.userOwnDecayValues,
+              ),
+          ],
+        ),
+      ),
     );
   }
 
