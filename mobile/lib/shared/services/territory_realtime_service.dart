@@ -497,11 +497,16 @@ class TerritoryRealtimeService {
     // before it may vouch for the current map (#129).
     _resetHexFeedFreshness();
     _log.info('Reconnected: $connectionId');
-    await _resubscribeAll();
-    // dispose() can land during the await above, and adding to a closed
-    // controller throws a StateError that nothing is positioned to catch.
-    if (_reconnectedController.isClosed) return;
-    _reconnectedController.add(null);
+    try {
+      await _resubscribeAll();
+    } finally {
+      // Listeners re-fetch their snapshot over REST, which does not depend on
+      // any group rejoin succeeding — so the event must fire even if the
+      // rejoin step failed. dispose() can land during the await above, and
+      // adding to a closed controller throws a StateError that nothing is
+      // positioned to catch.
+      if (!_reconnectedController.isClosed) _reconnectedController.add(null);
+    }
   }
 
   Future<void> _resubscribeAll() async {
@@ -511,11 +516,18 @@ class TerritoryRealtimeService {
         await _hubConnection?.invoke('JoinUserGroup', args: [_userId!]);
       } catch (_) {}
     }
-    // Re-join region groups
+    // Re-join region groups. Each join is isolated: since #187 joinRegion
+    // propagates hub errors, and one failure right after a reconnect must not
+    // strand the remaining regions. A failed region stays out of
+    // _subscribedRegions, so the next updateRegions() retries it (#139 D9).
     final regions = Set<String>.from(_subscribedRegions);
     _subscribedRegions.clear();
     for (final region in regions) {
-      await joinRegion(region);
+      try {
+        await joinRegion(region);
+      } catch (e) {
+        _log.warning('Rejoin of region $region failed after reconnect', e);
+      }
     }
   }
 }

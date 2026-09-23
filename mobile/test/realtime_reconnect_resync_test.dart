@@ -46,6 +46,23 @@ class _ControllableRealtime extends TerritoryRealtimeService {
   bool get isConnected => connectedOverride;
 }
 
+/// Real service whose region-join invoke records every attempt and can be
+/// made to fail for chosen regions, without a live hub.
+class _RejoinRealtime extends TerritoryRealtimeService {
+  _RejoinRealtime() : super(baseUrl: 'http://test.local');
+
+  final Set<String> failingRegions = {};
+  final List<String> joinAttempts = [];
+
+  @override
+  Future<void> invokeJoinRegion(String regionId) async {
+    joinAttempts.add(regionId);
+    if (failingRegions.contains(regionId)) {
+      throw Exception('simulated JoinRegion failure for $regionId');
+    }
+  }
+}
+
 Map<String, dynamic> _mission(String id) => {
       'id': id,
       'type': 0,
@@ -122,6 +139,53 @@ void main() {
       await pumpEventQueue();
 
       expect(fired, isTrue);
+    });
+  });
+
+  group('handleReconnected — a failed region rejoin', () {
+    const failing = 'r1';
+    const healthy = ['r2', 'r3'];
+
+    Future<_RejoinRealtime> subscribedService() async {
+      final service = _RejoinRealtime()..debugConnected = true;
+      for (final region in [failing, ...healthy]) {
+        await service.joinRegion(region);
+      }
+      service.joinAttempts.clear();
+      service.failingRegions.add(failing);
+      return service;
+    }
+
+    test('still rejoins the other regions and still fires onReconnected once',
+        () async {
+      final service = await subscribedService();
+      addTearDown(service.dispose);
+      var fireCount = 0;
+      final sub = service.onReconnected.listen((_) => fireCount++);
+      addTearDown(sub.cancel);
+
+      // Must complete normally: the hub invokes this from its onreconnected
+      // callback, where nothing awaits or catches the returned future.
+      await expectLater(service.handleReconnected(connectionId: 'conn-2'), completes);
+      await pumpEventQueue();
+
+      expect(service.joinAttempts, [failing, ...healthy],
+          reason: 'one failed rejoin must not abort the rest of the loop');
+      expect(service.subscribedRegionsForTest, healthy.toSet());
+      expect(fireCount, 1,
+          reason: 'listeners resync over REST, which does not need the rejoin');
+    });
+
+    test('leaves the failed region unsubscribed so the next update retries it',
+        () async {
+      final service = await subscribedService();
+      addTearDown(service.dispose);
+
+      await service.handleReconnected();
+      service.failingRegions.clear();
+      await service.updateRegions({failing, ...healthy});
+
+      expect(service.subscribedRegionsForTest, {failing, ...healthy});
     });
   });
 
