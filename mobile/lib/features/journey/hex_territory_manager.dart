@@ -295,6 +295,28 @@ class HexTerritoryManager {
     return changed;
   }
 
+  /// Removes decay-released cells (the reaper's `HexesReleased` broadcast) so
+  /// they disappear immediately instead of at the next viewport poll
+  /// (server-authoritative map, #104). Returns true if anything was removed.
+  ///
+  /// A keyed delete from the single store: every derived view (own hexes,
+  /// other players' color layers, cooldown markers) drops the cell with it.
+  /// Bumps [hexRevision] once, and only when something changed — a release of
+  /// cells this client never loaded is a no-op with no repaint. Unlike an
+  /// unknown-cell ownership change, it does not set
+  /// [hasUndrawableRealtimeChange]: a released cell has nothing left to draw,
+  /// so there is no reason to force the next viewport poll.
+  bool removeCells(Iterable<String> h3Indexes) {
+    var changed = false;
+    for (final idStr in h3Indexes) {
+      final cellId = int.tryParse(idStr);
+      if (cellId == null) continue;
+      changed |= _cells.remove(cellId) != null;
+    }
+    if (changed) _bumpRevision();
+    return changed;
+  }
+
   /// Returns all unique H3 res-3 parent cell IDs from currently loaded cells.
   /// These are the SignalR group keys the client should subscribe to.
   Set<String> getActiveRegionIds() {

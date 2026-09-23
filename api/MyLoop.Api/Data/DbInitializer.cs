@@ -28,7 +28,7 @@ public static class DbInitializer
         DatabaseSeeder.EnsureTodayLeaderboard(db);
     }
 
-    private static void ApplySchemaPatches(AppDbContext db, IHexGridService hexGrid, ILogger logger)
+    internal static void ApplySchemaPatches(AppDbContext db, IHexGridService hexGrid, ILogger logger)
     {
         // The DDL is idempotent (IF NOT EXISTS) because EnsureCreated won't add columns/tables to an
         // existing database. A throw here is unlikely to be a benign "already exists" — surface it
@@ -42,6 +42,10 @@ public static class DbInitializer
             ApplyAchievementsSchema(db);
             ApplyTerritoryIndexes(db);
             ApplyNeighborhoodNamesSchema(db);
+            // Last on purpose: adding the stored DecayAt column rewrites TerritoryCells under
+            // an ACCESS EXCLUSIVE lock, the heaviest and likeliest-to-fail step. Running it
+            // last means a failure here cannot skip the cheaper patches above.
+            ApplyDecayReleaseSchema(db);
         }
         catch (Exception ex)
         {
@@ -210,11 +214,6 @@ public static class DbInitializer
             ON ""TerritoryCells"" USING BRIN (""CenterLat"", ""CenterLng"")
             WITH (pages_per_range = 128)");
 
-        // Index for the decay cleanup query (avoids a full table scan).
-        db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Decay""
-            ON ""TerritoryCells"" (""LastRefreshedAt"", ""DecayDays"")");
-
         // Bucket-first viewport query (#114): prune by res-3 parent, refine by center.
         // The composite's prefix covers the old single-column ParentCellId index, so drop it.
         db.Database.ExecuteSqlRaw(@"
@@ -244,5 +243,29 @@ public static class DbInitializer
                 ""ResolvedAt"" timestamp with time zone NOT NULL,
                 CONSTRAINT ""PK_NeighborhoodNames"" PRIMARY KEY (""NeighborhoodId"")
             )");
+    }
+
+    /// <summary>
+    /// Decay-release schema (#104): the CellTransfer Reason audit column, and the stored
+    /// DecayAt generated column + index that make the hourly reaper scan indexable
+    /// (the old per-row interval predicate forced a full-table scan; its helper index
+    /// on (LastRefreshedAt, DecayDays) never served the predicate and is dropped).
+    /// Nothing may CREATE that old index any more: a non-concurrent build takes a SHARE
+    /// lock that blocks claim writes, and rebuilding it only to drop it here would repeat
+    /// on every cold start. The DROP stays so existing databases are cleaned up.
+    /// Idempotent — safe on every startup and on fresh EnsureCreated databases.
+    /// </summary>
+    internal static void ApplyDecayReleaseSchema(AppDbContext db)
+    {
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"CellTransfers\" ADD COLUMN IF NOT EXISTS \"Reason\" integer NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TerritoryCells"" ADD COLUMN IF NOT EXISTS ""DecayAt"" timestamp without time zone
+            GENERATED ALWAYS AS ((""LastRefreshedAt"" AT TIME ZONE 'UTC') + make_interval(days => ""DecayDays"")) STORED");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_DecayAt""
+            ON ""TerritoryCells"" (""DecayAt"")");
+        db.Database.ExecuteSqlRaw(
+            @"DROP INDEX IF EXISTS ""IX_TerritoryCells_Decay""");
     }
 }
