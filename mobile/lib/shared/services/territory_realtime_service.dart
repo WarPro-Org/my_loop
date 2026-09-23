@@ -4,12 +4,17 @@
 /// - Public: hex ownership changes (region-scoped)
 /// - Personal: user stats, XP, missions, achievements (user-group-scoped)
 ///
-/// Connection lifecycle: connect once after login, stays alive until logout.
-/// Passes Firebase JWT via query string for authenticated personal events.
+/// Connection lifecycle: connect once after login, stays alive app-wide until
+/// logout (see #102) — it must not be torn down when any individual screen
+/// that merely listens to it (e.g. Journey) is disposed.
+/// Fetches a fresh Firebase JWT per (re)negotiation via `accessTokenFactory`
+/// for authenticated personal events, so a reconnect after token expiry
+/// re-authenticates instead of failing silently.
 library;
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:signalr_netcore/signalr_client.dart';
@@ -146,7 +151,10 @@ class AchievementUnlockEvent {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// Service that manages the SignalR connection to the territory hub.
-/// Singleton lifecycle: connect on login, disconnect on logout.
+///
+/// Singleton lifecycle: connect once after login/session-restore, stays alive
+/// app-wide (including across the Journey screen opening and closing — see
+/// #102) until logout, when it is explicitly disconnected.
 class TerritoryRealtimeService {
   final String _baseUrl;
   HubConnection? _hubConnection;
@@ -155,9 +163,16 @@ class TerritoryRealtimeService {
   final _xpController = StreamController<XpDelta>.broadcast();
   final _missionController = StreamController<MissionDelta>.broadcast();
   final _achievementController = StreamController<AchievementDelta>.broadcast();
+  final _reconnectedController = StreamController<void>.broadcast();
   final Set<String> _subscribedRegions = {};
   bool _isConnected = false;
   String? _userId;
+
+  /// Started when the most recent `HexOwnershipChanged` push arrived; null
+  /// when none has arrived on the current connection. A [Stopwatch] (not
+  /// `DateTime.now()`) so a device clock change can't make an old push look
+  /// fresh — wall-clock differences go negative when the clock moves back.
+  Stopwatch? _sinceLastHexEvent;
 
   TerritoryRealtimeService({required String baseUrl}) : _baseUrl = baseUrl;
 
@@ -168,67 +183,131 @@ class TerritoryRealtimeService {
   Stream<MissionDelta> get onMissions => _missionController.stream;
   Stream<AchievementDelta> get onAchievements => _achievementController.stream;
 
+  /// Fires after a dropped connection auto-reconnects and region/user groups
+  /// have been rejoined. Consumers that need a full snapshot re-fetch on
+  /// reconnect (missed deltas are otherwise lost — see #111) subscribe here.
+  Stream<void> get onReconnected => _reconnectedController.stream;
+
   bool get isConnected => _isConnected;
 
+  /// Monotonic time since the most recent `HexOwnershipChanged` push on the
+  /// CURRENT connection, or null when none has arrived or the hub is not
+  /// connected. Journey's viewport-poll back-off (#129) reads this; it is
+  /// reset whenever the connection closes, starts reconnecting, reconnects,
+  /// or is disconnected at logout, because deltas sent while the socket was
+  /// down are lost (#111) and a previous session's push must never vouch for
+  /// the next one.
+  Duration? get timeSinceLastHexEvent =>
+      _isConnected ? _sinceLastHexEvent?.elapsed : null;
+
+  /// Whether every id in [regionIds] has a confirmed `JoinRegion` on the
+  /// current connection (a region is only marked subscribed after its join
+  /// succeeds, #139 D9). Lets a consumer tell whether live deltas can cover
+  /// the cells it is showing.
+  bool isSubscribedToAll(Set<String> regionIds) =>
+      _subscribedRegions.containsAll(regionIds);
+
+  /// Number of connection attempts actually made (i.e. not short-circuited by
+  /// the already-connected guard). Exposed only so a regression test can prove
+  /// a failed [start] doesn't wedge future [connect] calls into a permanent
+  /// no-op (see #102).
+  @visibleForTesting
+  int connectAttempts = 0;
+
   /// Connect to the SignalR hub with optional authentication.
-  /// [token] — Firebase JWT for authenticated personal events.
+  /// [tokenProvider] — supplies a fresh Firebase JWT on each (re)negotiation
+  /// (rather than a single point-in-time string), so an automatic reconnect
+  /// after the ~1h token expiry re-authenticates instead of failing silently.
   /// [userId] — App user ID for joining personal group.
-  Future<void> connect({String? token, String? userId}) async {
+  Future<void> connect({
+    Future<String?> Function()? tokenProvider,
+    String? userId,
+  }) async {
     if (_hubConnection != null) return;
+    connectAttempts++;
 
     _userId = userId;
-    var hubUrl = '$_baseUrl/hubs/territory';
-    if (token != null && token.isNotEmpty) {
-      hubUrl += '?access_token=$token';
-    }
+    final hubUrl = '$_baseUrl/hubs/territory';
 
-    _hubConnection = HubConnectionBuilder()
-        .withUrl(hubUrl)
+    final connection = HubConnectionBuilder()
+        .withUrl(
+          hubUrl,
+          options: tokenProvider != null
+              ? HttpConnectionOptions(
+                  accessTokenFactory: () async => await tokenProvider() ?? '',
+                )
+              : null,
+        )
         .withAutomaticReconnect()
         .build();
+    _hubConnection = connection;
 
     // Public event
-    _hubConnection!.on('HexOwnershipChanged', _handleHexChanges);
+    connection.on('HexOwnershipChanged', _handleHexChanges);
 
     // Personal events
-    _hubConnection!.on('UserStatsDelta', _handleUserStats);
-    _hubConnection!.on('XpDelta', _handleXp);
-    _hubConnection!.on('MissionDelta', _handleMissions);
-    _hubConnection!.on('AchievementUnlocked', _handleAchievements);
+    connection.on('UserStatsDelta', _handleUserStats);
+    connection.on('XpDelta', _handleXp);
+    connection.on('MissionDelta', _handleMissions);
+    connection.on('AchievementUnlocked', _handleAchievements);
 
-    _hubConnection!.onclose(({error}) {
-      _isConnected = false;
-      _log.warning('Connection closed: $error');
-    });
-
-    _hubConnection!.onreconnected(({connectionId}) {
-      _isConnected = true;
-      _log.info('Reconnected: $connectionId');
-      _resubscribeAll();
-    });
+    connection.onclose(({error}) => _handleClosed(error));
+    connection.onreconnecting(({error}) => _handleReconnecting(error));
+    connection.onreconnected(
+        ({connectionId}) => _handleReconnected(connectionId));
 
     try {
-      await _hubConnection!.start();
+      await connection.start();
       _isConnected = true;
       _log.info('Connected to $hubUrl');
 
       // Join personal group if authenticated
       if (userId != null && userId.isNotEmpty) {
-        await _hubConnection!.invoke('JoinUserGroup', args: [userId]);
+        await connection.invoke('JoinUserGroup', args: [userId]);
         _log.fine('Joined user group: user_$userId');
       }
     } catch (e) {
-      _isConnected = false;
       _log.warning('Connection failed', e);
+      _isConnected = false;
+      // A previous run left `connect()` permanently wedged after a failed
+      // `start()`: `_hubConnection` stayed non-null, so every later call
+      // bailed on the guard above without ever retrying (#102). Null it out
+      // so the next connect() is a fresh attempt, not a silent no-op.
+      _hubConnection = null;
+      try {
+        await connection.stop();
+      } catch (_) {}
     }
   }
 
   /// Subscribe to a geographic region by its H3 res-3 parent cell ID.
+  ///
+  /// Marks the region subscribed only after `invoke` succeeds. Marking it
+  /// first (the previous behavior) left the client believing it was
+  /// subscribed even when the hub call failed — `updateRegions` skips
+  /// regions already in [_subscribedRegions], so a failed join was never
+  /// retried on the next viewport update (#139 D9).
   Future<void> joinRegion(String regionId) async {
     if (!_isConnected || _subscribedRegions.contains(regionId)) return;
+    await invokeJoinRegion(regionId);
     _subscribedRegions.add(regionId);
-    await _hubConnection?.invoke('JoinRegion', args: [regionId]);
   }
+
+  /// Performs the hub invoke for [joinRegion]. Extracted into its own
+  /// overridable method so tests can simulate a failed join without a live
+  /// SignalR connection.
+  @visibleForTesting
+  Future<void> invokeJoinRegion(String regionId) =>
+      _hubConnection!.invoke('JoinRegion', args: [regionId]);
+
+  /// Test-only: marks the service connected without a live hub connection,
+  /// so [joinRegion]'s failure-handling can be exercised in isolation.
+  @visibleForTesting
+  set debugConnected(bool value) => _isConnected = value;
+
+  /// Test-only snapshot of the currently subscribed region ids.
+  @visibleForTesting
+  Set<String> get subscribedRegionsForTest => Set.unmodifiable(_subscribedRegions);
 
   /// Unsubscribe from a region.
   Future<void> leaveRegion(String regionId) async {
@@ -250,7 +329,8 @@ class TerritoryRealtimeService {
     }
   }
 
-  /// Disconnect and clean up.
+  /// Disconnect and clean up. Called on logout only — the connection is
+  /// app-lifecycle-scoped, not screen-scoped (see #102).
   Future<void> disconnect() async {
     if (_userId != null && _isConnected) {
       try {
@@ -259,6 +339,7 @@ class TerritoryRealtimeService {
     }
     _subscribedRegions.clear();
     _isConnected = false;
+    _resetHexFeedFreshness();
     _userId = null;
     await _hubConnection?.stop();
     _hubConnection = null;
@@ -271,7 +352,45 @@ class TerritoryRealtimeService {
     _xpController.close();
     _missionController.close();
     _achievementController.close();
+    _reconnectedController.close();
   }
+
+  // ── Connection lifecycle handlers ──
+
+  void _handleClosed(Exception? error) {
+    _isConnected = false;
+    _resetHexFeedFreshness();
+    _log.warning('Connection closed: $error');
+  }
+
+  /// `withAutomaticReconnect()` keeps the socket down for the whole retry
+  /// window; treating that window as connected let consumers trust a stale
+  /// delta stream and skip the poll that would have caught up.
+  void _handleReconnecting(Exception? error) {
+    _isConnected = false;
+    _resetHexFeedFreshness();
+    _log.warning('Connection lost, reconnecting: $error');
+  }
+
+  void _handleReconnected(String? connectionId) {
+    _isConnected = true;
+    // Deltas sent during the outage were never delivered; nothing received
+    // before it may vouch for the current map.
+    _resetHexFeedFreshness();
+    _log.info('Reconnected: $connectionId');
+    _resubscribeAll().then((_) => _reconnectedController.add(null));
+  }
+
+  void _resetHexFeedFreshness() => _sinceLastHexEvent = null;
+
+  /// Test-only: drives the hub's `onreconnecting` callback without a live
+  /// connection.
+  @visibleForTesting
+  void debugSimulateReconnecting() => _handleReconnecting(null);
+
+  /// Test-only: drives the hub's `onclose` callback without a live connection.
+  @visibleForTesting
+  void debugSimulateClosed() => _handleClosed(null);
 
   // ── Event handlers ──
 
@@ -286,9 +405,18 @@ class TerritoryRealtimeService {
         .toList();
 
     if (events.isNotEmpty) {
+      _sinceLastHexEvent = Stopwatch()..start();
       _changeController.add(events);
     }
   }
+
+  /// Simulates a `HexOwnershipChanged` payload from the hub, exactly as
+  /// `connection.on('HexOwnershipChanged', ...)` would deliver it. Lets tests
+  /// verify [timeSinceLastHexEvent] freshness tracking without a live SignalR
+  /// connection (mirrors the [connectAttempts] test hook above).
+  @visibleForTesting
+  void debugSimulateHexChanges(List<Object?>? arguments) =>
+      _handleHexChanges(arguments);
 
   void _handleUserStats(List<Object?>? arguments) {
     if (arguments == null || arguments.isEmpty) return;
