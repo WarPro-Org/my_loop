@@ -7,10 +7,21 @@ namespace MyLoop.Api.Services;
 /// </summary>
 public class GeoService : IGeoService
 {
-    public double HaversineMeters(double lat1, double lng1, double lat2, double lng2)
-    {
-        double earthRadius = GameConstants.EarthRadiusMeters;
+    public double HaversineMeters(double lat1, double lng1, double lat2, double lng2) =>
+        Haversine(lat1, lng1, lat2, lng2);
 
+    /// <summary>
+    /// The single great-circle distance implementation for the API, in metres.
+    /// </summary>
+    /// <remarks>
+    /// Static so <see cref="PathValidationService"/> can share it without taking an
+    /// <see cref="IGeoService"/> dependency. It previously carried its own copy of this formula
+    /// with the earth radius hardcoded as <c>6371000</c> rather than
+    /// <see cref="GameConstants.EarthRadiusMeters"/> (#139 D3). The two agreed numerically, so
+    /// consolidating changes no distance — it removes the second formula and the magic number.
+    /// </remarks>
+    public static double Haversine(double lat1, double lng1, double lat2, double lng2)
+    {
         // Convert degree deltas to radians
         var dLat = (lat2 - lat1) * Math.PI / 180;
         var dLng = (lng2 - lng1) * Math.PI / 180;
@@ -21,7 +32,7 @@ public class GeoService : IGeoService
                 Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
 
         // Arc length on the sphere
-        return earthRadius * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
+        return GameConstants.EarthRadiusMeters * 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
     }
 
     public double CalculatePathDistance(double[][] path)

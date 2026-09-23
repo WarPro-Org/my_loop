@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace MyLoop.Api.Constants;
 
 /// <summary>
@@ -124,7 +126,27 @@ public static class GameConstants
     // --- Validation ---
     public const int MinDisplayNameLength = 2;
     public const int MaxDisplayNameLength = 20;
-    public const int MaxAvatarId = 50;
+
+    /// <summary>
+    /// Number of avatars in the client catalogue — mirrors <c>avatarEmojis</c> in
+    /// mobile/lib/shared/widgets/avatar_widget.dart; valid ids are 0..AvatarCount-1.
+    /// Ids are positional and permanent: append only, never reorder or delete, and bump
+    /// this in the same change. The client clamps unknown ids, so a wider server range
+    /// stores values the app renders as a different avatar (DR-001, #188).
+    /// </summary>
+    public const int AvatarCount = 12;
+
+    /// <summary>
+    /// Allowed player colours — mirrors <c>playerColors</c> in
+    /// mobile/lib/shared/widgets/color_picker_row.dart, compared exactly (the client sends
+    /// these uppercase literals and matches the stored value case-sensitively). A free-form
+    /// hex let players pick invisible or rival-matching territory colours (DR-001, #188).
+    /// </summary>
+    public static readonly FrozenSet<string> PlayerColors = new[]
+    {
+        "#00D4AA", "#1CB0F6", "#FF4B4B", "#FF9600",
+        "#A560E8", "#FFC800", "#FF6B81", "#2ED8A3",
+    }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
     /// Minimum days between home-location changes. Home drives decay distance and the

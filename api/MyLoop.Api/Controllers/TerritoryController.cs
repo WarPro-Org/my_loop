@@ -82,17 +82,14 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get exploration stats for neighborhoods near a GPS point (private progress).
+    /// Get exploration stats for all of a user's explored neighborhoods (private progress).
     /// </summary>
     [HttpGet("exploration/{userId:guid}")]
-    public async Task<IActionResult> GetExplorationStats(
-        [FromRoute] Guid userId,
-        [FromQuery] double lat,
-        [FromQuery] double lng)
+    public async Task<IActionResult> GetExplorationStats([FromRoute] Guid userId)
     {
         if (await DenySelf(userId) is { } deny) return deny;
 
-        var stats = await _territoryService.GetExplorationStats(userId, lat, lng);
+        var stats = await _territoryService.GetExplorationStats(userId);
         return Ok(stats);
     }
 

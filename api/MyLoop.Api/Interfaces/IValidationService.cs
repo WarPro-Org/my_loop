@@ -11,12 +11,12 @@ public interface IValidationService
     string? ValidateDisplayName(string? name);
 
     /// <summary>
-    /// Validates a hex color string. Returns null if valid, error string if invalid.
+    /// Validates a color against the player palette. Returns null if valid, error string if invalid.
     /// </summary>
     string? ValidateColor(string? color);
 
     /// <summary>
-    /// Validates an avatar ID. Returns null if valid, error string if invalid.
+    /// Validates an avatar ID against the avatar catalogue. Returns null if valid, error string if invalid.
     /// </summary>
     string? ValidateAvatarId(int avatarId);
 }
