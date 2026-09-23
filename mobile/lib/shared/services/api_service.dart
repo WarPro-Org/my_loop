@@ -31,12 +31,67 @@ final _log = Logger('API');
 /// reachability probe — no auth, cheap, safe to hit before every journey start.
 const _healthCheckPath = '/';
 
-/// The API base URL, configurable via --dart-define=API_URL=https://your-ngrok.ngrok-free.app
-/// Defaults to ngrok tunnel for mobile testing over cellular.
-const apiBaseUrl = String.fromEnvironment(
-  'API_URL',
-  defaultValue: 'https://destitute-living-bullpen.ngrok-free.dev',
+/// Build-time API host, supplied as `--dart-define=API_URL=https://your-host`.
+const _apiUrlFromEnvironment = String.fromEnvironment('API_URL');
+
+/// Fallback for **debug builds only**, so `flutter run` needs no extra flags.
+///
+/// Deliberately not used in release or profile. A default baked into a built
+/// binary keeps being called by every installed copy forever, and this host is a
+/// reclaimable ngrok subdomain — if it lapses, whoever registers it next
+/// receives real users' Firebase JWTs and GPS coordinates (#139 D8).
+const _devFallbackApiUrl = 'https://destitute-living-bullpen.ngrok-free.dev';
+
+/// Resolves the API host, returning an empty string when a non-debug build has
+/// no `API_URL`. Callers must treat empty as fatal — see [apiBaseUrlConfigError].
+///
+/// Gated on **debug**, not on "not release": `kReleaseMode` is `false` in profile
+/// mode, so keying off it would let a profile build silently use the dev tunnel.
+/// Profile builds run on real devices over real networks, so they get the same
+/// treatment as release.
+///
+/// Takes [isDebug] rather than reading `kDebugMode` so both branches are
+/// testable; `String.fromEnvironment` cannot branch on build mode in a `const`.
+String resolveApiBaseUrl({required String fromEnvironment, required bool isDebug}) {
+  if (fromEnvironment.isNotEmpty) return fromEnvironment;
+  return isDebug ? _devFallbackApiUrl : '';
+}
+
+/// The API base URL. Empty only in a release or profile build with no `API_URL`.
+final String apiBaseUrl = resolveApiBaseUrl(
+  fromEnvironment: _apiUrlFromEnvironment,
+  // Must stay `kDebugMode`. `!kReleaseMode` looks equivalent but is `true` in
+  // profile mode, which would let profile builds silently fall back to the dev
+  // tunnel. No test covers this wiring — only the pure helper is testable.
+  isDebug: kDebugMode,
 );
+
+/// Terms of Service page served by the API (`ApiRoutes.Terms` on the backend).
+const termsOfServicePath = '/terms';
+
+/// Privacy Policy page served by the API (`ApiRoutes.Privacy` on the backend).
+const privacyPolicyPath = '/privacy';
+
+/// Builds the URL of a page the API serves at [path] (e.g. [privacyPolicyPath]).
+///
+/// Legal links must derive from the configured host rather than being
+/// hardcoded: a hardcoded dev tunnel goes dead once retired (App Store
+/// Guideline 5.1.1(i) requires a working privacy policy link) and, being a
+/// reclaimable subdomain, would hand a third party the app's own legal pages.
+/// Tolerates a trailing slash on [baseUrl] so `API_URL=https://host/` works.
+Uri apiPageUri(String baseUrl, String path) {
+  final trimmedBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+  return Uri.parse('$trimmedBase$path');
+}
+
+/// Describes why the API host is unusable, or `null` when it is fine. The
+/// bootstrap fails closed on a non-null value instead of letting the app run
+/// against an unintended host.
+String? apiBaseUrlConfigError(String baseUrl) {
+  if (baseUrl.isNotEmpty) return null;
+  return 'API_URL was not provided at build time. Release and profile builds must pass '
+      '--dart-define=API_URL=https://your-api-host';
+}
 
 /// True when [e] means the backend could not be reached at all — no network,
 /// DNS failure, connection refused, or a timeout — as opposed to the server
