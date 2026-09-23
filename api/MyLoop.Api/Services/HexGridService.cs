@@ -4,6 +4,7 @@ using H3.Extensions;
 using H3.Model;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.Geometries.Utilities;
+using Microsoft.Extensions.Logging.Abstractions;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Models;
 
@@ -11,12 +12,22 @@ namespace MyLoop.Api.Services;
 
 public class HexGridService : IHexGridService
 {
+    /// <summary>
+    /// Perimeter sample spacing (degrees) for <see cref="GetRegionIdsForBbox"/> — below the
+    /// res-3 inradius (~51 km ≈ 0.46° latitude), so no parent cell slips between samples.
+    /// </summary>
+    private const double PerimeterSampleStepDegrees = 0.4;
+
     private readonly IGeoService _geoService;
+    private readonly ILogger<HexGridService> _logger;
     private static readonly GeometryFactory GeomFactory = new();
 
-    public HexGridService(IGeoService geoService)
+    // The logger is optional so pure-geometry callers (tests, tools) can construct the
+    // service directly; DI always supplies one.
+    public HexGridService(IGeoService geoService, ILogger<HexGridService>? logger = null)
     {
         _geoService = geoService;
+        _logger = logger ?? NullLogger<HexGridService>.Instance;
     }
 
     public List<HexCell> ComputeCapturedCells(double[][] path)
@@ -80,6 +91,14 @@ public class HexGridService : IHexGridService
 
     public IReadOnlyCollection<long> GetRegionIdsForBbox(double minLat, double minLng, double maxLat, double maxLng)
     {
+        // Defence in depth behind the controller's 400: an invalid bbox is a caller bug, so
+        // fail loudly rather than return a plausible-looking set (an empty set would read as
+        // "too wide to prune" and silently widen the query to a coordinate-only scan).
+        if (!ViewportBounds.IsValid(minLat, minLng, maxLat, maxLng))
+            throw new ArgumentException(
+                $"Invalid viewport bbox ({minLat}, {minLng}) - ({maxLat}, {maxLng}): values must be " +
+                "finite, within WGS84 lat/lng ranges, and min <= max.");
+
         // A near-global viewport would produce thousands of parents — a giant ANY() array
         // that pushes the planner off the composite index while costing real CPU to build.
         // Empty means "too wide to prune"; the caller falls back to the coordinate filter.
@@ -98,6 +117,30 @@ public class HexGridService : IHexGridService
         foreach (var (lat, lng) in PerimeterSamples(minLat, minLng, maxLat, maxLng))
             seeds.Add(PointToParentIndex(lat, lng));
 
+        AddPolyfillSeeds(seeds, minLat, minLng, maxLat, maxLng);
+
+        // Pad every seed by one neighbor ring: parents that intersect the bbox edge without
+        // their center inside it, and res-11 cells that protrude slightly outside their
+        // parent's polygon (H3 parent-child containment is inexact), must not be missed.
+        // Over-covering only widens the index scan; under-covering drops visible hexes.
+        var region = new HashSet<long>();
+        foreach (var seed in seeds)
+            foreach (var neighbor in seed.GridDiskDistances(1))
+                region.Add((long)(ulong)neighbor.Index);
+        return region;
+    }
+
+    /// <summary>
+    /// Adds the res-3 cells whose centers fall inside the bbox (interior parents of wide
+    /// viewports). A zero-area bbox (a point or a line) has no interior — H3's polyfill
+    /// throws IndexOutOfRangeException on such a collapsed ring — so it is skipped; the
+    /// perimeter/center seeds already cover it.
+    /// </summary>
+    private void AddPolyfillSeeds(
+        HashSet<H3Index> seeds, double minLat, double minLng, double maxLat, double maxLng)
+    {
+        if (minLat == maxLat || minLng == maxLng) return;
+
         var corners = new[]
         {
             new Coordinate(minLng, minLat),
@@ -112,40 +155,49 @@ public class HexGridService : IHexGridService
             foreach (var cell in bbox.Fill(GameConstants.H3ParentResolution))
                 seeds.Add(cell);
         }
-        catch { /* Degenerate bbox — the perimeter/center seeds still cover it */ }
-
-        // Pad every seed by one neighbor ring: parents that intersect the bbox edge without
-        // their center inside it, and res-11 cells that protrude slightly outside their
-        // parent's polygon (H3 parent-child containment is inexact), must not be missed.
-        // Over-covering only widens the index scan; under-covering drops visible hexes.
-        var region = new HashSet<long>();
-        foreach (var seed in seeds)
-            foreach (var neighbor in seed.GridDiskDistances(1))
-                region.Add((long)(ulong)neighbor.Index);
-        return region;
+        catch (IndexOutOfRangeException ex)
+        {
+            // H3's polyfill failure mode on a degenerate ring. Not fatal: the perimeter
+            // samples alone never under-cover, the polyfill only adds interior parents.
+            _logger.LogWarning(ex,
+                "Region polyfill failed for bbox ({MinLat}, {MinLng}) - ({MaxLat}, {MaxLng}); using perimeter seeds only",
+                minLat, minLng, maxLat, maxLng);
+        }
     }
 
     /// <summary>
-    /// Points along all four bbox edges (corners included) at a spacing below the res-3
-    /// inradius (~51 km ≈ 0.46° latitude), so no parent cell can slip between two samples.
+    /// Points along all four bbox edges (corners included) at a spacing no wider than
+    /// <see cref="PerimeterSampleStepDegrees"/>, so no parent cell can slip between two samples.
+    /// The loops are bounded by an iteration count, never by floating-point advancement: a
+    /// "lat += step" loop never terminates when lat is NaN or so large that lat + step == lat.
     /// Bounded by <see cref="GameConstants.MaxRegionPruneSpanDegrees"/> to ≤ ~100 points.
     /// </summary>
     private static IEnumerable<(double Lat, double Lng)> PerimeterSamples(
         double minLat, double minLng, double maxLat, double maxLng)
     {
-        const double step = 0.4;
-        for (var lat = minLat; ; lat = Math.Min(lat + step, maxLat))
+        foreach (var lat in EvenlySpaced(minLat, maxLat))
         {
             yield return (lat, minLng);
             yield return (lat, maxLng);
-            if (lat >= maxLat) break;
         }
-        for (var lng = minLng; ; lng = Math.Min(lng + step, maxLng))
+        foreach (var lng in EvenlySpaced(minLng, maxLng))
         {
             yield return (minLat, lng);
             yield return (maxLat, lng);
-            if (lng >= maxLng) break;
         }
+    }
+
+    /// <summary>
+    /// min, max, and evenly spaced points between them no more than
+    /// <see cref="PerimeterSampleStepDegrees"/> apart — exactly n + 1 points, n = ceil(span / step).
+    /// </summary>
+    private static IEnumerable<double> EvenlySpaced(double min, double max)
+    {
+        var span = max - min;
+        var intervals = Math.Max(1, (int)Math.Ceiling(span / PerimeterSampleStepDegrees));
+        for (var i = 0; i < intervals; i++)
+            yield return min + i * span / intervals;
+        yield return max;
     }
 
     private static H3Index PointToParentIndex(double lat, double lng)

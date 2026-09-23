@@ -91,6 +91,12 @@ public static class GameConstants
 
     // --- Viewport / Query Limits ---
     public const int MaxViewportCells = 500;
+    /// <summary>Valid WGS84 latitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLatitudeDegrees = -90.0;
+    public const double MaxLatitudeDegrees = 90.0;
+    /// <summary>Valid WGS84 longitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLongitudeDegrees = -180.0;
+    public const double MaxLongitudeDegrees = 180.0;
     public const int MaxUserTerritoryCells = 2000;
     public const int MaxPreviewPathLength = 10_000;
 

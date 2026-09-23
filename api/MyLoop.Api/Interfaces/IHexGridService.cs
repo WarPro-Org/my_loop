@@ -42,6 +42,9 @@ public interface IHexGridService
     /// over-covers (padded by one neighbor ring) and must never under-cover. Returns an
     /// EMPTY set for boxes wider than GameConstants.MaxRegionPruneSpanDegrees per axis,
     /// meaning "too wide to prune" — callers must then skip the ParentCellId filter.
+    /// Throws <see cref="System.ArgumentException"/> unless the bbox passes
+    /// MyLoop.Api.Services.ViewportBounds.IsValid (finite, in WGS84 range, min &lt;= max) —
+    /// callers validate client input first and return 400.
     /// </summary>
     IReadOnlyCollection<long> GetRegionIdsForBbox(double minLat, double minLng, double maxLat, double maxLng);
 
