@@ -11,9 +11,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/app/router_guards.dart';
 import 'package:myloop/features/auth/user_session_teardown.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
+
+final _log = Logger('SessionEndUi');
 
 class SessionEndUi {
   /// Captures the navigator, router and messenger from [context] up front, so
@@ -29,8 +32,23 @@ class SessionEndUi {
   final ScaffoldMessengerState _messenger;
 
   /// Signs out, then routes to login.
+  ///
+  /// If the Google/Firebase sign-out throws, this account's local state is
+  /// already torn down, so the user is still sent to login rather than left on
+  /// a screen whose profile is gone. They are told to try again: Firebase may
+  /// still hold the session, in which case login resumes it as the same
+  /// account — never another one.
   Future<void> signOut(UserSessionTeardown teardown) async {
-    await _behindBarrier(AppConstants.signingOutLabel, teardown.signOut);
+    try {
+      await _behindBarrier(AppConstants.signingOutLabel, teardown.signOut);
+    } catch (e, st) {
+      _log.warning('Sign-out failed after the local teardown; routing to login', e, st);
+      _router.go(loginRoute);
+      _messenger.showSnackBar(
+        const SnackBar(content: Text(AppConstants.signOutFailedMessage)),
+      );
+      return;
+    }
     _router.go(loginRoute);
   }
 

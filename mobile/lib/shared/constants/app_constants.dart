@@ -70,6 +70,11 @@ class AppConstants {
   static const String deleteAccountFailedMessage =
       "Couldn't delete your account — try again.";
 
+  /// Shown when the Google/Firebase sign-out throws after the app's own
+  /// session state was already cleared.
+  static const String signOutFailedMessage =
+      "Couldn't finish signing out — try again.";
+
   /// Screen-reader labels for the modal progress barrier shown while sign-out
   /// or account deletion tears the session down.
   static const String signingOutLabel = 'Signing out';

@@ -12,17 +12,23 @@ library;
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderOrFamily;
 import 'package:logging/logging.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/notification_cache.dart';
+import 'package:myloop/shared/services/notification_service.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/achievements_slice.dart';
+import 'package:myloop/shared/state/exploration_slice.dart';
+import 'package:myloop/shared/state/missions_slice.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
+import 'package:myloop/shared/state/xp_slice.dart';
 
 final _log = Logger('UserSessionTeardown');
 
@@ -85,15 +91,15 @@ class UserSessionTeardown {
     final uid = _ref.read(userProfileProvider).userId;
     await _endLiveWalk(uid);
     _ref.read(userProfileProvider.notifier).clear();
-    // In-memory game stats (hex count, streak, distance, rank): without this the
-    // next account shows the previous one's numbers until its own hydration.
-    _ref.invalidate(profileSliceProvider);
     // The hub connection is app-lifecycle-scoped (#102) — ending the session is
-    // the one place it must actually be torn down.
+    // the one place it must actually be torn down. It goes before the in-memory
+    // reset below so a late XP/mission/achievement push for this account can't
+    // land in the freshly reset slices.
     await _bestEffort(
       'realtime hub',
       () => _ref.read(territoryRealtimeProvider).disconnect(),
     );
+    await _resetInMemoryState();
     // Offline caches, so the next account can't inherit this session on a later
     // offline launch: profile (#19), home cards (#34), own-hex territories (#33),
     // notification inbox (#30).
@@ -101,6 +107,30 @@ class UserSessionTeardown {
     await _bestEffort('game-state cache', GameStateCache.clear);
     await _bestEffort('territory cache', TerritoryCache.clear);
     await _bestEffort('notification cache', NotificationCache.clear);
+  }
+
+  /// Resets every app-lifetime provider that holds this account's data in
+  /// memory. They are only overwritten when the next account's game-state
+  /// fetch succeeds, so without this a failed fetch leaves the next account
+  /// looking at this one's stats, level, missions, achievements, explored
+  /// neighbourhoods (location-derived) and theft alerts.
+  ///
+  /// Runs after the profile is cleared: hydration re-checks the signed-in user
+  /// after every await, so no in-flight resync can re-fill a slice past here.
+  Future<void> _resetInMemoryState() async {
+    for (final slice in _userBoundSlices) {
+      _ref.invalidate(slice);
+    }
+    // The inbox's queued disk write reads the notifier's `ref`, which throws
+    // once the notifier is disposed, so let it finish first. With the profile
+    // already cleared it writes nothing.
+    if (_ref.exists(notificationProvider)) {
+      await _bestEffort(
+        'pending notification write',
+        () => _ref.read(notificationProvider.notifier).pendingWrite,
+      );
+    }
+    _ref.invalidate(notificationProvider);
   }
 
   Future<void> _endLiveWalk(String? uid) => _bestEffort(
@@ -116,6 +146,16 @@ class UserSessionTeardown {
     }
   }
 }
+
+/// The game-state slices filled by `hydrateAllSlices`. A slice added there
+/// holds account data too, so it belongs here as well.
+final List<ProviderOrFamily> _userBoundSlices = [
+  profileSliceProvider,
+  xpSliceProvider,
+  missionsSliceProvider,
+  achievementsSliceProvider,
+  explorationSliceProvider,
+];
 
 final userSessionTeardownProvider =
     Provider<UserSessionTeardown>(UserSessionTeardown.new);
