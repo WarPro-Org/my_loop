@@ -60,8 +60,29 @@ String resolveApiBaseUrl({required String fromEnvironment, required bool isDebug
 /// The API base URL. Empty only in a release or profile build with no `API_URL`.
 final String apiBaseUrl = resolveApiBaseUrl(
   fromEnvironment: _apiUrlFromEnvironment,
+  // Must stay `kDebugMode`. `!kReleaseMode` looks equivalent but is `true` in
+  // profile mode, which would let profile builds silently fall back to the dev
+  // tunnel. No test covers this wiring — only the pure helper is testable.
   isDebug: kDebugMode,
 );
+
+/// Terms of Service page served by the API (`ApiRoutes.Terms` on the backend).
+const termsOfServicePath = '/terms';
+
+/// Privacy Policy page served by the API (`ApiRoutes.Privacy` on the backend).
+const privacyPolicyPath = '/privacy';
+
+/// Builds the URL of a page the API serves at [path] (e.g. [privacyPolicyPath]).
+///
+/// Legal links must derive from the configured host rather than being
+/// hardcoded: a hardcoded dev tunnel goes dead once retired (App Store
+/// Guideline 5.1.1(i) requires a working privacy policy link) and, being a
+/// reclaimable subdomain, would hand a third party the app's own legal pages.
+/// Tolerates a trailing slash on [baseUrl] so `API_URL=https://host/` works.
+Uri apiPageUri(String baseUrl, String path) {
+  final trimmedBase = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
+  return Uri.parse('$trimmedBase$path');
+}
 
 /// Describes why the API host is unusable, or `null` when it is fine. The
 /// bootstrap fails closed on a non-null value instead of letting the app run
