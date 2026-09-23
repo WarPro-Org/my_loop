@@ -1,7 +1,6 @@
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using MyLoop.Api.Controllers;
 using MyLoop.Api.Interfaces;
@@ -19,7 +18,7 @@ namespace MyLoop.Api.Tests;
 public class LeaderboardControllerTests
 {
     private static LeaderboardController Build(Mock<ILeaderboardService> leaderboard) =>
-        new(leaderboard.Object, NullLogger<LeaderboardController>.Instance);
+        new(leaderboard.Object);
 
     [Fact]
     public void Controller_requires_authorization()
@@ -82,15 +81,19 @@ public class LeaderboardControllerTests
     }
 
     [Fact]
-    public async Task Refresh_returns_the_player_count_the_service_reports()
+    public void LeaderboardController_no_longer_exposes_a_client_triggered_refresh_endpoint()
     {
-        var leaderboard = new Mock<ILeaderboardService>();
-        leaderboard.Setup(l => l.RefreshLeaderboard()).ReturnsAsync(42);
+        // Issue #109: the removed POST /api/leaderboard/refresh action (an O(total cells)
+        // recompute any authenticated user could fire up to 120 times/min) must not silently
+        // come back — the refresh now runs only from LeaderboardRefreshWorker. Pure reflection,
+        // so it lives here in the Docker-free class rather than a Testcontainers fixture.
+        var actionMethods = typeof(LeaderboardController)
+            .GetMethods()
+            .Where(m => m.DeclaringType == typeof(LeaderboardController))
+            .Select(m => m.Name)
+            .ToList();
 
-        var result = await Build(leaderboard).Refresh();
-
-        var ok = Assert.IsType<OkObjectResult>(result);
-        var playerCount = ok.Value!.GetType().GetProperty("PlayerCount")!.GetValue(ok.Value);
-        Assert.Equal(42, playerCount);
+        Assert.DoesNotContain("Refresh", actionMethods);
+        Assert.Equal(["GetLeaderboard"], actionMethods);
     }
 }

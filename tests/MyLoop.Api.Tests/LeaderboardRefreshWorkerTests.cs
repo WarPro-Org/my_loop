@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using MyLoop.Api.Controllers;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
 using MyLoop.Api.Interfaces;
@@ -82,20 +81,31 @@ public class LeaderboardRefreshWorkerTests : IAsyncLifetime
         Assert.Single(entries);
         Assert.Equal(userId, entries[0].UserId);
     }
+}
 
+/// <summary>
+/// Docker-free coverage for <see cref="LeaderboardRefreshWorker"/>'s shutdown path: the host's
+/// stopping token must reach <see cref="ILeaderboardService.RefreshLeaderboard"/>, otherwise a
+/// run blocked on another instance's advisory lock (or a Neon cold-start retry) can't be
+/// abandoned and shutdown runs into the host timeout.
+/// </summary>
+public class LeaderboardRefreshWorkerCancellationTests
+{
     [Fact]
-    public void LeaderboardController_no_longer_exposes_a_client_triggered_refresh_endpoint()
+    public async Task RunOnceAsync_passes_the_stopping_token_through_to_the_refresh()
     {
-        // Compile-time-adjacent proof that the removed POST /api/leaderboard/refresh action
-        // (an O(total cells) recompute any authenticated user could fire up to 120 times/min)
-        // does not silently come back.
-        var actionMethods = typeof(LeaderboardController)
-            .GetMethods()
-            .Where(m => m.DeclaringType == typeof(LeaderboardController))
-            .Select(m => m.Name)
-            .ToList();
+        using var cts = new CancellationTokenSource();
+        var leaderboard = new Mock<ILeaderboardService>();
+        leaderboard.Setup(l => l.RefreshLeaderboard(It.IsAny<CancellationToken>())).ReturnsAsync(7);
 
-        Assert.DoesNotContain("Refresh", actionMethods);
-        Assert.Equal(["GetLeaderboard"], actionMethods);
+        var services = new ServiceCollection();
+        services.AddScoped(_ => leaderboard.Object);
+        await using var provider = services.BuildServiceProvider();
+
+        var playerCount = await LeaderboardRefreshWorker.RunOnceAsync(
+            provider.GetRequiredService<IServiceScopeFactory>(), NullLogger.Instance, cts.Token);
+
+        Assert.Equal(7, playerCount);
+        leaderboard.Verify(l => l.RefreshLeaderboard(cts.Token), Times.Once);
     }
 }

@@ -8,9 +8,12 @@ namespace MyLoop.Api.Services;
 /// on every walk, at up to the rate limiter's 120/min — an O(total cells) endpoint reachable by
 /// design, not just accident (#109 / ML-ERR-012).
 ///
-/// The advisory lock inside <see cref="LeaderboardService.RefreshLeaderboard"/> already
-/// serializes overlapping runs, so this worker's periodic tick and the boot-time first pass
-/// can never race a concurrent refresh.
+/// Within one instance the loop is strictly sequential (await the run, then await the delay), so
+/// ticks cannot overlap each other. The advisory lock inside
+/// <see cref="LeaderboardService.RefreshLeaderboard"/> is what serializes runs ACROSS instances
+/// (horizontal scale-out, or old and new instances both alive during a rolling deploy): the
+/// loser waits and recomputes against the winner's committed rows instead of colliding on the
+/// (UserId, Date) unique index.
 /// </summary>
 public class LeaderboardRefreshWorker : BackgroundService
 {
@@ -38,7 +41,12 @@ public class LeaderboardRefreshWorker : BackgroundService
             {
                 try
                 {
-                    await RunOnceAsync(_scopeFactory, _logger);
+                    await RunOnceAsync(_scopeFactory, _logger, stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // Shutdown interrupted an in-flight run — let the outer handler exit.
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -58,11 +66,12 @@ public class LeaderboardRefreshWorker : BackgroundService
     /// Runs one refresh cycle. Extracted from the timer loop so tests can drive it directly
     /// instead of waiting on <see cref="Interval"/>.
     /// </summary>
-    internal static async Task<int> RunOnceAsync(IServiceScopeFactory scopeFactory, ILogger logger)
+    internal static async Task<int> RunOnceAsync(
+        IServiceScopeFactory scopeFactory, ILogger logger, CancellationToken ct = default)
     {
         using var scope = scopeFactory.CreateScope();
         var leaderboardService = scope.ServiceProvider.GetRequiredService<ILeaderboardService>();
-        var playerCount = await leaderboardService.RefreshLeaderboard();
+        var playerCount = await leaderboardService.RefreshLeaderboard(ct);
         logger.LogInformation("Leaderboard refreshed: {PlayerCount} players ranked", playerCount);
         return playerCount;
     }
