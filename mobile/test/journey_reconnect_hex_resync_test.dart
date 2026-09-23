@@ -4,19 +4,26 @@
 /// was reopened (below zoom 14 own hexes are the only layer drawn, and the
 /// viewport poll never loads them).
 ///
-/// The fix wires `TerritoryRealtimeService.onReconnected` to
-/// `HexTerritoryManager.loadUserOwnHexes` via `resyncOwnHexesOnReconnect`,
-/// which `_JourneyMapState._subscribeRealtime` uses. Like
-/// journey_map_repaint_scoping_test.dart this stays hermetic and does not
-/// pump `JourneyScreen`; it drives the real service, the real manager and the
-/// exact function the screen subscribes with.
+/// The fix wires `resyncTriggersProvider` — one stream fed by hub reconnects
+/// **and** app-foreground resumes — to `HexTerritoryManager.loadUserOwnHexes`
+/// via `resyncOwnHexes`, which `_JourneyMapState._subscribeRealtime` uses.
+/// Resume is essential: after a long background the automatic reconnect gives
+/// up and nothing restarts the hub, so no reconnect event ever arrives.
+///
+/// Like journey_map_repaint_scoping_test.dart this stays hermetic and does not
+/// pump `JourneyScreen`; it drives the real service, the real trigger
+/// provider, the real manager and the exact function the screen subscribes
+/// with.
 library;
 
+import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
 import 'package:myloop/features/journey/reconnect_hex_resync.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/services/realtime_resync.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 
 const _me = 'me';
@@ -47,32 +54,56 @@ class _OwnHexesApi extends ApiService {
   }
 }
 
+/// Drives a real foreground transition on the shared binding. Going via
+/// `inactive` is the only sequence that fires `AppLifecycleListener.onResume`
+/// (see realtime_reconnect_resync_test.dart).
+void _resumeApp() {
+  final binding = TestWidgetsFlutterBinding.instance;
+  binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+  binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late _OwnHexesApi api;
   late HexTerritoryManager hexes;
   late TerritoryRealtimeService realtime;
+  late ProviderContainer container;
 
   setUp(() async {
+    // The lifecycle state lives on the process-wide binding, so a previous
+    // test leaving it at `resumed` would make the next resume a no-op.
+    TestWidgetsFlutterBinding.instance.resetInternalState();
     api = _OwnHexesApi();
     hexes = HexTerritoryManager(api: api, userId: _me);
     realtime = TerritoryRealtimeService(baseUrl: 'http://test.local');
+    container = ProviderContainer(overrides: [
+      territoryRealtimeProvider.overrideWithValue(realtime),
+    ]);
     await hexes.loadUserOwnHexes();
     api.ownHexFetches = 0;
   });
 
   tearDown(() {
+    container.dispose();
     hexes.dispose();
     realtime.dispose();
   });
 
-  test('a hex stolen during the outage disappears from the map on reconnect',
-      () async {
-    expect(hexes.userOwnCellIds, {_keptCellId, _stolenCellId});
-    final sub = resyncOwnHexesOnReconnect(
-      onReconnected: realtime.onReconnected,
+  /// Subscribes exactly as `_JourneyMapState._subscribeRealtime` does.
+  void subscribeLikeJourney() {
+    final sub = resyncOwnHexes(
+      triggers: container.read(resyncTriggersProvider),
       hexes: hexes,
     );
     addTearDown(sub.cancel);
+  }
+
+  test('a hex stolen during the outage disappears from the map on reconnect',
+      () async {
+    expect(hexes.userOwnCellIds, {_keptCellId, _stolenCellId});
+    subscribeLikeJourney();
 
     // Stolen while the socket was down — the HexOwnershipChanged delta for
     // it was never delivered.
@@ -88,15 +119,36 @@ void main() {
         reason: 'the map repaints from hexRevision, not a screen setState');
   });
 
+  test('a hex stolen while backgrounded disappears on resume, even though the '
+      'hub never reconnects', () async {
+    subscribeLikeJourney();
+    // Long background: automatic reconnect gave up, so no reconnect event
+    // will ever arrive — resume is the only signal.
+    expect(realtime.isConnected, isFalse);
+    api.ownedIds = {_keptCellId};
+    final revisionBefore = hexes.hexRevision.value;
+
+    _resumeApp();
+    await pumpEventQueue();
+
+    expect(TestWidgetsFlutterBinding.instance.lifecycleState,
+        AppLifecycleState.resumed,
+        reason: 'the resume must really have been delivered, or this asserts nothing');
+    expect(api.ownHexFetches, 1, reason: 'resume must re-fetch own hexes');
+    expect(hexes.userOwnCellIds, {_keptCellId});
+    expect(hexes.hexRevision.value, greaterThan(revisionBefore));
+  });
+
   test('cancelling the subscription (screen disposed) stops the resync',
       () async {
-    final sub = resyncOwnHexesOnReconnect(
-      onReconnected: realtime.onReconnected,
+    final sub = resyncOwnHexes(
+      triggers: container.read(resyncTriggersProvider),
       hexes: hexes,
     );
     await sub.cancel();
 
     await realtime.handleReconnected();
+    _resumeApp();
     await pumpEventQueue();
 
     expect(api.ownHexFetches, 0);

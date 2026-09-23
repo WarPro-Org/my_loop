@@ -270,17 +270,17 @@ void main() {
       );
     });
   });
-  group('GameStateResync — overlapping triggers', () {
+  group('CoalescingResync — overlapping triggers', () {
     late List<Completer<void>> fetches;
-    late GameStateResync resync;
+    late CoalescingResync resync;
 
     setUp(() {
       fetches = [];
-      resync = GameStateResync(() {
+      resync = CoalescingResync(() {
         final fetch = Completer<void>();
         fetches.add(fetch);
         return fetch.future;
-      });
+      }, label: 'test');
     });
 
     Future<void> finishFetch(int index) async {
