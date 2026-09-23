@@ -84,6 +84,10 @@ public class GeocodingSharedStateTests
     }
 
     // ── Given one instance, the throttle and cache behave ─────────────────────
+    // Behavioural backstops only. Both tests below use a SINGLE instance, so they also pass with
+    // the D2 bug present (verified by re-adding AddHttpClient<GeocodingService>: only the two
+    // Assert.Same tests above fail). They guard the per-instance throttle and cache, not the
+    // registration; the DI tests are the real D2 regression guard.
 
     [Fact]
     public async Task Repeating_a_lookup_is_served_from_cache_without_a_second_request()
@@ -105,9 +109,9 @@ public class GeocodingSharedStateTests
         var service = NewService(handler);
 
         // Four distinct coordinates so none is served from cache — each must go out, and the
-        // semaphore plus the ~1.1s spacing must serialize them. This is a LOWER bound, so a slow
-        // or loaded CI machine can only make it pass more comfortably; it fails only if the
-        // throttle is absent, which is exactly the transient-instance bug.
+        // ~1.1s spacing must separate them. This is a LOWER bound, so a slow or loaded CI machine
+        // can only make it pass more comfortably; it fails only if the spacing itself is removed.
+        // It cannot detect the transient-instance bug (one instance here) — see the note above.
         var coords = new[] { (52.10, 1.10), (52.20, 1.20), (52.30, 1.30), (52.40, 1.40) };
 
         var start = DateTime.UtcNow;

@@ -36,10 +36,13 @@ public class HaversineConsolidationTests
     }
 
     [Fact]
-    public void Uses_the_shared_earth_radius_constant_not_a_local_literal()
+    public void Half_the_equator_is_pi_times_the_configured_earth_radius()
     {
-        // Antipodal along the equator is half the great circle: pi * R. Pinning this catches a
-        // reintroduced hardcoded radius, which is the specific mistake D3 describes.
+        // Antipodal along the equator is half the great circle: pi * R. This pins the formula's
+        // scale to GameConstants.EarthRadiusMeters, so it catches a radius that DIFFERS from the
+        // constant (e.g. a mean-vs-equatorial swap). It cannot detect a hardcoded 6371000 literal,
+        // because that equals the constant, and nothing here stops a second formula being added
+        // elsewhere — that remains a review concern.
         var halfCircumference = GeoService.Haversine(0, 0, 0, 180);
         Assert.Equal(Math.PI * GameConstants.EarthRadiusMeters, halfCircumference, precision: 3);
     }
