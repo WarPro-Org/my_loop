@@ -39,6 +39,10 @@ class BatchDrainService {
   /// post-ACK [StepClaimQueue.removeProcessed]. [dispose] awaits it so a caller tearing
   /// the write layer down (sign-out) knows no drain can touch the queue afterwards.
   Completer<void>? _inFlightDrain;
+
+  /// Cancels the in-flight request when sign-out disposes the service, so
+  /// teardown doesn't wait out a slow or offline request (#110).
+  CancelToken? _inFlightCancel;
   int _consecutiveFailures = 0;
   /// When set and still in the future, [_tryDrain] refuses to hit the network. The periodic
   /// timer keeps ticking but is gated on this, so backoff is honoured without stacking retries.
@@ -123,6 +127,7 @@ class BatchDrainService {
 
     _draining = true;
     final inFlight = _inFlightDrain = Completer<void>();
+    final cancel = _inFlightCancel = CancelToken();
     var peeked = const <QueuedStepPoint>[];
     try {
       final points = _queue.peek(_maxBatchSize);
@@ -146,6 +151,7 @@ class BatchDrainService {
         localDate: localGameDay(),
         walkSessionId: sessionId,
         points: batch,
+        cancelToken: cancel,
       );
 
       if (response != null) {
@@ -190,6 +196,7 @@ class BatchDrainService {
       return false;
     } finally {
       _draining = false;
+      _inFlightCancel = null;
       inFlight.complete();
     }
   }
@@ -209,12 +216,19 @@ class BatchDrainService {
 
   /// Stops the drain timer and completes once any in-flight drain has finished.
   ///
-  /// Callers that only need the timer stopped (end of walk) may ignore the future;
-  /// callers that must guarantee nothing touches the queue afterwards (sign-out /
-  /// account deletion, #110) must await it.
-  Future<void> dispose() async {
-    _disposed = true;
-    stop();
+  /// Callers that only need the timer stopped (end of walk) may ignore the future
+  /// and let an in-flight batch finish, so its ACK still clears the queue.
+  /// Callers that must guarantee nothing touches the queue afterwards (sign-out /
+  /// account deletion, #110) await it with [cancelInFlight]: the request is
+  /// cancelled, [ApiService.claimBatchStep] returns null for a cancel, and the
+  /// transient-failure branch never touches the queue. Safe to call again, e.g.
+  /// to cancel a batch an earlier end-of-walk dispose left running.
+  Future<void> dispose({bool cancelInFlight = false}) async {
+    if (cancelInFlight) _inFlightCancel?.cancel();
+    if (!_disposed) {
+      _disposed = true;
+      stop();
+    }
     await _inFlightDrain?.future;
     _resultController.close();
     _rejectionController.close();

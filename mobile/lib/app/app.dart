@@ -2,26 +2,31 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/app/router.dart';
+import 'package:myloop/features/auth/user_session_teardown.dart';
 import 'package:myloop/features/splash/splash_screen.dart';
 
 /// The root widget of the MyLoop application.
 ///
 /// Shows the hex rush splash animation once on startup, then transitions
 /// to the main app via go_router.
-class MyLoopApp extends StatefulWidget {
+class MyLoopApp extends ConsumerStatefulWidget {
   const MyLoopApp({super.key});
 
   @override
-  State<MyLoopApp> createState() => _MyLoopAppState();
+  ConsumerState<MyLoopApp> createState() => _MyLoopAppState();
 }
 
-class _MyLoopAppState extends State<MyLoopApp> {
+class _MyLoopAppState extends ConsumerState<MyLoopApp> {
   bool _splashDone = false;
 
   @override
   Widget build(BuildContext context) {
+    // App-lifetime: tears down user-bound state when Firebase ends the session
+    // behind the UI's back (revoked token, account deleted elsewhere — #110).
+    ref.watch(forcedSignOutGuardProvider);
     if (!_splashDone) {
       return MaterialApp(
         title: 'MyLoop',

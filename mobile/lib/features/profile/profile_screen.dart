@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
+import 'package:myloop/features/auth/session_end_ui.dart';
 import 'package:myloop/features/auth/user_session_teardown.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
@@ -83,8 +84,8 @@ class ProfileScreen extends ConsumerWidget {
                 label: 'Sign Out',
                 iconColor: AppColors.red,
                 onTap: () async {
-                  await ref.read(userSessionTeardownProvider).signOut();
-                  if (context.mounted) context.go('/login');
+                  await SessionEndUi.of(context)
+                      .signOut(ref.read(userSessionTeardownProvider));
                 },
               ),
               _SettingsTile(
@@ -114,9 +115,10 @@ class ProfileScreen extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
+              final ui = SessionEndUi.of(context);
+              final teardown = ref.read(userSessionTeardownProvider);
               Navigator.pop(ctx);
-              await ref.read(userSessionTeardownProvider).deleteAccount();
-              if (context.mounted) context.go('/login');
+              await ui.deleteAccount(teardown);
             },
             child: Text('Delete', style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w700)),
           ),
