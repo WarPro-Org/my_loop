@@ -10,11 +10,9 @@
 ///  1. Hex mutations bump `HexTerritoryManager.hexRevision`; the map wraps
 ///     only the hex/cooldown layers in a `ValueListenableBuilder` keyed on
 ///     it, so unrelated layers stop rebuilding on every hex event.
-///  2. The periodic viewport poll backs off while SignalR is connected and
-///     has delivered a hex delta recently — `isRealtimePollBackstopRedundant`
-///     is the pure decision function, extracted so it's unit-testable
-///     without pumping the whole Journey screen and its GPS/API/hydration
-///     dependencies.
+///  2. The periodic viewport poll backs off only when SignalR can account
+///     for the unchanged viewport — see `viewport_poll_backoff_test.dart`
+///     for that policy; this file covers the service's freshness signal.
 ///
 /// These tests are hermetic — no network, no platform GPS channel, no widget
 /// pumping of `JourneyScreen` itself (six other open PRs touch that file;
@@ -23,8 +21,6 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
-import 'package:myloop/features/journey/journey_screen.dart';
-import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
@@ -41,6 +37,13 @@ TerritoryCell _cell(int id, {String ownerId = 'other-user'}) {
       [1.001, 1.0],
     ],
   );
+}
+
+/// Serves canned territory responses so the load paths can run hermetically.
+class _CannedApi extends ApiService {
+  @override
+  Future<List<TerritoryCell>> getUserTerritories(String userId) async =>
+      [_cell(7, ownerId: userId)];
 }
 
 void main() {
@@ -103,6 +106,14 @@ void main() {
       expect(manager.hexRevision.value, before + 1);
     });
 
+    test('loadUserOwnHexes (own-cell replace) bumps the revision', () async {
+      final owner = HexTerritoryManager(api: _CannedApi(), userId: 'me');
+      final before = owner.hexRevision.value;
+      await owner.loadUserOwnHexes();
+      expect(owner.userOwnCellIds, {7});
+      expect(owner.hexRevision.value, greaterThan(before));
+    });
+
     test('dispose() makes a later mutation a safe no-op instead of throwing', () {
       // An in-flight load* API call can resolve after _JourneyMapState (and
       // this manager) is disposed. Before the fix, that would call
@@ -121,75 +132,64 @@ void main() {
     });
   });
 
-  group('TerritoryRealtimeService.lastHexEventAt (issue #129)', () {
+  group('TerritoryRealtimeService.timeSinceLastHexEvent (issue #129)', () {
+    const hexPayload = [
+      [
+        {
+          'h3Index': '1',
+          'centerLat': 1.0,
+          'centerLng': 1.0,
+          'newOwnerId': 'user-1',
+          'newOwnerColor': '#FF0000',
+          'newOwnerDisplayName': 'Alice',
+        },
+      ],
+    ];
+
+    TerritoryRealtimeService connectedService() =>
+        TerritoryRealtimeService(baseUrl: 'http://test.local')
+          ..debugConnected = true;
+
     test('is null until a hex delta is received', () {
-      final service = TerritoryRealtimeService(baseUrl: 'http://test.local');
-      expect(service.lastHexEventAt, isNull);
+      expect(connectedService().timeSinceLastHexEvent, isNull);
     });
 
-    test('is stamped when a HexOwnershipChanged payload arrives', () {
-      final service = TerritoryRealtimeService(baseUrl: 'http://test.local');
-      service.debugSimulateHexChanges([
-        [
-          {
-            'h3Index': '1',
-            'centerLat': 1.0,
-            'centerLng': 1.0,
-            'newOwnerId': 'user-1',
-            'newOwnerColor': '#FF0000',
-            'newOwnerDisplayName': 'Alice',
-          },
-        ],
-      ]);
-      expect(service.lastHexEventAt, isNotNull);
-      expect(
-        DateTime.now().difference(service.lastHexEventAt!),
-        lessThan(const Duration(seconds: 1)),
-      );
+    test('starts a monotonic timer when a HexOwnershipChanged payload arrives', () {
+      final service = connectedService()..debugSimulateHexChanges(hexPayload);
+      expect(service.timeSinceLastHexEvent, isNotNull);
+      expect(service.timeSinceLastHexEvent, lessThan(const Duration(seconds: 1)));
     });
 
-    test('an empty payload does not stamp lastHexEventAt', () {
-      final service = TerritoryRealtimeService(baseUrl: 'http://test.local');
-      service.debugSimulateHexChanges([<Object?>[]]);
-      expect(service.lastHexEventAt, isNull);
-    });
-  });
-
-  group('isRealtimePollBackstopRedundant (issue #129)', () {
-    final now = DateTime(2026, 1, 1, 12, 0, 0);
-
-    test('polls when not connected, regardless of freshness', () {
-      expect(
-        isRealtimePollBackstopRedundant(isConnected: false, lastEventAt: now, now: now),
-        isFalse,
-      );
+    test('an empty payload does not start it', () {
+      final service = connectedService()
+        ..debugSimulateHexChanges([<Object?>[]]);
+      expect(service.timeSinceLastHexEvent, isNull);
     });
 
-    test('polls when connected but no delta has ever arrived', () {
-      expect(
-        isRealtimePollBackstopRedundant(isConnected: true, lastEventAt: null, now: now),
-        isFalse,
-      );
+    test('auto-reconnect window: not connected and not fresh', () {
+      final service = connectedService()..debugSimulateHexChanges(hexPayload);
+      service.debugSimulateReconnecting();
+      expect(service.isConnected, isFalse,
+          reason: 'withAutomaticReconnect keeps the socket down while retrying');
+      expect(service.timeSinceLastHexEvent, isNull);
+      // Deltas sent during the outage were lost (#111): even once the socket
+      // is back, the pre-outage push must not vouch for the map.
+      service.debugConnected = true;
+      expect(service.timeSinceLastHexEvent, isNull);
     });
 
-    test('skips when connected and the last delta is within the freshness window', () {
-      final lastEvent = now.subtract(
-        const Duration(seconds: AppConstants.realtimeFreshnessSeconds - 1),
-      );
-      expect(
-        isRealtimePollBackstopRedundant(isConnected: true, lastEventAt: lastEvent, now: now),
-        isTrue,
-      );
+    test('connection close resets freshness', () {
+      final service = connectedService()..debugSimulateHexChanges(hexPayload);
+      service.debugSimulateClosed();
+      service.debugConnected = true;
+      expect(service.timeSinceLastHexEvent, isNull);
     });
 
-    test('polls when connected but the last delta is older than the freshness window', () {
-      final lastEvent = now.subtract(
-        const Duration(seconds: AppConstants.realtimeFreshnessSeconds + 1),
-      );
-      expect(
-        isRealtimePollBackstopRedundant(isConnected: true, lastEventAt: lastEvent, now: now),
-        isFalse,
-      );
+    test('logout disconnect() resets freshness so the next user starts clean', () async {
+      final service = connectedService()..debugSimulateHexChanges(hexPayload);
+      await service.disconnect();
+      service.debugConnected = true; // next user's session connects
+      expect(service.timeSinceLastHexEvent, isNull);
     });
   });
 }

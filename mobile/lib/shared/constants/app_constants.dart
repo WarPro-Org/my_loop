@@ -40,6 +40,12 @@ class AppConstants {
   /// (issue #129).
   static const int realtimeFreshnessSeconds = 60;
 
+  /// Upper bound on how long the viewport-poll back-off may keep skipping
+  /// (#129). Hex deltas carry no cooldown and can't reach regions this client
+  /// hasn't joined, so even a fresh feed can't keep the map correct forever;
+  /// this caps that lag at a few poll intervals.
+  static const int viewportPollMaxBackoffSeconds = 120;
+
   // --- Preview ---
   static const int maxPreviewPathPoints = 500;
 

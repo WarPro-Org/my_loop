@@ -48,6 +48,14 @@ class HexTerritoryManager {
   /// silently goes stale until some unrelated mutation repaints it.
   final ValueNotifier<int> hexRevision = ValueNotifier<int>(0);
 
+  /// True once a realtime event arrived for a cell this client has no entry
+  /// for — so no boundary to draw it with. Only a viewport load can render
+  /// such a cell, so the map's poll back-off must not skip while it is set
+  /// (#129). Cleared when a viewport load that started after it succeeds.
+  bool _hasUndrawableRealtimeChange = false;
+
+  bool get hasUndrawableRealtimeChange => _hasUndrawableRealtimeChange;
+
   HexTerritoryManager({required ApiService api, required String? userId})
       : _api = api,
         _userId = userId;
@@ -149,12 +157,20 @@ class HexTerritoryManager {
   }
 
   /// Loads hexes within a viewport bounding box.
-  Future<void> loadViewport({
+  ///
+  /// Returns true only when the fetch succeeded and the store was updated,
+  /// so the caller can record these bounds as freshly polled; a failed load
+  /// must not let the poll back-off treat the viewport as covered.
+  Future<bool> loadViewport({
     required double minLat,
     required double minLng,
     required double maxLat,
     required double maxLng,
   }) async {
+    // Clear BEFORE the fetch: an undrawable event that arrives while it is
+    // in flight may postdate the server snapshot, so it must survive.
+    final hadUndrawableChange = _hasUndrawableRealtimeChange;
+    _hasUndrawableRealtimeChange = false;
     try {
       final cells = await _api.getTerritories(
         minLat: minLat,
@@ -163,7 +179,11 @@ class HexTerritoryManager {
         maxLng: maxLng,
       );
       updateFromCells(cells);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      _hasUndrawableRealtimeChange |= hadUndrawableChange;
+      return false;
+    }
   }
 
   /// Upserts [cells] into the store by `cellId` (newest data wins), then
@@ -251,7 +271,12 @@ class HexTerritoryManager {
       if (cellId == null) continue;
 
       final existing = _cells[cellId];
-      if (existing == null) continue;
+      if (existing == null) {
+        // Nothing to draw it with — make the next viewport poll run instead
+        // of letting the back-off skip it (#129).
+        _hasUndrawableRealtimeChange = true;
+        continue;
+      }
 
       _cells[cellId] = TerritoryCell(
         cellId: cellId,

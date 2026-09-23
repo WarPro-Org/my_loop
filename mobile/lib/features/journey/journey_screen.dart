@@ -14,6 +14,7 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
+import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
 import 'package:myloop/shared/services/api_service.dart';
@@ -30,26 +31,6 @@ import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/notification_service.dart';
-
-/// Whether the periodic viewport poll should skip its current tick because
-/// the SignalR hex feed already covers it: connected AND a delta arrived
-/// within [AppConstants.realtimeFreshnessSeconds] (issue #129 / ML-ERR-032).
-/// A `null` [lastEventAt] (no delta received yet this session) never counts
-/// as fresh, so the very first tick after connecting still polls.
-///
-/// Extracted as a pure top-level function (rather than inline in
-/// `_JourneyMapState`) so it's unit-testable without pumping the whole
-/// Journey screen and its GPS/API/hydration dependencies.
-@visibleForTesting
-bool isRealtimePollBackstopRedundant({
-  required bool isConnected,
-  required DateTime? lastEventAt,
-  required DateTime now,
-}) {
-  if (!isConnected || lastEventAt == null) return false;
-  return now.difference(lastEventAt) <
-      const Duration(seconds: AppConstants.realtimeFreshnessSeconds);
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -347,6 +328,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   bool _solidHexes = false;
   List<List<List<double>>> _capturedHexBoundaries = [];
   late HexTerritoryManager _hexManager;
+  final ViewportPollBackoff _pollBackoff = ViewportPollBackoff();
   StreamSubscription<List<HexChangeEvent>>? _realtimeSub;
 
   @override
@@ -441,23 +423,21 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     }
   }
 
-  /// Timer-tick entry point for the periodic viewport poll. The poll is a
-  /// reconnect/staleness backstop for the live SignalR hex feed, not a
-  /// primary data source — skipped while the hub is connected and has pushed
-  /// a hex delta recently enough to trust (#129), since polling on top of a
-  /// live, fresh feed is a wasted network round trip that doesn't change
-  /// what's on screen. Explicit refreshes (map becoming ready, a just-
-  /// submitted claim via [forceReloadHexes]) call [_refreshViewportHexes]
-  /// directly and always run, bypassing this freshness check.
+  /// Timer-tick entry point for the periodic viewport poll. This poll is the
+  /// only thing that loads the viewport after a pan/zoom, draws hexes a
+  /// realtime event had no boundary for, restores cooldowns, and joins new
+  /// regions — so it is skipped only when [ViewportPollBackoff] confirms the
+  /// live feed covers the unchanged viewport (#129). A just-submitted claim
+  /// ([forceReloadHexes]) calls [_refreshViewportHexes] directly and always
+  /// runs.
   Future<void> _pollViewportHexesIfStale() async {
-    final realtimeService = ref.read(territoryRealtimeProvider);
-    if (isRealtimePollBackstopRedundant(
-      isConnected: realtimeService.isConnected,
-      lastEventAt: realtimeService.lastHexEventAt,
-      now: DateTime.now(),
-    )) {
-      return;
-    }
+    if (!_mapReady) return;
+    final skip = _pollBackoff.shouldSkipTick(
+      viewport: _mapController.camera.visibleBounds,
+      realtime: ref.read(territoryRealtimeProvider),
+      hexes: _hexManager,
+    );
+    if (skip) return;
     await _refreshViewportHexes();
   }
 
@@ -467,10 +447,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     // At lower zoom, only the user's own hexes (preloaded) are visible
     if (_currentZoom < 14.0) return;
     final bounds = _mapController.camera.visibleBounds;
-    await _hexManager.loadViewport(
+    final loaded = await _hexManager.loadViewport(
       minLat: bounds.south, minLng: bounds.west,
       maxLat: bounds.north, maxLng: bounds.east,
     );
+    if (!mounted) return;
+    if (loaded) _pollBackoff.recordSuccessfulPoll(bounds);
     _updateRealtimeRegions();
     // No setState here — loadViewport bumps hexManager.hexRevision, which the
     // map's ValueListenableBuilder repaints on directly.
