@@ -4,6 +4,7 @@
 /// Extracted from _JourneyMapState to keep map widget focused on rendering.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
@@ -28,6 +29,7 @@ final _log = Logger('HexTerritory');
 class HexTerritoryManager {
   final ApiService _api;
   final String? _userId;
+  bool _disposed = false;
 
   final Map<int, TerritoryCell> _cells = {};
 
@@ -36,9 +38,41 @@ class HexTerritoryManager {
   /// real H3 index.
   int _nextSyntheticId = -1;
 
+  /// Bumped every time any hex data mutates. The map screen listens to this
+  /// (via `ValueListenableBuilder`) to repaint only the hex overlay layers,
+  /// instead of a bare `setState(() {})` that used to rebuild the whole map
+  /// subtree — tile layer, path polyline, HUD, controls — on every SignalR
+  /// delta, viewport poll, and step claim (issue #129 / ML-ERR-032).
+  ///
+  /// Every mutator of [_cells] MUST end in [_bumpRevision], otherwise the map
+  /// silently goes stale until some unrelated mutation repaints it.
+  final ValueNotifier<int> hexRevision = ValueNotifier<int>(0);
+
+  /// True once a realtime event arrived for a cell this client has no entry
+  /// for — so no boundary to draw it with. Only a viewport load can render
+  /// such a cell, so the map's poll back-off must not skip while it is set
+  /// (#129). Cleared when a viewport load that started after it succeeds.
+  bool _hasUndrawableRealtimeChange = false;
+
+  bool get hasUndrawableRealtimeChange => _hasUndrawableRealtimeChange;
+
   HexTerritoryManager({required ApiService api, required String? userId})
       : _api = api,
         _userId = userId;
+
+  /// Releases the revision notifier. Safe to call once; further mutation
+  /// calls become no-ops instead of throwing on a disposed `ValueNotifier` —
+  /// matters because an in-flight `load*` API call can still resolve after
+  /// the owning `_JourneyMapState` (and thus this manager) is disposed.
+  void dispose() {
+    _disposed = true;
+    hexRevision.dispose();
+  }
+
+  void _bumpRevision() {
+    if (_disposed) return;
+    hexRevision.value++;
+  }
 
   // ── Derived read views ──────────────────────────────────────────────────
   // Computed on demand from the single store instead of maintained as
@@ -105,6 +139,7 @@ class HexTerritoryManager {
     for (final cell in cells) {
       _cells[cell.cellId] = cell;
     }
+    _bumpRevision();
   }
 
   /// Loads hexes in a wide area around [lat], [lng].
@@ -122,12 +157,20 @@ class HexTerritoryManager {
   }
 
   /// Loads hexes within a viewport bounding box.
-  Future<void> loadViewport({
+  ///
+  /// Returns true only when the fetch succeeded and the store was updated,
+  /// so the caller can record these bounds as freshly polled; a failed load
+  /// must not let the poll back-off treat the viewport as covered.
+  Future<bool> loadViewport({
     required double minLat,
     required double minLng,
     required double maxLat,
     required double maxLng,
   }) async {
+    // Clear BEFORE the fetch: an undrawable event that arrives while it is
+    // in flight may postdate the server snapshot, so it must survive.
+    final hadUndrawableChange = _hasUndrawableRealtimeChange;
+    _hasUndrawableRealtimeChange = false;
     try {
       final cells = await _api.getTerritories(
         minLat: minLat,
@@ -136,7 +179,11 @@ class HexTerritoryManager {
         maxLng: maxLng,
       );
       updateFromCells(cells);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      _hasUndrawableRealtimeChange |= hadUndrawableChange;
+      return false;
+    }
   }
 
   /// Upserts [cells] into the store by `cellId` (newest data wins), then
@@ -146,6 +193,7 @@ class HexTerritoryManager {
       _cells[cell.cellId] = cell;
     }
     _evictIfOverCapacity();
+    _bumpRevision();
   }
 
   /// Evicts non-owned cells (owned cells are always pinned) once the store
@@ -184,6 +232,7 @@ class HexTerritoryManager {
         boundary: boundary,
       );
     }
+    _bumpRevision();
   }
 
   /// Integrates a single step-claimed hex into persistent state as a keyed
@@ -202,6 +251,7 @@ class HexTerritoryManager {
       boundary: boundary,
       parentCellId: existing?.parentCellId ?? 0,
     );
+    _bumpRevision();
   }
 
   /// Applies real-time hex ownership changes from SignalR.
@@ -221,7 +271,12 @@ class HexTerritoryManager {
       if (cellId == null) continue;
 
       final existing = _cells[cellId];
-      if (existing == null) continue;
+      if (existing == null) {
+        // Nothing to draw it with — make the next viewport poll run instead
+        // of letting the back-off skip it (#129).
+        _hasUndrawableRealtimeChange = true;
+        continue;
+      }
 
       _cells[cellId] = TerritoryCell(
         cellId: cellId,
@@ -236,6 +291,7 @@ class HexTerritoryManager {
       changed = true;
     }
 
+    if (changed) _bumpRevision();
     return changed;
   }
 

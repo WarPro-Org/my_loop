@@ -168,6 +168,12 @@ class TerritoryRealtimeService {
   bool _isConnected = false;
   String? _userId;
 
+  /// Started when the most recent `HexOwnershipChanged` push arrived; null
+  /// when none has arrived on the current connection. A [Stopwatch] (not
+  /// `DateTime.now()`) so a device clock change can't make an old push look
+  /// fresh — wall-clock differences go negative when the clock moves back.
+  Stopwatch? _sinceLastHexEvent;
+
   TerritoryRealtimeService({required String baseUrl}) : _baseUrl = baseUrl;
 
   // ── Public streams ──
@@ -183,6 +189,23 @@ class TerritoryRealtimeService {
   Stream<void> get onReconnected => _reconnectedController.stream;
 
   bool get isConnected => _isConnected;
+
+  /// Monotonic time since the most recent `HexOwnershipChanged` push on the
+  /// CURRENT connection, or null when none has arrived or the hub is not
+  /// connected. Journey's viewport-poll back-off (#129) reads this; it is
+  /// reset whenever the connection closes, starts reconnecting, reconnects,
+  /// or is disconnected at logout, because deltas sent while the socket was
+  /// down are lost (#111) and a previous session's push must never vouch for
+  /// the next one.
+  Duration? get timeSinceLastHexEvent =>
+      _isConnected ? _sinceLastHexEvent?.elapsed : null;
+
+  /// Whether every id in [regionIds] has a confirmed `JoinRegion` on the
+  /// current connection (a region is only marked subscribed after its join
+  /// succeeds, #139 D9). Lets a consumer tell whether live deltas can cover
+  /// the cells it is showing.
+  bool isSubscribedToAll(Set<String> regionIds) =>
+      _subscribedRegions.containsAll(regionIds);
 
   /// Number of connection attempts actually made (i.e. not short-circuited by
   /// the already-connected guard). Exposed only so a regression test can prove
@@ -228,16 +251,10 @@ class TerritoryRealtimeService {
     connection.on('MissionDelta', _handleMissions);
     connection.on('AchievementUnlocked', _handleAchievements);
 
-    connection.onclose(({error}) {
-      _isConnected = false;
-      _log.warning('Connection closed: $error');
-    });
-
-    connection.onreconnected(({connectionId}) {
-      _isConnected = true;
-      _log.info('Reconnected: $connectionId');
-      _resubscribeAll().then((_) => _reconnectedController.add(null));
-    });
+    connection.onclose(({error}) => _handleClosed(error));
+    connection.onreconnecting(({error}) => _handleReconnecting(error));
+    connection.onreconnected(
+        ({connectionId}) => _handleReconnected(connectionId));
 
     try {
       await connection.start();
@@ -322,6 +339,7 @@ class TerritoryRealtimeService {
     }
     _subscribedRegions.clear();
     _isConnected = false;
+    _resetHexFeedFreshness();
     _userId = null;
     await _hubConnection?.stop();
     _hubConnection = null;
@@ -337,6 +355,43 @@ class TerritoryRealtimeService {
     _reconnectedController.close();
   }
 
+  // ── Connection lifecycle handlers ──
+
+  void _handleClosed(Exception? error) {
+    _isConnected = false;
+    _resetHexFeedFreshness();
+    _log.warning('Connection closed: $error');
+  }
+
+  /// `withAutomaticReconnect()` keeps the socket down for the whole retry
+  /// window; treating that window as connected let consumers trust a stale
+  /// delta stream and skip the poll that would have caught up.
+  void _handleReconnecting(Exception? error) {
+    _isConnected = false;
+    _resetHexFeedFreshness();
+    _log.warning('Connection lost, reconnecting: $error');
+  }
+
+  void _handleReconnected(String? connectionId) {
+    _isConnected = true;
+    // Deltas sent during the outage were never delivered; nothing received
+    // before it may vouch for the current map.
+    _resetHexFeedFreshness();
+    _log.info('Reconnected: $connectionId');
+    _resubscribeAll().then((_) => _reconnectedController.add(null));
+  }
+
+  void _resetHexFeedFreshness() => _sinceLastHexEvent = null;
+
+  /// Test-only: drives the hub's `onreconnecting` callback without a live
+  /// connection.
+  @visibleForTesting
+  void debugSimulateReconnecting() => _handleReconnecting(null);
+
+  /// Test-only: drives the hub's `onclose` callback without a live connection.
+  @visibleForTesting
+  void debugSimulateClosed() => _handleClosed(null);
+
   // ── Event handlers ──
 
   void _handleHexChanges(List<Object?>? arguments) {
@@ -350,9 +405,18 @@ class TerritoryRealtimeService {
         .toList();
 
     if (events.isNotEmpty) {
+      _sinceLastHexEvent = Stopwatch()..start();
       _changeController.add(events);
     }
   }
+
+  /// Simulates a `HexOwnershipChanged` payload from the hub, exactly as
+  /// `connection.on('HexOwnershipChanged', ...)` would deliver it. Lets tests
+  /// verify [timeSinceLastHexEvent] freshness tracking without a live SignalR
+  /// connection (mirrors the [connectAttempts] test hook above).
+  @visibleForTesting
+  void debugSimulateHexChanges(List<Object?>? arguments) =>
+      _handleHexChanges(arguments);
 
   void _handleUserStats(List<Object?>? arguments) {
     if (arguments == null || arguments.isEmpty) return;
