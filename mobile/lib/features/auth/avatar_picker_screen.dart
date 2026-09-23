@@ -12,6 +12,7 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_rank_sync.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
@@ -242,6 +243,9 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
             streak: existing.streak,
             distanceKm: existing.distanceKm,
           );
+          // Going straight to Home skips onboarding, so hydrate here for the
+          // live rank (and slices) the Home tiles read.
+          await hydrateAndSyncProfileRank(ref, isMounted: () => mounted);
           if (mounted) context.go('/home');
           return;
         }

@@ -21,7 +21,12 @@ const _logNoOfflineCache =
 
 /// Hydrates all state slices from the unified game-state endpoint.
 /// Call this once after login and on app resume from background.
-Future<void> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
+///
+/// Returns `true` only when the server's game-state was applied; `false` when
+/// there was no signed-in user or the call failed (the offline-cache fallback
+/// may still have restored some cards). Callers that copy slice values into
+/// other state must only do so on `true`, or they would copy defaults.
+Future<bool> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
       userId: ref.read(userProfileProvider).userId,
       profile: ref.read(profileSliceProvider.notifier),
@@ -32,7 +37,7 @@ Future<void> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
     );
 
 /// Same as [hydrateAllSlices] but accepts a [Ref], for use outside widgets.
-Future<void> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
+Future<bool> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
       userId: ref.read(userProfileProvider).userId,
       profile: ref.read(profileSliceProvider.notifier),
@@ -56,7 +61,7 @@ Future<void> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
 /// rather than a silent divergence between the widget and non-widget paths —
 /// which is exactly how these two drifted before (the `Ref` variant had lost its
 /// logging entirely).
-Future<void> _hydrateAll({
+Future<bool> _hydrateAll({
   required ApiService api,
   required String? userId,
   required ProfileSlice profile,
@@ -65,7 +70,7 @@ Future<void> _hydrateAll({
   required AchievementsSlice achievements,
   required ExplorationSlice exploration,
 }) async {
-  if (userId == null) return;
+  if (userId == null) return false;
 
   final data = await api.getGameState(userId);
   if (data == null) {
@@ -73,7 +78,7 @@ Future<void> _hydrateAll({
     // failure with its cause, so this line only records what the fallback did.
     final restored = await _restoreOfflineCards(userId, missions, exploration);
     _log.info(restored ? _logRestoredFromCache : _logNoOfflineCache);
-    return;
+    return false;
   }
 
   // Fill each slice from the unified response
@@ -86,6 +91,7 @@ Future<void> _hydrateAll({
   await _cacheOfflineCards(userId, data);
 
   _log.fine('All slices hydrated successfully');
+  return true;
 }
 
 /// Persists the offline-restorable home cards (Daily Missions + Area

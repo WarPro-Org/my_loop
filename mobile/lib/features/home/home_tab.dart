@@ -30,6 +30,15 @@ import 'package:go_router/go_router.dart';
 import 'package:myloop/shared/services/notification_service.dart';
 
 /// Rotating gameplay tips shown once per session to educate new players.
+/// Shown instead of a rank of 0, which means "no rank known yet" (e.g. game-state
+/// could not be reached). The same dash the rank sheet's scope rows already use.
+const _unknownRankLabel = '—';
+
+/// Formats a rank for display: `#n`, or [_unknownRankLabel] when [rank] is not
+/// a real rank, so the Home tile never reads "#0".
+@visibleForTesting
+String rankLabel(int rank) => rank > 0 ? '#$rank' : _unknownRankLabel;
+
 const _proTips = [
   'Walk a closed loop to capture all hexes inside it!',
   'Longer loops = more territory captured at once.',
@@ -906,7 +915,7 @@ class _QuickStats extends ConsumerWidget {
         Expanded(
           child: _MiniStat(
             emoji: '🏆',
-            value: '#${user.rank}',
+            value: rankLabel(user.rank),
             label: 'Rank',
             onTap: () => _showRankSelector(context, ref),
           ),
@@ -1370,7 +1379,7 @@ class _RankSheetState extends State<_RankSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '#$rank in Your City',
+                      '${rankLabel(rank)} in Your City',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 20,
@@ -1460,7 +1469,7 @@ class _RankOption extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : Text(
-                  rank > 0 ? '#$rank' : '—',
+                  rankLabel(rank),
                   style: const TextStyle(
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
