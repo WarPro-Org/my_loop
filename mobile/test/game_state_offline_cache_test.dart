@@ -52,7 +52,7 @@ class _GatedApi extends ApiService {
 
 /// Exposes a real [Ref] so the production [hydrateAllSlicesFromRef] runs against
 /// the test container's provider graph.
-final _hydrateHarness = Provider<Future<void> Function()>(
+final _hydrateHarness = Provider<Future<bool> Function()>(
   (ref) => () => hydrateAllSlicesFromRef(ref),
 );
 
@@ -98,9 +98,6 @@ ProviderContainer _containerWith(ApiService api, String userId) {
         avatarId: 0,
         color: '#000000',
         displayName: 'Player',
-        hexCount: 0,
-        streak: 0,
-        distanceKm: 0,
       );
   return container;
 }
@@ -280,6 +277,19 @@ void main() {
       'exploration': [_neighborhood(1)],
     };
 
+    test('control: with the same user still signed in the response applies',
+        () async {
+      final api = _GatedApi();
+      final container = _containerWith(api, 'u1');
+      addTearDown(container.dispose);
+
+      final hydration = container.read(_hydrateHarness)();
+      api.respond(signedInData);
+
+      expect(await hydration, isTrue);
+      expect(container.read(missionsSliceProvider).missions, hasLength(1));
+    });
+
     test('the late response neither re-fills slices nor re-saves the cache',
         () async {
       final api = _GatedApi();
@@ -294,8 +304,11 @@ void main() {
       await GameStateCache.clear();
 
       api.respond(signedInData);
-      await hydration;
+      final applied = await hydration;
 
+      expect(applied, isFalse,
+          reason: 'a dropped response must report false so callers such as '
+              'hydrateAndSyncProfileRank skip copying slice values');
       expect(container.read(missionsSliceProvider).missions, isEmpty);
       expect(container.read(explorationSliceProvider).neighborhoods, isEmpty);
       expect(await GameStateCache.load('u1'), isNull,
@@ -316,14 +329,12 @@ void main() {
             avatarId: 0,
             color: '#000000',
             displayName: 'Other',
-            hexCount: 0,
-            streak: 0,
-            distanceKm: 0,
           );
 
       api.respond(signedInData);
-      await hydration;
+      final applied = await hydration;
 
+      expect(applied, isFalse);
       expect(container.read(missionsSliceProvider).missions, isEmpty);
       expect(await GameStateCache.load('u1'), isNull);
     });

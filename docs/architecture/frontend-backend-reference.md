@@ -123,7 +123,6 @@ Complete documentation of all API endpoints, SignalR hubs, WebSocket channels, a
 | Endpoint | Method | Auth | Query Parameters | Response | Flutter Caller |
 |----------|--------|------|------------------|----------|-----------------|
 | `/api/leaderboard` | `GET` | ✅ Yes | `lat, lng, userId?, scope` | `{entries: [{rank, userId, displayName, hexCount, ...}], userRank, scope}` | `cityLeaderboardProvider` → `apiService.getLeaderboard()` |
-| `/api/leaderboard/refresh` | `POST` | ✅ Yes | — | `{message, playerCount}` | `apiService.refreshLeaderboard()` |
 
 ### Achievements
 
@@ -637,7 +636,7 @@ Authorization: Bearer {Firebase JWT}
 
 - **Game State Hydration**: `/api/users/{id}/game-state` (called once on app load)
 - **Exploration Stats**: `/api/territories/exploration/{id}` (polling as user moves)
-- **Leaderboard**: `/api/leaderboard` (user-initiated refresh)
+- **Leaderboard**: `/api/leaderboard` (reads the latest server-computed snapshot)
 - **Walk History**: `/api/users/{id}/claims` (paginated on demand)
 - **Territory Viewport**: `/api/territories?minLat=...` (pan/zoom triggers query)
 
@@ -695,8 +694,9 @@ GPS Points → Queue (StepClaimQueue)
 
 ### Leaderboard Refresh
 
-- Cached in memory (refreshed hourly via background job)
-- POST endpoint for on-demand refresh after user's claim
+- Recomputed server-side every 5 minutes by `LeaderboardRefreshWorker` (a `BackgroundService` calling `LeaderboardService.RefreshLeaderboard`); a Postgres advisory lock serializes runs across API instances
+- No client-triggered refresh: the former `POST /api/leaderboard/refresh` / `apiService.refreshLeaderboard()` was removed (#109) because any signed-in user could force an O(total cells) recompute
+- `GET /api/leaderboard` therefore serves a snapshot up to 5 minutes old; the post-walk Home rank tile uses the live rank from `GET /api/users/{id}/game-state` instead (`refreshProfileAfterWalk`)
 
 ---
 

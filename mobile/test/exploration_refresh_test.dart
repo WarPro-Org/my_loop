@@ -57,9 +57,6 @@ void main() {
             avatarId: 0,
             color: '#000000',
             displayName: 'Player',
-            hexCount: 0,
-            streak: 0,
-            distanceKm: 0,
           );
 
       await container.read(explorationSliceProvider.notifier).refresh();

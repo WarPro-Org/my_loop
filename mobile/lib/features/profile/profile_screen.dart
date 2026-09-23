@@ -13,6 +13,7 @@ import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
@@ -24,6 +25,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider);
+    final hexCount = ref.watch(profileSliceProvider.select((s) => s.hexCount));
 
     return Scaffold(
       appBar: AppBar(
@@ -44,9 +46,9 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 6),
               // Tier label
               Text(
-                HexTier.fullLabel(profile.hexCount),
+                HexTier.fullLabel(hexCount),
                 style: TextStyle(
-                  color: HexTier.fromHexes(profile.hexCount).color,
+                  color: HexTier.fromHexes(hexCount).color,
                   fontWeight: FontWeight.w700,
                   fontSize: 14,
                 ),
@@ -88,6 +90,7 @@ class ProfileScreen extends ConsumerWidget {
                 iconColor: AppColors.red,
                 onTap: () async {
                   ref.read(userProfileProvider.notifier).clear();
+                  ref.invalidate(profileSliceProvider);
                   // The hub connection is app-lifecycle-scoped (#102) — logout
                   // is the one place it must actually be torn down.
                   await ref.read(territoryRealtimeProvider).disconnect();
@@ -127,6 +130,7 @@ class ProfileScreen extends ConsumerWidget {
               final api = ref.read(apiServiceProvider);
               final uid = profile.userId;
               if (uid == null) return;
+              ref.invalidate(profileSliceProvider);
               await ProfileCache.clear();
               await GameStateCache.clear();
               await TerritoryCache.clear();

@@ -352,11 +352,17 @@ public class UsersController : ControllerBase
         // Rank (city leaderboard) — count of users strictly ahead, not a full city roster load.
         // Ties share a rank (two users with the same HexCount both get the same number), matching
         // LeaderboardService.ResolveUserRank's convention.
+        // A user with no City ("Skip for now" on set-home, or a failed reverse geocode) is ranked
+        // on the GLOBAL board, mirroring LeaderboardService.BuildScopedQuery's city-scope
+        // fallback. Scoping them to "users with an empty city" would count nobody and report a
+        // bogus #1 after every walk.
         int rank = 0;
         try
         {
-            var higherCount = await _db.Users
-                .CountAsync(u => u.City == user.City && !string.IsNullOrEmpty(u.City) && u.HexCount > user.HexCount);
+            var rankPool = _db.Users.AsQueryable();
+            if (!string.IsNullOrEmpty(user.City))
+                rankPool = rankPool.Where(u => u.City == user.City);
+            var higherCount = await rankPool.CountAsync(u => u.HexCount > user.HexCount);
             rank = higherCount + 1;
         }
         catch (Exception ex)

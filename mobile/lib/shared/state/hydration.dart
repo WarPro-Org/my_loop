@@ -23,7 +23,12 @@ const _logDroppedForChangedUser =
 
 /// Hydrates all state slices from the unified game-state endpoint.
 /// Call this once after login and on app resume from background.
-Future<void> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
+///
+/// Returns `true` only when the server's game-state was applied; `false` when
+/// there was no signed-in user or the call failed (the offline-cache fallback
+/// may still have restored some cards). Callers that copy slice values into
+/// other state must only do so on `true`, or they would copy defaults.
+Future<bool> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
       user: ref.read(userProfileProvider.notifier),
       profile: ref.read(profileSliceProvider.notifier),
@@ -34,7 +39,7 @@ Future<void> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
     );
 
 /// Same as [hydrateAllSlices] but accepts a [Ref], for use outside widgets.
-Future<void> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
+Future<bool> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
       user: ref.read(userProfileProvider.notifier),
       profile: ref.read(profileSliceProvider.notifier),
@@ -63,7 +68,9 @@ Future<void> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
 /// reconnect or app resume can still be in flight when the user signs out, and
 /// its late response must not re-fill the slices or re-save [GameStateCache]
 /// for the previous user after sign-out cleared them (clear-on-signout, #34).
-Future<void> _hydrateAll({
+/// A dropped response returns `false`, so callers such as
+/// `hydrateAndSyncProfileRank` do not copy stale slice values onward.
+Future<bool> _hydrateAll({
   required ApiService api,
   required UserProfileNotifier user,
   required ProfileSlice profile,
@@ -73,13 +80,13 @@ Future<void> _hydrateAll({
   required ExplorationSlice exploration,
 }) async {
   final userId = user.currentUserId;
-  if (userId == null) return;
+  if (userId == null) return false;
   bool stillSignedIn() => user.currentUserId == userId;
 
   final data = await api.getGameState(userId);
   if (!stillSignedIn()) {
     _log.info(_logDroppedForChangedUser);
-    return;
+    return false;
   }
   if (data == null) {
     // INFO, not WARNING: ApiService.getGameState has already logged the
@@ -95,7 +102,7 @@ Future<void> _hydrateAll({
         : stillSignedIn()
             ? _logNoOfflineCache
             : _logDroppedForChangedUser);
-    return;
+    return false;
   }
 
   // Fill each slice from the unified response
@@ -108,6 +115,7 @@ Future<void> _hydrateAll({
   await _cacheOfflineCards(userId, data);
 
   _log.fine('All slices hydrated successfully');
+  return true;
 }
 
 /// Persists the offline-restorable home cards (Daily Missions + Area
