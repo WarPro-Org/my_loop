@@ -75,7 +75,8 @@ public class LoopClaimStreakLocalDayTests : IAsyncLifetime
         return new TerritoryService(
             db, hex.Object, geo.Object, notifier.Object, Mock.Of<IPathValidationService>(),
             push.Object, new GeocodingService(new HttpClient(), NullLogger<GeocodingService>.Instance),
-            missions.Object, achievements.Object, Mock.Of<IServiceScopeFactory>(), NullLogger<TerritoryService>.Instance);
+            missions.Object, achievements.Object, Mock.Of<IServiceScopeFactory>(),
+            NullLogger<TerritoryService>.Instance);
     }
 
     private static readonly double[][] LoopPath =
