@@ -9,7 +9,6 @@ namespace MyLoop.Api.Services;
 public partial class ValidationService : IValidationService
 {
     private static readonly Regex DisplayNameRegex = MyDisplayNameRegex();
-    private static readonly Regex HexColorRegex = MyHexColorRegex();
 
     public string? ValidateDisplayName(string? name)
     {
@@ -35,23 +34,20 @@ public partial class ValidationService : IValidationService
         if (string.IsNullOrWhiteSpace(color))
             return "Color is required";
 
-        if (!HexColorRegex.IsMatch(color))
-            return "Color must be a valid hex color (e.g. #FF5733)";
+        if (!GameConstants.PlayerColors.Contains(color))
+            return "Color must be one of the player palette colors (e.g. #00D4AA)";
 
         return null;
     }
 
     public string? ValidateAvatarId(int avatarId)
     {
-        if (avatarId < 0 || avatarId > GameConstants.MaxAvatarId)
-            return $"AvatarId must be 0-{GameConstants.MaxAvatarId}";
+        if (avatarId < 0 || avatarId >= GameConstants.AvatarCount)
+            return $"AvatarId must be 0-{GameConstants.AvatarCount - 1}";
 
         return null;
     }
 
     [GeneratedRegex(@"^[a-zA-Z0-9 \-_']+$")]
     private static partial Regex MyDisplayNameRegex();
-
-    [GeneratedRegex(@"^#[0-9A-Fa-f]{6}$")]
-    private static partial Regex MyHexColorRegex();
 }

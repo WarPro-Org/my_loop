@@ -24,6 +24,11 @@ const avatarEmojis = [
   '🦅', // 11 - eagle
 ];
 
+/// Maps a stored avatar id onto the catalogue. Ids outside it (possible for rows written before
+/// the server enforced the catalogue, #188) resolve to the last emoji — the one the player
+/// actually sees — so an editor that starts from this id always saves a value the API accepts.
+int catalogueAvatarId(int avatarId) => avatarId.clamp(0, avatarEmojis.length - 1);
+
 /// Displays a player's avatar emoji on a plain colored circle background.
 ///
 /// Uses the player's chosen color as background. Simple and clean.
@@ -45,7 +50,7 @@ class AvatarWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emoji = avatarEmojis[avatarId.clamp(0, avatarEmojis.length - 1)];
+    final emoji = avatarEmojis[catalogueAvatarId(avatarId)];
     final bgColor = Color(int.parse(color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
     if (!showBackground) {
