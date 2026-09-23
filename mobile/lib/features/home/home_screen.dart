@@ -214,6 +214,7 @@ class _ProfileDrawer extends ConsumerWidget {
             onTap: () async {
               Navigator.pop(context);
               ref.read(userProfileProvider.notifier).clear();
+              ref.invalidate(profileSliceProvider);
               await ref.read(authServiceProvider).signOut();
               if (context.mounted) context.go('/login');
             },
@@ -318,6 +319,7 @@ class _ProfileDrawer extends ConsumerWidget {
               final api = ref.read(apiServiceProvider);
               final uid = profile.userId;
               if (uid == null) return;
+              ref.invalidate(profileSliceProvider);
               await ProfileCache.clear();
               await GameStateCache.clear();
               await TerritoryCache.clear();

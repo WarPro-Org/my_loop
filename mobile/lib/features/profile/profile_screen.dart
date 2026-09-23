@@ -90,6 +90,7 @@ class ProfileScreen extends ConsumerWidget {
                 iconColor: AppColors.red,
                 onTap: () async {
                   ref.read(userProfileProvider.notifier).clear();
+                  ref.invalidate(profileSliceProvider);
                   // The hub connection is app-lifecycle-scoped (#102) — logout
                   // is the one place it must actually be torn down.
                   await ref.read(territoryRealtimeProvider).disconnect();
@@ -129,6 +130,7 @@ class ProfileScreen extends ConsumerWidget {
               final api = ref.read(apiServiceProvider);
               final uid = profile.userId;
               if (uid == null) return;
+              ref.invalidate(profileSliceProvider);
               await ProfileCache.clear();
               await GameStateCache.clear();
               await TerritoryCache.clear();
