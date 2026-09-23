@@ -14,6 +14,11 @@ import 'package:myloop/shared/state/exploration_slice.dart';
 
 final _log = Logger('Hydrate');
 
+const _logRestoredFromCache =
+    'Game state unavailable; restored home cards from offline cache';
+const _logNoOfflineCache =
+    'Game state unavailable; no offline cache for home cards';
+
 /// Hydrates all state slices from the unified game-state endpoint.
 /// Call this once after login and on app resume from background.
 Future<void> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
@@ -64,8 +69,10 @@ Future<void> _hydrateAll({
 
   final data = await api.getGameState(userId);
   if (data == null) {
-    _log.warning('getGameState returned null — restoring home cards from cache');
-    await _restoreOfflineCards(userId, missions, exploration);
+    // INFO, not WARNING: ApiService.getGameState has already logged the
+    // failure with its cause, so this line only records what the fallback did.
+    final restored = await _restoreOfflineCards(userId, missions, exploration);
+    _log.info(restored ? _logRestoredFromCache : _logNoOfflineCache);
     return;
   }
 
@@ -97,14 +104,17 @@ Future<void> _cacheOfflineCards(String userId, Map<String, dynamic> data) async 
 /// from the cache when the server is unreachable. Other slices (profile/xp/
 /// achievements) are intentionally untouched — profile is restored separately by
 /// [ProfileCache], and stale achievements are not part of issue #34.
-Future<void> _restoreOfflineCards(
+///
+/// Returns whether a cache for [userId] existed and was applied, so the caller
+/// can log the outcome accurately.
+Future<bool> _restoreOfflineCards(
   String userId,
   MissionsSlice missions,
   ExplorationSlice exploration,
 ) async {
   final cached = await GameStateCache.load(userId);
-  if (cached == null) return;
+  if (cached == null) return false;
   missions.hydrate(cached.missions);
   exploration.hydrate(cached.exploration);
-  _log.fine('Restored home cards from offline cache');
+  return true;
 }
