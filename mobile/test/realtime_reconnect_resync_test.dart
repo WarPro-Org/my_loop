@@ -10,10 +10,13 @@
 ///
 /// The fix adds `TerritoryRealtimeService.onReconnected` (fired once regions
 /// are re-joined) and a `realtimeResyncProvider` that re-hydrates every game
-/// state slice whenever it fires, plus on every app-foreground resume.
+/// state slice whenever it fires, plus on every app-foreground resume —
+/// connected or not, because the snapshot is a REST fetch.
 /// These tests FAIL without the fix (no `onReconnected` stream existed, and
 /// nothing consumed it).
 library;
+
+import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -244,7 +247,9 @@ void main() {
       );
     });
 
-    test('resuming the app while disconnected does not fetch', () async {
+    test('resuming the app while disconnected still re-hydrates', () async {
+      // After a long background withAutomaticReconnect has given up and
+      // nothing reconnects the hub, so this resume is the only refresh left.
       final realtime = _ControllableRealtime()..connectedOverride = false;
       addTearDown(realtime.dispose);
       final api = _FakeApi({
@@ -261,8 +266,64 @@ void main() {
 
       expect(TestWidgetsFlutterBinding.instance.lifecycleState, AppLifecycleState.resumed,
           reason: 'the resume must really have been delivered, or this asserts nothing');
-      expect(container.read(missionsSliceProvider).missions, isEmpty,
-          reason: 'no live connection means no snapshot to resync against');
+      expect(
+        container.read(missionsSliceProvider).missions.map((m) => m.id).toSet(),
+        {'m3'},
+        reason: 'the snapshot is GET game-state over REST, not SignalR',
+      );
+    });
+  });
+  group('GameStateResync — overlapping triggers', () {
+    late List<Completer<void>> fetches;
+    late GameStateResync resync;
+
+    setUp(() {
+      fetches = [];
+      resync = GameStateResync(() {
+        final fetch = Completer<void>();
+        fetches.add(fetch);
+        return fetch.future;
+      });
+    });
+
+    Future<void> finishFetch(int index) async {
+      fetches[index].complete();
+      await pumpEventQueue();
+    }
+
+    test('a resume during an in-flight fetch joins it', () async {
+      resync.onReconnected();
+      resync.onResume();
+      resync.onResume();
+      await finishFetch(0);
+
+      expect(fetches, hasLength(1));
+    });
+
+    test('a reconnect during an in-flight fetch queues exactly one follow-up '
+        'that starts only after it finishes', () async {
+      resync.onResume();
+      resync.onReconnected();
+      resync.onReconnected();
+      expect(fetches, hasLength(1),
+          reason: 'the follow-up must not overlap the in-flight fetch');
+
+      await finishFetch(0);
+      expect(fetches, hasLength(2),
+          reason: 'the first fetch may predate the user-group rejoin');
+      await finishFetch(1);
+
+      expect(fetches, hasLength(2));
+    });
+
+    test('a failed fetch is logged, not thrown, and the next trigger runs',
+        () async {
+      resync.onResume();
+      fetches[0].completeError(Exception('boom'));
+      await pumpEventQueue();
+
+      resync.onResume();
+      expect(fetches, hasLength(2));
     });
   });
 }
