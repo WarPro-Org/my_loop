@@ -71,7 +71,8 @@ class UserProfileNotifier extends Notifier<UserProfile> {
 
   /// Applies a live server stat push to the in-memory profile. Only the fields
   /// the delta carries are touched; identity (userId/avatar/color/name) and rank
-  /// (sourced from the leaderboard, not pushed here) are preserved.
+  /// (copied from game-state by hydrateAndSyncProfileRank, not pushed here) are
+  /// preserved.
   void _applyStatsDelta(UserStatsDelta delta) {
     state = state.copyWith(
       hexCount: delta.hexCount,
