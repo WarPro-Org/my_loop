@@ -203,9 +203,10 @@ class TerritoryRealtimeService {
   Stream<MissionDelta> get onMissions => _missionController.stream;
   Stream<AchievementDelta> get onAchievements => _achievementController.stream;
 
-  /// Fires after a dropped connection auto-reconnects and region/user groups
-  /// have been rejoined. Consumers that need a full snapshot re-fetch on
-  /// reconnect (missed deltas are otherwise lost — see #111) subscribe here.
+  /// Fires after every successful reconnect, once regions/groups have been
+  /// re-joined. Missed deltas during the outage are never replayed by the
+  /// hub, so listeners must treat this as "re-fetch your snapshot now"
+  /// (see docs/architecture/realtime.md — reconnect & resync, and #111).
   Stream<void> get onReconnected => _reconnectedController.stream;
 
   bool get isConnected => _isConnected;
@@ -275,7 +276,7 @@ class TerritoryRealtimeService {
     connection.onclose(({error}) => _handleClosed(error));
     connection.onreconnecting(({error}) => _handleReconnecting(error));
     connection.onreconnected(
-        ({connectionId}) => _handleReconnected(connectionId));
+        ({connectionId}) => unawaited(handleReconnected(connectionId: connectionId)));
 
     try {
       await connection.start();
@@ -394,15 +395,6 @@ class TerritoryRealtimeService {
     _log.warning('Connection lost, reconnecting: $error');
   }
 
-  void _handleReconnected(String? connectionId) {
-    _isConnected = true;
-    // Deltas sent during the outage were never delivered; nothing received
-    // before it may vouch for the current map.
-    _resetHexFeedFreshness();
-    _log.info('Reconnected: $connectionId');
-    _resubscribeAll().then((_) => _reconnectedController.add(null));
-  }
-
   void _resetHexFeedFreshness() => _sinceLastHexEvent = null;
 
   void _markHexFeedFresh() => _sinceLastHexEvent = Stopwatch()..start();
@@ -494,6 +486,29 @@ class TerritoryRealtimeService {
     _log.fine('AchievementUnlocked received');
   }
 
+  /// Handles a hub reconnect: re-joins groups, then notifies [onReconnected]
+  /// listeners so they re-fetch their snapshot. Extracted from the
+  /// `onreconnected` hub callback (rather than inlined) so it can be invoked
+  /// directly in tests without a live hub connection.
+  @visibleForTesting
+  Future<void> handleReconnected({String? connectionId}) async {
+    _isConnected = true;
+    // Deltas sent during the outage were never delivered; nothing received
+    // before it may vouch for the current map (#129).
+    _resetHexFeedFreshness();
+    _log.info('Reconnected: $connectionId');
+    try {
+      await _resubscribeAll();
+    } finally {
+      // Listeners re-fetch their snapshot over REST, which does not depend on
+      // any group rejoin succeeding — so the event must fire even if the
+      // rejoin step failed. dispose() can land during the await above, and
+      // adding to a closed controller throws a StateError that nothing is
+      // positioned to catch.
+      if (!_reconnectedController.isClosed) _reconnectedController.add(null);
+    }
+  }
+
   Future<void> _resubscribeAll() async {
     // Re-join personal group
     if (_userId != null && _userId!.isNotEmpty) {
@@ -501,11 +516,18 @@ class TerritoryRealtimeService {
         await _hubConnection?.invoke('JoinUserGroup', args: [_userId!]);
       } catch (_) {}
     }
-    // Re-join region groups
+    // Re-join region groups. Each join is isolated: since #187 joinRegion
+    // propagates hub errors, and one failure right after a reconnect must not
+    // strand the remaining regions. A failed region stays out of
+    // _subscribedRegions, so the next updateRegions() retries it (#139 D9).
     final regions = Set<String>.from(_subscribedRegions);
     _subscribedRegions.clear();
     for (final region in regions) {
-      await joinRegion(region);
+      try {
+        await joinRegion(region);
+      } catch (e) {
+        _log.warning('Rejoin of region $region failed after reconnect', e);
+      }
     }
   }
 }

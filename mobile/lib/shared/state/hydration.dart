@@ -18,6 +18,8 @@ const _logRestoredFromCache =
     'Game state unavailable; restored home cards from offline cache';
 const _logNoOfflineCache =
     'Game state unavailable; no offline cache for home cards';
+const _logDroppedForChangedUser =
+    'Game state response dropped; the signed-in user changed while it was in flight';
 
 /// Hydrates all state slices from the unified game-state endpoint.
 /// Call this once after login and on app resume from background.
@@ -28,7 +30,7 @@ const _logNoOfflineCache =
 /// other state must only do so on `true`, or they would copy defaults.
 Future<bool> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
-      userId: ref.read(userProfileProvider).userId,
+      user: ref.read(userProfileProvider.notifier),
       profile: ref.read(profileSliceProvider.notifier),
       xp: ref.read(xpSliceProvider.notifier),
       missions: ref.read(missionsSliceProvider.notifier),
@@ -39,7 +41,7 @@ Future<bool> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
 /// Same as [hydrateAllSlices] but accepts a [Ref], for use outside widgets.
 Future<bool> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
-      userId: ref.read(userProfileProvider).userId,
+      user: ref.read(userProfileProvider.notifier),
       profile: ref.read(profileSliceProvider.notifier),
       xp: ref.read(xpSliceProvider.notifier),
       missions: ref.read(missionsSliceProvider.notifier),
@@ -61,23 +63,45 @@ Future<bool> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
 /// rather than a silent divergence between the widget and non-widget paths —
 /// which is exactly how these two drifted before (the `Ref` variant had lost its
 /// logging entirely).
+///
+/// The signed-in user is re-checked after every await: a resync started by a
+/// reconnect or app resume can still be in flight when the user signs out, and
+/// its late response must not re-fill the slices or re-save [GameStateCache]
+/// for the previous user after sign-out cleared them (clear-on-signout, #34).
+/// A dropped response returns `false`, so callers such as
+/// `hydrateAndSyncProfileRank` do not copy stale slice values onward.
 Future<bool> _hydrateAll({
   required ApiService api,
-  required String? userId,
+  required UserProfileNotifier user,
   required ProfileSlice profile,
   required XpSlice xp,
   required MissionsSlice missions,
   required AchievementsSlice achievements,
   required ExplorationSlice exploration,
 }) async {
+  final userId = user.currentUserId;
   if (userId == null) return false;
+  bool stillSignedIn() => user.currentUserId == userId;
 
   final data = await api.getGameState(userId);
+  if (!stillSignedIn()) {
+    _log.info(_logDroppedForChangedUser);
+    return false;
+  }
   if (data == null) {
     // INFO, not WARNING: ApiService.getGameState has already logged the
     // failure with its cause, so this line only records what the fallback did.
-    final restored = await _restoreOfflineCards(userId, missions, exploration);
-    _log.info(restored ? _logRestoredFromCache : _logNoOfflineCache);
+    final restored = await _restoreOfflineCards(
+      userId,
+      missions,
+      exploration,
+      isStillSignedIn: stillSignedIn,
+    );
+    _log.info(restored
+        ? _logRestoredFromCache
+        : stillSignedIn()
+            ? _logNoOfflineCache
+            : _logDroppedForChangedUser);
     return false;
   }
 
@@ -116,10 +140,11 @@ Future<void> _cacheOfflineCards(String userId, Map<String, dynamic> data) async 
 Future<bool> _restoreOfflineCards(
   String userId,
   MissionsSlice missions,
-  ExplorationSlice exploration,
-) async {
+  ExplorationSlice exploration, {
+  required bool Function() isStillSignedIn,
+}) async {
   final cached = await GameStateCache.load(userId);
-  if (cached == null) return false;
+  if (cached == null || !isStillSignedIn()) return false;
   missions.hydrate(cached.missions);
   exploration.hydrate(cached.exploration);
   return true;

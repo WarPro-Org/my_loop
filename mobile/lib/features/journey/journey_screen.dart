@@ -14,6 +14,7 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
+import 'package:myloop/features/journey/reconnect_hex_resync.dart';
 import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
@@ -21,6 +22,7 @@ import 'package:myloop/features/journey/post_walk_refresh.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
+import 'package:myloop/shared/services/realtime_resync.dart';
 import 'package:myloop/features/dev/mock_walk_overlay.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -308,6 +310,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   final ViewportPollBackoff _pollBackoff = ViewportPollBackoff();
   StreamSubscription<List<HexChangeEvent>>? _realtimeSub;
   StreamSubscription<HexesReleasedEvent>? _releasedSub;
+  StreamSubscription<ResyncTrigger>? _resyncSub;
 
   @override
   void initState() {
@@ -328,6 +331,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     _hexRefreshTimer?.cancel();
     _realtimeSub?.cancel();
     _releasedSub?.cancel();
+    _resyncSub?.cancel();
     // Do NOT disconnect territoryRealtimeProvider here — the hub connection is
     // app-lifecycle-scoped (connected at login, disconnected at logout), not
     // scoped to this screen. Killing it here left the app deaf to live stats/
@@ -344,6 +348,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   /// own listener on dispose.
   void _subscribeRealtime() {
     final realtimeService = ref.read(territoryRealtimeProvider);
+    // Missed hex-ownership deltas during a disconnect are never replayed by
+    // the hub — re-fetch the player's own hexes on every reconnect and every
+    // app resume so a stolen hex never keeps showing as theirs (#111).
+    _resyncSub = resyncOwnHexes(
+      triggers: ref.read(resyncTriggersProvider),
+      hexes: _hexManager,
+    );
     // Decay releases (#104): drop the reaper's hexes from the map immediately —
     // without this the app renders ghost territory until the next viewport poll.
     // Repaint rides hexManager.hexRevision (bumped by removeCells), not a
