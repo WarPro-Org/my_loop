@@ -1,12 +1,14 @@
 /// Regression tests for PR #171 round 3 — the Home rank tile after sign-in and
 /// onboarding.
 ///
-/// Game-state hydration used to fill only the slices and never wrote
-/// `userProfileProvider.rank`, which the Home tile reads. So:
+/// Game-state hydration used to fill only the slices and never wrote the rank
+/// the Home tile read. So:
 ///   * a relaunch kept the rank sign-in seeded from the un-refreshed leaderboard
 ///     snapshot (and cached it in [ProfileCache]);
 ///   * a new player's tile read "#0" until their first walk.
 /// [hydrateAndSyncProfileRank] makes game-state the single source of that rank.
+/// Since #113 the Home tile reads `profileSliceProvider` (the sole owner of
+/// game stats), so these tests assert on the slice.
 library;
 
 import 'dart:io';
@@ -19,6 +21,7 @@ import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_rank_sync.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -76,6 +79,8 @@ Future<(WidgetRef, ProviderContainer)> _pumpWithProfile(
         avatarId: 0,
         color: '#000000',
         displayName: 'Player',
+      );
+  container.read(profileSliceProvider.notifier).applyStats(
         hexCount: 0,
         streak: 0,
         distanceKm: 0,
@@ -101,8 +106,7 @@ void main() {
     final (ref, container) =
         await _pumpWithProfile(tester, _FakeApi(gameStateRank: _liveRank), seedRank: _snapshotRank);
     // Sign-in caches the profile before hydrating (login_screen.dart).
-    await tester.runAsync(
-        () => ProfileCache.save(_firebaseUid, container.read(userProfileProvider)));
+    await tester.runAsync(() => cacheSignedInProfile(ref, _firebaseUid));
 
     await tester.runAsync(() => hydrateAndSyncProfileRank(
           ref,
@@ -110,10 +114,10 @@ void main() {
           cacheForFirebaseUid: _firebaseUid,
         ));
 
-    expect(container.read(userProfileProvider).rank, _liveRank);
+    expect(container.read(profileSliceProvider).rank, _liveRank);
     final cached = await tester.runAsync(ProfileCache.load);
     expect(cached?.firebaseUid, _firebaseUid);
-    expect(cached?.profile.rank, _liveRank,
+    expect(cached?.rank, _liveRank,
         reason: 'an offline relaunch must restore the live rank, not the snapshot');
   });
 
@@ -124,7 +128,7 @@ void main() {
 
     await tester.runAsync(() => hydrateAndSyncProfileRank(ref, isMounted: () => true));
 
-    expect(container.read(userProfileProvider).rank, newPlayerRank);
+    expect(container.read(profileSliceProvider).rank, newPlayerRank);
   });
 
   testWidgets('a game-state rank of 0 keeps the current rank', (tester) async {
@@ -135,7 +139,7 @@ void main() {
         await tester.runAsync(() => hydrateAndSyncProfileRank(ref, isMounted: () => true));
 
     expect(applied, isTrue);
-    expect(container.read(userProfileProvider).rank, _liveRank);
+    expect(container.read(profileSliceProvider).rank, _liveRank);
   });
 
   testWidgets('unreachable game-state changes nothing and caches nothing', (tester) async {
@@ -150,7 +154,7 @@ void main() {
         ));
 
     expect(applied, isFalse);
-    expect(container.read(userProfileProvider).rank, _snapshotRank);
+    expect(container.read(profileSliceProvider).rank, _snapshotRank);
     expect(await tester.runAsync(ProfileCache.load), isNull);
   });
 
@@ -165,12 +169,14 @@ void main() {
         isMounted: () => true,
         cacheForFirebaseUid: _firebaseUid,
       );
-      container.read(userProfileProvider.notifier).clear(); // sign-out mid-flight
+      // Sign-out mid-flight, as the Home drawer / Profile screen do it.
+      container.read(userProfileProvider.notifier).clear();
+      container.invalidate(profileSliceProvider);
       return pending;
     });
 
     expect(applied, isFalse);
-    expect(container.read(userProfileProvider).rank, 0);
+    expect(container.read(profileSliceProvider).rank, 0);
     expect(await tester.runAsync(ProfileCache.load), isNull);
   });
 

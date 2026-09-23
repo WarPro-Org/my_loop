@@ -3,7 +3,8 @@
 /// Since #109 the leaderboard is a snapshot rebuilt every few minutes by
 /// `LeaderboardRefreshWorker`, while the Home rank tile gets the LIVE rank from
 /// game-state after each walk. `cityLeaderboardProvider` used to copy the
-/// snapshot's `myRank` into `userProfileProvider`, so merely opening the
+/// snapshot's `myRank` into the rank store (now `profileSliceProvider`, the
+/// sole owner of game stats since #113), so merely opening the
 /// Leaderboard tab rolled the tile back to the pre-walk rank.
 ///
 /// It FAILS against the pre-fix provider (rank ends up as the snapshot's 5).
@@ -15,6 +16,7 @@ import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/shared/models/leaderboard_entry.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 
 const _userId = 'user-1';
 const _liveRank = 3;
@@ -52,6 +54,8 @@ void main() {
           avatarId: 0,
           color: '#000000',
           displayName: 'Player',
+        );
+    container.read(profileSliceProvider.notifier).applyStats(
           hexCount: 140,
           streak: 4,
           distanceKm: 12.5,
@@ -64,6 +68,6 @@ void main() {
     await container.read(cityLeaderboardProvider.future);
 
     expect(api.calls, 1);
-    expect(container.read(userProfileProvider).rank, _liveRank);
+    expect(container.read(profileSliceProvider).rank, _liveRank);
   });
 }

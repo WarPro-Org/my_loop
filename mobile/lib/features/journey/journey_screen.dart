@@ -24,6 +24,7 @@ import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/features/dev/mock_walk_overlay.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
@@ -94,7 +95,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
           stolenCount = (result['stolenFromOthers'] as num?)?.toInt() ?? 0;
           _renderCapturedHexes(result);
           // The bonus claim is reflected by the server's UserStatsDelta push
-          // (consumed live by userProfileProvider) and reconciled authoritatively
+          // (consumed live by profileSliceProvider) and reconciled authoritatively
           // by refreshProfileAfterWalk below — no local optimistic add, which would
           // double-count the bonus on top of the pushed value (issue #30).
         }
@@ -567,11 +568,13 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
 
     final center = _resolveCenter(journey);
 
+    final hexCount = ref.watch(profileSliceProvider.select((s) => s.hexCount));
+
     return Stack(
       children: [
         _buildMap(center, journey, profile, userColor),
         if (!_followUser) _buildRecenterButton(),
-        _buildTopRightControls(context, profile, userColor),
+        _buildTopRightControls(context, hexCount, userColor),
       ],
     );
   }
@@ -835,7 +838,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     );
   }
 
-  Widget _buildTopRightControls(BuildContext context, dynamic profile, Color userColor) {
+  Widget _buildTopRightControls(BuildContext context, int hexCount, Color userColor) {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 12,
       right: 16,
@@ -858,7 +861,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
               children: [
                 Icon(Icons.hexagon, color: userColor, size: 18),
                 const SizedBox(width: 4),
-                Text('${profile.hexCount}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark)),
+                Text('$hexCount', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.dark)),
               ],
             ),
           ),
