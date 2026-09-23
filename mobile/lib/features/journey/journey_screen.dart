@@ -15,6 +15,7 @@ import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/journey/hex_overlay.dart';
 import 'package:myloop/features/journey/hex_territory_manager.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
+import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
@@ -45,6 +46,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
   final _mapKey = GlobalKey<_JourneyMapState>();
   bool _isSubmitting = false;
   bool _controlsVisible = true;
+  final _snackbars = JourneySnackbarPresenter();
 
   Future<void> _onStopCapture() async {
     if (_isSubmitting) return;
@@ -67,7 +69,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
 
     // If user hasn't walked at all
     if (path.length < 2 && claimedCount == 0) {
-      _showSnackbar('Walk a bit more to capture territory!', Colors.orange);
+      _showNotice('Walk a bit more to capture territory!', Colors.orange);
       return;
     }
 
@@ -114,8 +116,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
         }
       }
     } catch (e) {
-      _showSnackbar('Error: ${e.toString().replaceFirst('Exception: ', '')}', AppColors.red,
-          replacePrevious: true);
+      _showError('Error: ${e.toString().replaceFirst('Exception: ', '')}');
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -172,22 +173,16 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     );
   }
 
-  /// [replacePrevious] drops whatever is showing or queued before showing this.
-  ///
-  /// Right for errors — only the latest rejection reason is worth reading — but
-  /// wrong for celebrations. One batch can both level the player up AND unlock an
-  /// achievement in a single state transition (`_onBatchResult` sets `levelUpTo`
-  /// and `achievementUnlocked` in the same `copyWith`), so the listener calls this
-  /// twice in a row. Clearing unconditionally destroyed the level-up toast before
-  /// it was ever painted: the player earned it and never saw it (#139 D5).
-  /// Celebrations now queue, and `ScaffoldMessenger` shows them in turn.
-  void _showSnackbar(String message, Color color, {bool replacePrevious = false}) {
+  /// Queues a non-error message; see [JourneySnackbarPresenter] for why only
+  /// errors may replace anything.
+  void _showNotice(String message, Color color) {
     if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    if (replacePrevious) messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: color),
-    );
+    _snackbars.showNotice(ScaffoldMessenger.of(context), message, color);
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    _snackbars.showError(ScaffoldMessenger.of(context), message);
   }
 
   @override
@@ -197,17 +192,8 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
     final topPadding = MediaQuery.of(context).padding.top;
 
     ref.listen(journeyControllerProvider, (prev, next) {
-      if (next.error != null && next.error != prev?.error) {
-        _showSnackbar(next.error!, AppColors.red, replacePrevious: true);
-      }
-      // Level-up celebration
-      if (next.levelUpTo != null && next.levelUpTo != prev?.levelUpTo) {
-        _showSnackbar('🎉 Level Up! You reached Level ${next.levelUpTo}!', const Color(0xFFFFD700));
-      }
-      // Achievement unlock
-      if (next.achievementUnlocked != null && next.achievementUnlocked != prev?.achievementUnlocked) {
-        _showSnackbar('🏆 Achievement: ${next.achievementUnlocked}', const Color(0xFF8B5CF6));
-      }
+      if (!mounted) return;
+      _snackbars.onJourneyChanged(ScaffoldMessenger.of(context), prev, next);
     });
 
     final mockEnabled = kDebugMode && ref.watch(mockWalkConfigProvider).enabled;

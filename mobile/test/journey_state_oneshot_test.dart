@@ -5,8 +5,8 @@
 /// register flagged that as "implicit one-shot semantics, easy to lose a
 /// rejection message on the next GPS tick".
 ///
-/// It is not a lost message: `journey_screen` surfaces all three through a
-/// listener guarded on `next.x != prev?.x`, and Riverpod fires that listener
+/// The state layer does not lose it: `journey_screen` surfaces all three
+/// through a listener (`JourneySnackbarPresenter.onJourneyChanged`) guarded on `next.x != prev?.x`, and Riverpod fires that listener
 /// synchronously on each state assignment, so the snackbar is shown before the
 /// next tick clears it. The clearing is in fact required — without it a second
 /// *identical* message would compare equal to the previous value and be
