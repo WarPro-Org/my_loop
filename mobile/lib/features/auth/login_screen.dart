@@ -18,7 +18,7 @@ import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/push_notification_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
-import 'package:myloop/shared/state/hydration.dart';
+import 'package:myloop/shared/state/profile_rank_sync.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -235,13 +235,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final api = ref.read(apiServiceProvider);
       final existing = await api.getUserByUid(firebaseUid);
       if (existing != null && mounted) {
-        // Fetch rank while we have the API connection
-        int rank = 0;
-        try {
-          final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: existing.id, scope: 'city');
-          rank = lb.myRank ?? 0;
-        } catch (_) {}
-
+        // No rank here: the leaderboard's myRank is a snapshot the server
+        // rebuilds only every few minutes (#109), so seeding from it showed a
+        // pre-walk rank after a quick relaunch. The live rank is copied in from
+        // game-state by hydrateAndSyncProfileRank below.
         ref.read(userProfileProvider.notifier).setFromApi(
           userId: existing.id,
           avatarId: existing.avatarId,
@@ -250,7 +247,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           hexCount: existing.hexCount,
           streak: existing.streak,
           distanceKm: existing.distanceKm,
-          rank: rank,
         );
         // Cache the profile bound to this Firebase user so a later offline
         // launch can restore this session instead of bouncing them back to
@@ -270,8 +266,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           userId: existing.id,
         );
 
-        // Hydrate all state slices from unified endpoint
-        await hydrateAllSlices(ref);
+        // Hydrate all state slices from unified endpoint, take the live rank
+        // from it, and re-cache the profile so an offline relaunch has it.
+        await hydrateAndSyncProfileRank(
+          ref,
+          isMounted: () => mounted,
+          cacheForFirebaseUid: firebaseUid,
+        );
 
         if (mounted) context.go('/home');
         return;
@@ -348,12 +349,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final api = ref.read(apiServiceProvider);
       final user = await api.getUserByUid('uid_robin');
       if (user != null) {
-        int rank = 0;
-        try {
-          final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: user.id, scope: 'city');
-          rank = lb.myRank ?? 0;
-        } catch (_) {}
-
         ref.read(userProfileProvider.notifier).setFromApi(
           userId: user.id,
           avatarId: user.avatarId,
@@ -362,7 +357,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           hexCount: user.hexCount,
           streak: user.streak,
           distanceKm: user.distanceKm,
-          rank: rank,
         );
 
         // Connect SignalR + hydrate slices
@@ -370,7 +364,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           tokenProvider: () async => await fb.FirebaseAuth.instance.currentUser?.getIdToken(),
           userId: user.id,
         );
-        await hydrateAllSlices(ref);
+        await hydrateAndSyncProfileRank(ref, isMounted: () => mounted);
       }
       if (mounted) context.go('/home');
     } catch (e) {
