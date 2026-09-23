@@ -17,14 +17,13 @@ import 'package:myloop/features/journey/hex_territory_manager.dart';
 import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
+import 'package:myloop/features/journey/post_walk_refresh.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/features/dev/mock_walk_overlay.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
-import 'package:myloop/shared/state/hydration.dart';
-import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
@@ -96,7 +95,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
           _renderCapturedHexes(result);
           // The bonus claim is reflected by the server's UserStatsDelta push
           // (consumed live by userProfileProvider) and reconciled authoritatively
-          // by _refreshUserData below — no local optimistic add, which would
+          // by refreshProfileAfterWalk below — no local optimistic add, which would
           // double-count the bonus on top of the pushed value (issue #30).
         }
       }
@@ -106,7 +105,7 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
       final api = ref.read(apiServiceProvider);
       final profile = ref.read(userProfileProvider);
       if (profile.userId != null) {
-        await _refreshUserData(profile, api);
+        await refreshProfileAfterWalk(ref, isMounted: () => mounted);
         if (mounted) {
           await Future.delayed(const Duration(milliseconds: AppConstants.celebrationDelayMs));
           if (mounted) {
@@ -134,30 +133,6 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
             .toList())
         .toList();
     _mapKey.currentState?.showCapturedHexes(boundaries);
-  }
-
-  Future<void> _refreshUserData(dynamic profile, ApiService api) async {
-    // Re-hydrate all slices (single API call) — SignalR may already have
-    // pushed deltas, but this ensures consistency for the celebration dialog.
-    await hydrateAllSlices(ref);
-    final ps = ref.read(profileSliceProvider);
-
-    int updatedRank = profile.rank;
-    try {
-      // The board refreshes on a background timer now (#109), not on client request; read
-      // whatever the latest snapshot is rather than forcing a recompute.
-      final lb = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId!, scope: 'city');
-      updatedRank = lb.myRank ?? profile.rank;
-    } catch (_) {}
-
-    if (mounted) {
-      ref.read(userProfileProvider.notifier).updateStats(
-        hexCount: ps.hexCount,
-        streak: ps.streak,
-        distanceKm: ps.distanceKm,
-        rank: updatedRank,
-      );
-    }
   }
 
   void _showCelebration(int hexCount, int stolenCount, double distance, Duration duration, int streak, int xpGained) {
