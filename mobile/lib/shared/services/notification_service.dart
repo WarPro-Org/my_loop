@@ -91,8 +91,9 @@ class NotificationNotifier extends Notifier<List<AppNotification>> {
 
   /// Reads `state` when the write actually runs, not when it was queued, so a
   /// burst of mutations converges on the latest state rather than replaying
-  /// stale snapshots. [NotificationCache.save] swallows its own IO errors, so
-  /// a failure cannot break the chain for later writes.
+  /// stale snapshots. [NotificationCache.save] swallows its own IO errors, so a
+  /// failed disk write does not break the chain for later writes; an error
+  /// thrown outside `save` (e.g. reading `ref` after disposal) is not caught.
   Future<void> _write() async {
     final userId = _userId;
     if (userId == null || userId.isEmpty) return;

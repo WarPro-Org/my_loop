@@ -10,10 +10,21 @@ import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 class _FakePathProvider extends PathProviderPlatform
     with MockPlatformInterfaceMixin {
-  _FakePathProvider(this.dir);
+  _FakePathProvider(this.dir, {this.callDelays = const []});
   final String dir;
+
+  /// Delay applied to the n-th call (index n); calls past the end are instant.
+  /// Lets a test make one write's await point slower than a later write's, which
+  /// is how two unserialized writes land on disk out of order.
+  final List<Duration> callDelays;
+  int _calls = 0;
+
   @override
-  Future<String?> getApplicationDocumentsPath() async => dir;
+  Future<String?> getApplicationDocumentsPath() async {
+    final call = _calls++;
+    if (call < callDelays.length) await Future<void>.delayed(callDelays[call]);
+    return dir;
+  }
 }
 
 AppNotification _alert(String id, {bool isRead = false}) => AppNotification(
@@ -124,10 +135,36 @@ void main() {
       c2.dispose();
     });
 
+    // Regression test for the out-of-order write. The first path lookup inside
+    // NotificationCache.save is made slower than the second, so without the write
+    // chain addTheftAlert's unread snapshot lands AFTER markAllRead's write and the
+    // badge comes back after a restart. Proven to fail against master's
+    // notification_service.dart (Expected: [true] Actual: [false]) and to pass with
+    // the chain.
+    test('regression: a slow earlier write cannot overwrite markAllRead on disk',
+        () async {
+      final c1 = _containerForUser('u1');
+      final n1 = c1.read(notificationProvider.notifier);
+      await n1.hydration;
+      PathProviderPlatform.instance = _FakePathProvider(
+        tmp.path,
+        callDelays: const [Duration(milliseconds: 50)],
+      );
+
+      n1.addTheftAlert(thiefName: 'A', thiefColor: '#FF0000', hexCount: 1);
+      n1.markAllRead();
+      await n1.pendingWrite;
+      c1.dispose();
+
+      final onDisk = await NotificationCache.load('u1');
+      expect(onDisk!.map((n) => n.isRead), [true],
+          reason: 'the stale unread snapshot must not land last');
+    });
+
     // flutter-disk-concurrency-test: disk must equal final memory after interleaved
-    // unawaited mutations. This passes with the write chain removed on a fast local
-    // filesystem, so treat it as an invariant guard rather than a proven reproduction —
-    // it pins the property, it does not demonstrate the ordering hazard.
+    // unawaited mutations. On its own this does not reproduce the ordering hazard
+    // (fast writes happen to land in order); the slow-first-write regression test
+    // above does. This one pins the convergence property.
     test('interleaved unawaited mutations converge: disk == final memory', () async {
       final c1 = _containerForUser('u1');
       final n1 = c1.read(notificationProvider.notifier);
