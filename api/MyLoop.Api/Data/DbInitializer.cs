@@ -41,8 +41,11 @@ public static class DbInitializer
             ApplyDecayAndMissionsSchema(db);
             ApplyAchievementsSchema(db);
             ApplyTerritoryIndexes(db);
-            ApplyDecayReleaseSchema(db);
             ApplyNeighborhoodNamesSchema(db);
+            // Last on purpose: adding the stored DecayAt column rewrites TerritoryCells under
+            // an ACCESS EXCLUSIVE lock, the heaviest and likeliest-to-fail step. Running it
+            // last means a failure here cannot skip the cheaper patches above.
+            ApplyDecayReleaseSchema(db);
         }
         catch (Exception ex)
         {
@@ -210,6 +213,17 @@ public static class DbInitializer
             CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Geo_Brin""
             ON ""TerritoryCells"" USING BRIN (""CenterLat"", ""CenterLng"")
             WITH (pages_per_range = 128)");
+
+        // Bucket-first viewport query (#114): prune by res-3 parent, refine by center.
+        // The composite's prefix covers the old single-column ParentCellId index, so drop it.
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId_CenterLat_CenterLng""
+            ON ""TerritoryCells"" (""ParentCellId"", ""CenterLat"", ""CenterLng"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId_OwnerId""
+            ON ""TerritoryCells"" (""ParentCellId"", ""OwnerId"")");
+        db.Database.ExecuteSqlRaw(
+            @"DROP INDEX IF EXISTS ""IX_TerritoryCells_ParentCellId""");
 
         // Daily claim-cap count + claim-history grouping both filter Claims by
         // (UserId, CreatedAt); the cap check runs inside EVERY claim transaction (#124).

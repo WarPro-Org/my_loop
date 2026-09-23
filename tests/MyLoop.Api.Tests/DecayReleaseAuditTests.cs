@@ -209,7 +209,8 @@ public class DecayReleaseAuditTests : IAsyncLifetime
     /// B-tree build (SHARE lock blocking claim writes) thrown away on every cold start. Runs
     /// the real startup patch path twice (first boot + a restart) with an event trigger that
     /// records every index actually built, so a build-then-drop is caught even though the
-    /// end state looks the same.
+    /// end state looks the same. Also asserts the #168 bucket-first viewport indexes converge
+    /// on an existing database through the same path (both PRs patch TerritoryCells indexes).
     /// </summary>
     [Fact]
     public async Task Startup_schema_patches_never_build_the_dropped_decay_index()
@@ -227,6 +228,16 @@ public class DecayReleaseAuditTests : IAsyncLifetime
         await db.Database.ExecuteSqlRawAsync(@"
             CREATE EVENT TRIGGER log_index_builds ON ddl_command_end
             WHEN TAG IN ('CREATE INDEX') EXECUTE FUNCTION log_index_builds()");
+
+        // Simulate a pre-#168 database: the bucket-first viewport indexes are missing and the
+        // old single-column ParentCellId index is present. The startup patches must converge it
+        // to the EF model (same names/columns) alongside the #104 decay changes.
+        await db.Database.ExecuteSqlRawAsync(
+            @"DROP INDEX IF EXISTS ""IX_TerritoryCells_ParentCellId_CenterLat_CenterLng""");
+        await db.Database.ExecuteSqlRawAsync(
+            @"DROP INDEX IF EXISTS ""IX_TerritoryCells_ParentCellId_OwnerId""");
+        await db.Database.ExecuteSqlRawAsync(
+            @"CREATE INDEX ""IX_TerritoryCells_ParentCellId"" ON ""TerritoryCells"" (""ParentCellId"")");
 
         var logger = new WarningRecordingLogger();
         var hexGrid = Mock.Of<IHexGridService>();
@@ -254,7 +265,20 @@ public class DecayReleaseAuditTests : IAsyncLifetime
             ) AS ""Value""").SingleAsync();
         Assert.False(oldIndexPresent);
         Assert.True(replacementPresent);
+
+        // #168's bucket-first viewport indexes are rebuilt by the same startup path, and the
+        // single-column ParentCellId index they supersede is gone.
+        Assert.True(await TerritoryIndexExists(db, "IX_TerritoryCells_ParentCellId_CenterLat_CenterLng"));
+        Assert.True(await TerritoryIndexExists(db, "IX_TerritoryCells_ParentCellId_OwnerId"));
+        Assert.False(await TerritoryIndexExists(db, "IX_TerritoryCells_ParentCellId"));
     }
+
+    private static Task<bool> TerritoryIndexExists(AppDbContext db, string indexName) =>
+        db.Database.SqlQueryRaw<bool>(@"
+            SELECT EXISTS (
+                SELECT 1 FROM pg_indexes
+                WHERE tablename = 'TerritoryCells' AND indexname = {0}
+            ) AS ""Value""", indexName).SingleAsync();
 
     private sealed class WarningRecordingLogger : ILogger
     {

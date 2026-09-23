@@ -40,6 +40,12 @@ public static class GameConstants
     public const int H3Resolution = 11;
     public const int H3ParentResolution = 3;
     public const int H3NeighborhoodResolution = 8;
+    /// <summary>
+    /// Viewport bbox span (per axis, degrees) beyond which region pruning is skipped:
+    /// a wider box would need thousands of res-3 parents, and a giant ANY() array pushes
+    /// the planner off the index — the coordinate filter alone serves zoomed-out maps (#114).
+    /// </summary>
+    public const double MaxRegionPruneSpanDegrees = 10.0;
     public const double CellAreaSquareMeters = 2_150.0;
 
     // --- Decay ---
@@ -85,6 +91,12 @@ public static class GameConstants
 
     // --- Viewport / Query Limits ---
     public const int MaxViewportCells = 500;
+    /// <summary>Valid WGS84 latitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLatitudeDegrees = -90.0;
+    public const double MaxLatitudeDegrees = 90.0;
+    /// <summary>Valid WGS84 longitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLongitudeDegrees = -180.0;
+    public const double MaxLongitudeDegrees = 180.0;
     public const int MaxUserTerritoryCells = 2000;
     public const int MaxPreviewPathLength = 10_000;
 
