@@ -168,6 +168,48 @@ public class GeocodingSingletonHazardTests
         Assert.All(infos, i => Assert.Equal("Testopolis", i.City));
     }
 
+    // The two tests above pass with EITHER coalescing or the post-throttle cache re-check, since
+    // a success is cached before the queued callers re-check. A failure is never cached, so when
+    // the shared request 429s only coalescing can keep the joined callers off Nominatim: without
+    // it each queued caller sends its own request once it gets the throttle.
+
+    private static async Task<HttpResponseMessage> SlowRateLimitedThenSuccess(int call, CancellationToken ct)
+    {
+        if (call != 1) return Success();
+        await Task.Delay(TimeSpan.FromMilliseconds(200), ct);
+        return new HttpResponseMessage(HttpStatusCode.TooManyRequests);
+    }
+
+    [Fact]
+    public async Task Concurrent_area_lookups_share_one_failed_request_rather_than_retrying_it()
+    {
+        var handler = new ScriptedHandler((call, _, ct) => SlowRateLimitedThenSuccess(call, ct));
+        var service = NewService(handler);
+
+        var names = await Task.WhenAll(
+            service.GetAreaName(42.3333, 3.3333),
+            service.GetAreaName(42.3333, 3.3333),
+            service.GetAreaName(42.3333, 3.3333));
+
+        Assert.Equal(1, handler.Requests);
+        Assert.All(names, n => Assert.Equal(GeocodingService.FallbackName(42.3333, 3.3333), n));
+    }
+
+    [Fact]
+    public async Task Concurrent_location_lookups_share_one_failed_request_rather_than_retrying_it()
+    {
+        var handler = new ScriptedHandler((call, _, ct) => SlowRateLimitedThenSuccess(call, ct));
+        var service = NewService(handler);
+
+        var infos = await Task.WhenAll(
+            service.GetLocationInfo(42.44, 3.44),
+            service.GetLocationInfo(42.44, 3.44),
+            service.GetLocationInfo(42.44, 3.44));
+
+        Assert.Equal(1, handler.Requests);
+        Assert.All(infos, i => Assert.True(i.IsEmpty));
+    }
+
     // ── 3. The request path does not wait unboundedly behind background lookups ──
 
     [Fact]
