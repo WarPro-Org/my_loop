@@ -53,9 +53,63 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     }
 
     // ── Exact "<=" boundary at LoopClosureDistanceMeters, via a mocked IGeoService ────
-    // All points share the same raw coordinate so the spatial-hash pre-filter (which buckets
-    // by real coordinate deltas, not the mocked distance) always treats every pair as a
-    // candidate — isolating the boundary comparison itself from the geometry.
+    // HasClosedLoop has TWO "<=" comparisons: the spatial-hash scan over (i, j) pairs at least
+    // MinLoopPoints apart, and the endpoint fallback IsLoopClosed(path[0], path[^1]). Each needs
+    // its own boundary test, because a path that satisfies one can bypass the other.
+
+    // Scan boundary. The path has MinLoopPoints + 2 points so exactly one scan pair qualifies
+    // at the threshold — (path[MinLoopPoints], path[0]) — while the endpoint pair
+    // (path[0], path[^1]) is a DIFFERENT pair that the mock reports as far. So only the scan's
+    // comparison can return true. With MinLoopPoints + 1 points the endpoint pair and the scan
+    // pair would coincide and the fallback would mask a broken scan comparison.
+    // Points are ~0.011 m apart so every one lands in the same spatial-hash bucket (the index
+    // buckets by real coordinates, not the mocked distance) and every pair is a candidate.
+
+    private const double FarBeyondClosureMeters = GameConstants.LoopClosureDistanceMeters * 100;
+    private const double HairBeyondClosureMeters = GameConstants.LoopClosureDistanceMeters + 0.0001;
+
+    private static double[][] DistinctPointsInOneBucket(int length)
+    {
+        const double lngStepDegrees = 0.0000001;
+        var path = new double[length][];
+        for (var i = 0; i < length; i++)
+            path[i] = [0.0, i * lngStepDegrees];
+        return path;
+    }
+
+    private static HexGridService ServiceWhereOnlyScanPairReturns(double[][] path, double scanPairMeters)
+    {
+        var closingPoint = path[GameConstants.MinLoopPoints];
+        var geo = new Mock<IGeoService>();
+        geo.Setup(g => g.HaversineMeters(
+                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
+            .Returns(FarBeyondClosureMeters);
+        geo.Setup(g => g.HaversineMeters(closingPoint[0], closingPoint[1], path[0][0], path[0][1]))
+            .Returns(scanPairMeters);
+        return new HexGridService(geo.Object);
+    }
+
+    [Fact]
+    public void Scan_pair_exactly_at_the_closure_threshold_counts_as_closed()
+    {
+        var path = DistinctPointsInOneBucket(GameConstants.MinLoopPoints + 2);
+        var svc = ServiceWhereOnlyScanPairReturns(path, GameConstants.LoopClosureDistanceMeters);
+
+        Assert.True(svc.HasClosedLoop(path));
+    }
+
+    [Fact]
+    public void Scan_pair_a_hair_beyond_the_closure_threshold_does_not_close()
+    {
+        var path = DistinctPointsInOneBucket(GameConstants.MinLoopPoints + 2);
+        var svc = ServiceWhereOnlyScanPairReturns(path, HairBeyondClosureMeters);
+
+        Assert.False(svc.HasClosedLoop(path));
+    }
+
+    // Endpoint-fallback boundary. A MinLoopPoints-length path never reaches the scan's
+    // comparison (every candidate j exceeds i - MinLoopPoints, which is negative), so these
+    // two cases pin the "<=" in the IsLoopClosed fallback alone.
 
     private static double[][] IdenticalCoordinatePath(int length)
     {
@@ -65,26 +119,27 @@ public class HexGridServiceHasClosedLoopBoundaryTests
         return path;
     }
 
-    [Fact]
-    public void Distance_exactly_at_the_closure_threshold_counts_as_closed()
+    private static HexGridService ServiceWhereEveryPairReturns(double meters)
     {
         var geo = new Mock<IGeoService>();
         geo.Setup(g => g.HaversineMeters(
                 It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
-            .Returns(GameConstants.LoopClosureDistanceMeters);
-        var svc = new HexGridService(geo.Object);
+            .Returns(meters);
+        return new HexGridService(geo.Object);
+    }
+
+    [Fact]
+    public void Endpoints_exactly_at_the_closure_threshold_count_as_closed()
+    {
+        var svc = ServiceWhereEveryPairReturns(GameConstants.LoopClosureDistanceMeters);
 
         Assert.True(svc.HasClosedLoop(IdenticalCoordinatePath(GameConstants.MinLoopPoints)));
     }
 
     [Fact]
-    public void Distance_a_hair_beyond_the_closure_threshold_does_not_close()
+    public void Endpoints_a_hair_beyond_the_closure_threshold_do_not_close()
     {
-        var geo = new Mock<IGeoService>();
-        geo.Setup(g => g.HaversineMeters(
-                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
-            .Returns(GameConstants.LoopClosureDistanceMeters + 0.0001);
-        var svc = new HexGridService(geo.Object);
+        var svc = ServiceWhereEveryPairReturns(HairBeyondClosureMeters);
 
         Assert.False(svc.HasClosedLoop(IdenticalCoordinatePath(GameConstants.MinLoopPoints)));
     }
@@ -99,15 +154,13 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     public void A_loop_that_closes_partway_through_the_path_counts_even_when_the_endpoints_dont_match()
     {
         const int length = 25;
-        var path = new double[length][];
-        for (var i = 0; i < length; i++)
-            path[i] = [0.0, i * 0.0000001]; // ~0.011 m apart — all in the same spatial-hash bucket
+        var path = DistinctPointsInOneBucket(length);
 
         var geo = new Mock<IGeoService>();
         // Default: far apart (no closure) for any pair...
         geo.Setup(g => g.HaversineMeters(
                 It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
-            .Returns(GameConstants.LoopClosureDistanceMeters * 100);
+            .Returns(FarBeyondClosureMeters);
         // ...except point 20 back to point 0, which closes the loop well before the path ends.
         geo.Setup(g => g.HaversineMeters(path[20][0], path[20][1], path[0][0], path[0][1]))
             .Returns(1.0);
@@ -120,11 +173,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     [Fact]
     public void No_pair_within_threshold_and_endpoints_far_apart_does_not_close()
     {
-        var geo = new Mock<IGeoService>();
-        geo.Setup(g => g.HaversineMeters(
-                It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
-            .Returns(GameConstants.LoopClosureDistanceMeters * 100);
-        var svc = new HexGridService(geo.Object);
+        var svc = ServiceWhereEveryPairReturns(FarBeyondClosureMeters);
 
         Assert.False(svc.HasClosedLoop(IdenticalCoordinatePath(30)));
     }
@@ -135,7 +184,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     public void A_real_closed_square_walk_closes()
     {
         var svc = Service();
-        double[][] path = Square(sideMeters: 100, pointsPerSide: 8);
+        double[][] path = TestGeometry.Square(sideMeters: 100, pointsPerSide: 8);
 
         Assert.True(svc.HasClosedLoop(path));
     }
@@ -149,36 +198,5 @@ public class HexGridServiceHasClosedLoopBoundaryTests
             path[i] = [i * 0.001, 0.0]; // marching north, ~111m per step, never doubling back
 
         Assert.False(svc.HasClosedLoop(path));
-    }
-
-    private const double MPerDegLat = 110574.0;
-    private const double MPerDegLng = 111320.0;
-
-    private static double[][] Square(double sideMeters, int pointsPerSide)
-    {
-        var dLat = sideMeters / MPerDegLat;
-        var dLng = sideMeters / MPerDegLng;
-        var corners = new (double Lat, double Lng)[]
-        {
-            (0.0, 0.0),
-            (0.0, dLng),
-            (dLat, dLng),
-            (dLat, 0.0),
-            (0.0, 0.0),
-        };
-
-        var pts = new List<double[]>();
-        for (var c = 0; c < corners.Length - 1; c++)
-        {
-            var (lat0, lng0) = corners[c];
-            var (lat1, lng1) = corners[c + 1];
-            for (var i = 0; i < pointsPerSide; i++)
-            {
-                var t = (double)i / pointsPerSide;
-                pts.Add([lat0 + (lat1 - lat0) * t, lng0 + (lng1 - lng0) * t]);
-            }
-        }
-        pts.Add([corners[^1].Lat, corners[^1].Lng]);
-        return pts.ToArray();
     }
 }

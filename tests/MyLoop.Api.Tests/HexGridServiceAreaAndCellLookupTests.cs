@@ -13,6 +13,16 @@ public class HexGridServiceAreaAndCellLookupTests
 {
     private static HexGridService Service() => new(new GeoService());
 
+    // Circumradius (center-to-vertex) of a regular hexagon whose area is the game's average
+    // res-11 cell area: A = (3√3 / 2)·r²  ⇒  r = √(2A / (3√3)) ≈ 28.8 m for 2,150 m².
+    private static readonly double AverageCellCircumradiusMeters =
+        Math.Sqrt(2 * GameConstants.CellAreaSquareMeters / (3 * Math.Sqrt(3)));
+
+    // Adjacent hexagon centers sit √3·r ≈ 49.8 m apart, so 2·r ≈ 57.5 m admits "same or
+    // adjacent cell" but rejects any cell two or more rings away (≥ 3·r ≈ 86 m).
+    private static readonly double MaxSameOrAdjacentCellCenterDriftMeters =
+        2 * AverageCellCircumradiusMeters;
+
     // ── CalculateArea ────────────────────────────────────────────────────────
 
     [Fact]
@@ -78,8 +88,9 @@ public class HexGridServiceAreaAndCellLookupTests
         var geo = new GeoService();
         var centerDrift = geo.HaversineMeters(centerA.Lat, centerA.Lng, centerB.Lat, centerB.Lng);
 
-        Assert.True(centerDrift < GameConstants.CellAreaSquareMeters,
-            $"cell centers drifted {centerDrift} m for a ~1m input move");
+        Assert.True(centerDrift < MaxSameOrAdjacentCellCenterDriftMeters,
+            $"cell centers drifted {centerDrift} m for a ~1m input move " +
+            $"(same-or-adjacent bound {MaxSameOrAdjacentCellCenterDriftMeters} m)");
     }
 
     [Fact]
@@ -93,10 +104,10 @@ public class HexGridServiceAreaAndCellLookupTests
         var geo = new GeoService();
         var distanceFromInputToCenter = geo.HaversineMeters(12.9716, 77.5946, center.Lat, center.Lng);
 
-        // Res-11 cells have a circumradius of ~29m — the input point can never be farther
-        // from its own cell's center than that.
-        Assert.True(distanceFromInputToCenter < 30.0,
-            $"input point is {distanceFromInputToCenter} m from its cell center");
+        // A point can never be farther from its own cell's center than the cell's circumradius.
+        Assert.True(distanceFromInputToCenter < AverageCellCircumradiusMeters,
+            $"input point is {distanceFromInputToCenter} m from its cell center " +
+            $"(circumradius {AverageCellCircumradiusMeters} m)");
     }
 
     // ── Parent / neighborhood resolution ─────────────────────────────────────

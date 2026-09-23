@@ -60,15 +60,17 @@ public class LeaderboardControllerTests
 
         var result = await Build(leaderboard).GetLeaderboard(12.9, 77.5, null, scope);
 
-        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.IsType<OkObjectResult>(result);
         leaderboard.Verify(l => l.GetLeaderboard(12.9, 77.5, null, scope), Times.Once);
         // Must NOT silently fall back to "city" for a caller-supplied scope.
         leaderboard.Verify(l => l.GetLeaderboard(It.IsAny<double>(), It.IsAny<double>(), It.IsAny<Guid?>(), "city"), Times.Never);
     }
 
     [Fact]
-    public async Task GetLeaderboard_passes_the_requesting_users_id_through_for_rank_lookup()
+    public async Task GetLeaderboard_passes_the_userId_query_parameter_through_for_rank_lookup()
     {
+        // userId is a client-supplied [FromQuery] value, not the authenticated caller's identity;
+        // this only pins the pass-through, not any identity binding.
         var userId = Guid.NewGuid();
         var leaderboard = new Mock<ILeaderboardService>();
         leaderboard.Setup(l => l.GetLeaderboard(It.IsAny<double>(), It.IsAny<double>(), userId, It.IsAny<string>()))

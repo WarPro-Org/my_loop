@@ -235,6 +235,11 @@ public class GeoServiceTests
         // signed contributions cancel EXACTLY, reporting zero area for a shape that visibly
         // covers ground. This pins down that known, current behavior so a future
         // "improvement" that silently changes it is caught rather than shipped unnoticed.
+        // This is CURRENT behaviour, not intended behaviour: the result is known to be imprecise.
+        // It is not exploitable, because it under-reports area: HexGridService skips the interior
+        // fill of any loop below MinFillAreaSquareMeters, so a bowtie earns less territory, never
+        // more. Change this assertion deliberately if
+        // the area calculation is ever made self-intersection aware.
         double[][] bowtie = [[0.0, 0.0], [0.001, 0.001], [0.001, 0.0], [0.0, 0.001]];
 
         var bowtieArea = Geo.CalculatePolygonArea(bowtie);

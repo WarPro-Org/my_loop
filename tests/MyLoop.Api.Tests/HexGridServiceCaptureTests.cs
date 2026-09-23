@@ -14,37 +14,6 @@ public class HexGridServiceCaptureTests
 {
     private static HexGridService Service() => new(new GeoService());
 
-    private const double MPerDegLat = 110574.0;
-    private const double MPerDegLng = 111320.0;
-
-    private static double[][] Square(double sideMeters, int pointsPerSide)
-    {
-        var dLat = sideMeters / MPerDegLat;
-        var dLng = sideMeters / MPerDegLng;
-        var corners = new (double Lat, double Lng)[]
-        {
-            (0.0, 0.0),
-            (0.0, dLng),
-            (dLat, dLng),
-            (dLat, 0.0),
-            (0.0, 0.0),
-        };
-
-        var pts = new List<double[]>();
-        for (var c = 0; c < corners.Length - 1; c++)
-        {
-            var (lat0, lng0) = corners[c];
-            var (lat1, lng1) = corners[c + 1];
-            for (var i = 0; i < pointsPerSide; i++)
-            {
-                var t = (double)i / pointsPerSide;
-                pts.Add([lat0 + (lat1 - lat0) * t, lng0 + (lng1 - lng0) * t]);
-            }
-        }
-        pts.Add([corners[^1].Lat, corners[^1].Lng]);
-        return pts.ToArray();
-    }
-
     // ── Empty / single-point paths ───────────────────────────────────────────
 
     [Fact]
@@ -147,7 +116,7 @@ public class HexGridServiceCaptureTests
     {
         // ~100m square, well above MinFillAreaSquareMeters — the interior fill must add cells
         // beyond the ones the trail itself crosses.
-        var path = Square(100, 8);
+        var path = TestGeometry.Square(100, 8);
         var svc = Service();
 
         var territory = svc.ComputeCapturedTerritory(path);
@@ -161,7 +130,7 @@ public class HexGridServiceCaptureTests
     [Fact]
     public void ComputeCapturedCells_and_ComputeCapturedTerritory_agree_on_the_cell_set()
     {
-        var path = Square(100, 8);
+        var path = TestGeometry.Square(100, 8);
         var svc = Service();
 
         var cells = svc.ComputeCapturedCells(path);
@@ -175,7 +144,7 @@ public class HexGridServiceCaptureTests
     [Fact]
     public void Every_captured_cell_has_a_non_empty_boundary()
     {
-        var path = Square(100, 8);
+        var path = TestGeometry.Square(100, 8);
 
         var cells = Service().ComputeCapturedCells(path);
 
@@ -186,7 +155,7 @@ public class HexGridServiceCaptureTests
     [Fact]
     public void Captured_cells_have_no_duplicate_cell_ids()
     {
-        var path = Square(100, 8);
+        var path = TestGeometry.Square(100, 8);
 
         var cells = Service().ComputeCapturedCells(path);
 
