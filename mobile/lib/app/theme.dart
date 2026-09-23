@@ -27,6 +27,18 @@ class AppColors {
   static const greyLight = Color(0xFFE8ECF0);    // borders, dividers
   static const dark = Color(0xFF2D3436);         // body text
   static const darkHard = Color(0xFF1A1A2E);     // headings
+
+  /// Swatch for a hex whose owner colour is unknown — another player's cell, or
+  /// one of the user's own rendered before the authoritative reload supplies it.
+  static const hexUnknownOwner = Color(0xFF1A1A1A);
+
+  /// Parses a `#RRGGBB` player colour, returning [fallback] when the string is
+  /// empty or malformed. A cell rendered ahead of its reload carries no colour,
+  /// so callers must tolerate that rather than throw a [FormatException].
+  static Color fromHex(String hex, {Color fallback = hexUnknownOwner}) {
+    final value = int.tryParse(hex.replaceFirst('#', ''), radix: 16);
+    return value == null ? fallback : Color(value | 0xFF000000);
+  }
 }
 
 /// ─────────────────────────────────────────────────────────────────────────────
