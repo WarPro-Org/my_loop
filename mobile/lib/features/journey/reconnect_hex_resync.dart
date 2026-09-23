@@ -22,4 +22,4 @@ StreamSubscription<void> resyncOwnHexesOnReconnect({
   required Stream<void> onReconnected,
   required HexTerritoryManager hexes,
 }) =>
-    onReconnected.listen((_) => hexes.loadUserOwnHexes());
+    onReconnected.listen((_) => unawaited(hexes.loadUserOwnHexes()));

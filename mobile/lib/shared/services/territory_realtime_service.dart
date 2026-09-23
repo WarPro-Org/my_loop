@@ -276,7 +276,7 @@ class TerritoryRealtimeService {
     connection.onclose(({error}) => _handleClosed(error));
     connection.onreconnecting(({error}) => _handleReconnecting(error));
     connection.onreconnected(
-        ({connectionId}) => handleReconnected(connectionId: connectionId));
+        ({connectionId}) => unawaited(handleReconnected(connectionId: connectionId)));
 
     try {
       await connection.start();

@@ -9,6 +9,8 @@
 /// while they were offline.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
@@ -65,7 +67,7 @@ class GameStateResync {
   void onResume() {
     if (_inFlight) return;
     _log.info('App resumed — re-hydrating game state');
-    _run();
+    unawaited(_run());
   }
 
   /// Handles a hub reconnect (groups already re-joined).
@@ -75,7 +77,7 @@ class GameStateResync {
       return;
     }
     _log.info('Hub reconnected — re-hydrating game state');
-    _run();
+    unawaited(_run());
   }
 
   Future<void> _run() async {
