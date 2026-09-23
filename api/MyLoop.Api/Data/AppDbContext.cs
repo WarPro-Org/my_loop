@@ -69,6 +69,17 @@ public class AppDbContext : DbContext
             // The ParentCellId prefix also serves the old single-column lookups.
             e.HasIndex(t => new { t.ParentCellId, t.CenterLat, t.CenterLng });
             e.HasIndex(t => new { t.ParentCellId, t.OwnerId }); // per-region ownership (spatial-model.md)
+            // Stored generated column so the hourly decay scan is an indexed range
+            // predicate instead of a per-row interval computation (#104).
+            // Computed in UTC-naive timestamp space: timestamptz + interval is only STABLE
+            // in Postgres (timezone-dependent), which generated columns reject; the AT TIME
+            // ZONE 'UTC' projection makes the expression immutable.
+            e.Property(t => t.DecayAt)
+                .HasColumnType("timestamp without time zone")
+                .HasComputedColumnSql(
+                    @"(""LastRefreshedAt"" AT TIME ZONE 'UTC') + make_interval(days => ""DecayDays"")",
+                    stored: true);
+            e.HasIndex(t => t.DecayAt);
         });
 
         // Claim: the per-day cap count (UserId + CreatedAt window) runs inside EVERY claim

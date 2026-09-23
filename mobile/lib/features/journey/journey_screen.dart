@@ -306,6 +306,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   late HexTerritoryManager _hexManager;
   final ViewportPollBackoff _pollBackoff = ViewportPollBackoff();
   StreamSubscription<List<HexChangeEvent>>? _realtimeSub;
+  StreamSubscription<HexesReleasedEvent>? _releasedSub;
 
   @override
   void initState() {
@@ -325,10 +326,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void dispose() {
     _hexRefreshTimer?.cancel();
     _realtimeSub?.cancel();
+    _releasedSub?.cancel();
     // Do NOT disconnect territoryRealtimeProvider here — the hub connection is
     // app-lifecycle-scoped (connected at login, disconnected at logout), not
     // scoped to this screen. Killing it here left the app deaf to live stats/
-    // XP/mission/achievement pushes for the rest of the session (#102).
+    // XP/mission/achievement pushes for the rest of the session (#102). Only
+    // this screen's own subscriptions come down with it.
     _hexManager.dispose();
     _mapController.dispose();
     super.dispose();
@@ -340,6 +343,12 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   /// own listener on dispose.
   void _subscribeRealtime() {
     final realtimeService = ref.read(territoryRealtimeProvider);
+    // Decay releases (#104): drop the reaper's hexes from the map immediately —
+    // without this the app renders ghost territory until the next viewport poll.
+    // Repaint rides hexManager.hexRevision (bumped by removeCells), not a
+    // screen-wide setState (#129).
+    _releasedSub = realtimeService.onHexesReleased
+        .listen((event) => _hexManager.removeCells(event.h3Indexes));
     _realtimeSub = realtimeService.onHexChanges.listen((events) {
       // Repaint is driven by hexManager.hexRevision (ValueListenableBuilder in
       // _buildMap), not a screen-wide setState — a bare setState here used to
