@@ -53,7 +53,7 @@ public interface ITerritoryService
     /// Gets exploration stats: for each neighborhood near the user,
     /// returns the number of cells explored vs total cells in that neighborhood.
     /// </summary>
-    Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng);
+    Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId);
 
     /// <summary>
     /// Gets a user's claim history — one entry per claim submission.

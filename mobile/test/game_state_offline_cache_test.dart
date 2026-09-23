@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -61,6 +62,17 @@ Map<String, dynamic> _neighborhood(int id) => {
       'percent': 0.25,
       'areaName': 'Downtown',
     };
+
+/// Captures every record the `Hydrate` logger emits for the rest of the test,
+/// so the offline fallback's observability (#139 D1) is pinned, not assumed.
+List<LogRecord> _captureHydrateLogs() {
+  final records = <LogRecord>[];
+  final sub = Logger.root.onRecord
+      .where((r) => r.loggerName == 'Hydrate')
+      .listen(records.add);
+  addTearDown(sub.cancel);
+  return records;
+}
 
 ProviderContainer _containerWith(ApiService api, String userId) {
   final container = ProviderContainer(
@@ -175,8 +187,18 @@ void main() {
       // Now the device is offline: getGameState returns null.
       final container = _containerWith(_FakeApi(null), 'u1');
       addTearDown(container.dispose);
+      final logs = _captureHydrateLogs();
 
       await container.read(_hydrateHarness)();
+
+      // The Ref path used to fall back to the cache silently (#139 D1); it must
+      // leave exactly one INFO record saying the cache was actually applied.
+      expect(logs.map((r) => (r.level, r.message)), [
+        (
+          Level.INFO,
+          'Game state unavailable; restored home cards from offline cache',
+        ),
+      ]);
 
       // Without the offline-restore wiring these slices stay empty (the bug);
       // the fix repopulates them from the cache.
@@ -194,9 +216,14 @@ void main() {
         () async {
       final container = _containerWith(_FakeApi(null), 'u1');
       addTearDown(container.dispose);
+      final logs = _captureHydrateLogs();
 
       await container.read(_hydrateHarness)();
 
+      // Must not claim a restore that did not happen.
+      expect(logs.map((r) => (r.level, r.message)), [
+        (Level.INFO, 'Game state unavailable; no offline cache for home cards'),
+      ]);
       expect(container.read(missionsSliceProvider).missions, isEmpty);
       expect(container.read(explorationSliceProvider).neighborhoods, isEmpty);
     });

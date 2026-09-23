@@ -34,11 +34,7 @@ class ExplorationSlice extends Notifier<ExplorationState> {
     final api = ref.read(apiServiceProvider);
     final profile = ref.read(userProfileProvider);
     if (profile.userId == null) return;
-    final data = await api.getExplorationStats(
-      userId: profile.userId!,
-      lat: 0,
-      lng: 0,
-    );
+    final data = await api.getExplorationStats(userId: profile.userId!);
     state = ExplorationState(neighborhoods: data, isLoaded: true);
   }
 }

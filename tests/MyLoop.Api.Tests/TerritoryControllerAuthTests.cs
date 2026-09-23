@@ -56,9 +56,9 @@ public class TerritoryControllerAuthTests
         var currentUser = new Mock<ICurrentUser>();
         currentUser.Setup(c => c.TryGetUserIdAsync()).ReturnsAsync((Guid?)null);
 
-        var result = await Build(territory, currentUser).GetExplorationStats(Guid.NewGuid(), 0, 0);
+        var result = await Build(territory, currentUser).GetExplorationStats(Guid.NewGuid());
 
         Assert.IsType<UnauthorizedResult>(result);
-        territory.Verify(t => t.GetExplorationStats(It.IsAny<Guid>(), It.IsAny<double>(), It.IsAny<double>()), Times.Never);
+        territory.Verify(t => t.GetExplorationStats(It.IsAny<Guid>()), Times.Never);
     }
 }
