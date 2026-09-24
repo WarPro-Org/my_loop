@@ -47,8 +47,8 @@ class _FakeApi extends ApiService {
   /// When true, each list fetch waits on its own completer in [heldLists], in call order.
   bool holdLists = false;
   final List<Completer<void>> heldLists = [];
-  /// When true, each block call waits on its own completer in [heldWrites]; completing one with
-  /// an error fails that call.
+  /// When true, each block or unblock call waits on its own completer in [heldWrites]; completing
+  /// one with an error fails that call.
   bool holdWrites = false;
   final List<Completer<void>> heldWrites = [];
 
@@ -81,6 +81,11 @@ class _FakeApi extends ApiService {
 
   @override
   Future<void> unblockUser(String userId) async {
+    if (holdWrites) {
+      final held = Completer<void>();
+      heldWrites.add(held);
+      await held.future;
+    }
     if (writeError != null) throw writeError!;
     serverBlocks.remove(userId);
   }
@@ -397,6 +402,47 @@ void main() {
       expect(await BlockListCache.load('b'), isEmpty); // B's own fetch result, untouched by A's edit
     });
 
+    test('a first-load wait for the previous account resolves to null after a switch', () async {
+      // The dispose callback releases waiters before build() runs for the next account; without
+      // retiring the generation there, the waiter saw the old account's unfinished list (#195).
+      final api = _FakeApi()
+        ..serverBlocks = {'rival'}
+        ..holdLists = true;
+      final container = signedIn(api, userId: 'a');
+      await settle();
+      expect(api.heldLists, hasLength(1)); // A's first fetch in flight, no cache
+
+      final forA = container.read(blockedUsersProvider.notifier).blockedIdsFor('a');
+      container.read(userProfileProvider.notifier).setFromApi(
+            userId: 'b', avatarId: 0, color: '#00D4AA', displayName: 'Kai',
+          );
+
+      expect(await forA.timeout(const Duration(seconds: 1)), isNull);
+    });
+
+    test("the cache holds only what the server accepted, not another id's pending edit", () async {
+      // rival is blocked on the server; unblocking rival is in flight when a block of x succeeds,
+      // then the unblock fails. Disk must match the screen: both still blocked (#195 review).
+      final api = _FakeApi()..serverBlocks = {'rival'};
+      final container = signedIn(api);
+      await settle();
+      api.holdWrites = true;
+
+      final notifier = container.read(blockedUsersProvider.notifier);
+      final unblockRival = notifier.unblock('rival');
+      final blockX = notifier.block('x');
+      expect(api.heldWrites, hasLength(2));
+
+      api.heldWrites[1].complete();
+      expect(await blockX, isNull);
+      api.heldWrites[0].completeError(_status(409, 'refused'));
+      expect(await unblockRival, 'refused');
+      await settle();
+
+      expect(container.read(blockedUsersProvider), {'rival', 'x'});
+      expect(await BlockListCache.load('me'), {'rival', 'x'});
+    });
+
     test('signing out empties the list', () async {
       final container = signedIn(_FakeApi()..serverBlocks = {'rival'});
       await settle();
@@ -450,6 +496,29 @@ void main() {
       api.listGate!.complete();
 
       expect(await recorded, ['$blockedActorLabel captured 1 of your hex!']);
+    });
+    test('nothing is recorded when the account switches during the first load', () async {
+      final api = _FakeApi()
+        ..serverBlocks = {'rival'}
+        ..holdLists = true;
+      final container = signedIn(api);
+      await settle();
+      final notifications = container.read(notificationProvider.notifier);
+      await notifications.hydration;
+
+      final recorded = recordTheftAlerts(
+        userId: 'me',
+        events: [stolenBy('rival', 'Rude Name')],
+        blockedUsers: container.read(blockedUsersProvider.notifier),
+        notifications: notifications,
+      );
+      container.read(userProfileProvider.notifier).setFromApi(
+            userId: 'other', avatarId: 0, color: '#00D4AA', displayName: 'Kai',
+          );
+      await recorded.timeout(const Duration(seconds: 1));
+      await notifications.pendingWrite;
+
+      expect(container.read(notificationProvider), isEmpty);
     });
   });
 

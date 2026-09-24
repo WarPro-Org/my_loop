@@ -73,7 +73,7 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
   /// The account this list belongs to; null when signed out.
   String? _userId;
 
-  /// Bumped by every [build]. In Riverpod 3 a rebuild keeps this Notifier instance and
+  /// Bumped by every [build] and when the provider is disposed. In Riverpod 3 a rebuild keeps this Notifier instance and
   /// `ref.mounted` stays true, so async work started for the previous account compares the
   /// generation it captured instead, and drops its result if the account changed (#195 review).
   int _generation = 0;
@@ -114,7 +114,13 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
     });
     ref.onDispose(retry.cancel);
     final firstLoad = _firstLoad;
-    ref.onDispose(() => _complete(firstLoad));
+    ref.onDispose(() {
+      // Retire this generation before releasing waiters: Riverpod rebuilds lazily, so a waiter can
+      // resume before the next build() and would otherwise take this account's unfinished list as
+      // known (#195 review).
+      _generation++;
+      _complete(firstLoad);
+    });
     // Deliberately not awaited: build() must return synchronously; _load sets state when done.
     unawaited(_load(userId, generation, firstLoad));
     return const {};
@@ -138,11 +144,18 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
     return _isCurrent(generation) && _userId == forUserId ? state : null;
   }
 
-  Set<String> _withEdits(Set<String> base) {
+  static Set<String> _overlay(Set<String> base, Map<String, bool> edits) {
     final result = {...base};
-    _edits.forEach((id, blocked) => blocked ? result.add(id) : result.remove(id));
+    edits.forEach((id, blocked) => blocked ? result.add(id) : result.remove(id));
     return result;
   }
+
+  Set<String> _withEdits(Set<String> base) => _overlay(base, _edits);
+
+  /// What the server has accepted: [_base] plus confirmed edits, without edits still in flight.
+  /// This is what the cache stores, so a pending edit that later fails never reaches disk (#195
+  /// review).
+  Set<String> _durable() => _overlay(_base, _confirmed);
 
   void _setBase(Set<String> base) {
     _base = base;
@@ -171,7 +184,7 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
       if (!_isCurrent(generation)) return;
       _setBase(fresh);
       _fetched = true;
-      await BlockListCache.save(userId, state);
+      await BlockListCache.save(userId, _durable());
     } catch (e, s) {
       // Offline: the cached list stays in force. Anything else is a real failure worth logging.
       if (!isServerUnreachable(e)) _log.warning('Failed to load block list', e, s);
@@ -209,7 +222,7 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
     // Signed out (or switched account) while the request was in flight: nothing left to update.
     if (!_isCurrent(generation) || owner == null) return null;
     _settle(userId, token, accepted: blocking);
-    await BlockListCache.save(owner, state);
+    await BlockListCache.save(owner, _durable());
     return null;
   }
 

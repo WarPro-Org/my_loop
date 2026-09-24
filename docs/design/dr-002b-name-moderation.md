@@ -600,6 +600,14 @@ The same address must be the App Store Connect Support URL/contact.
   - **Overlapping edits to one id:** only the newest in-flight edit to an id changes what is shown.
     An older edit that fails meanwhile doesn't roll back over it; a refusal rolls back to the last
     edit the server accepted, else to the server list.
+  - **The dispose callback also bumps the generation.** Riverpod rebuilds lazily, so a
+    `blockedIdsFor(A)` waiter released on dispose could resume before `build()` ran for B and
+    return A's unfinished (often empty) list, which let `recordTheftAlerts` write an unmasked alert
+    after the switch. It now returns null and nothing is recorded.
+  - **The cache stores only what the server accepted**, `_base` plus confirmed edits, not the
+    displayed state. Otherwise a save made while another id's edit was in flight wrote that
+    pending edit to disk, and if the edit then failed, the disk and the screen disagreed. A failed
+    edit doesn't change the accepted set, so there is nothing to re-save when it rolls back.
   - **Map hex popup waits at most `blockListPopupWait` (2 s)** for the first load, so a slow network
     can't make a tap look ignored. If the list still isn't known, another player's name is shown as
     "A player" (`blockedActorLabel`), never the raw name; the viewer's own hex shows their name.
