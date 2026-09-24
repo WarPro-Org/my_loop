@@ -163,8 +163,7 @@ public class UsersController : ControllerBase
     /// Update a user's avatar, color, or display name.
     /// </summary>
     [HttpPatch("{id:guid}")]
-    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request,
-        [FromServices] IModerationService moderation)
+    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request)
     {
         if (await DenySelf(id) is { } deny) return deny;
 
@@ -173,13 +172,6 @@ public class UsersController : ControllerBase
         {
             var nameError = _validation.ValidateDisplayName(request.DisplayName);
             if (nameError != null) return BadRequest(nameError);
-            switch (await moderation.CheckRenameAsync(id, request.DisplayName))
-            {
-                case RenameCheck.Locked:
-                    return Conflict(new NameLockedError(NameLockedCode, NameLockedMessage));
-                case RenameCheck.RemovedName:
-                    return BadRequest(RemovedNameMessage);
-            }
         }
         if (request.Color != null)
         {
@@ -192,10 +184,16 @@ public class UsersController : ControllerBase
             if (avatarError != null) return BadRequest(avatarError);
         }
 
-        var user = await _userService.UpdateProfile(id, request);
-        if (user == null) return NotFound();
-        // Self-only (DenySelf above) → owner projection.
-        return Ok(UserSelfResponse.FromUser(user));
+        var result = await _userService.UpdateProfile(id, request);
+        return result.Status switch
+        {
+            ProfileUpdateStatus.NameLocked => Conflict(new NameLockedError(NameLockedCode, NameLockedMessage)),
+            ProfileUpdateStatus.NameRemoved => BadRequest(RemovedNameMessage),
+            ProfileUpdateStatus.Updated when result.User is { } user =>
+                // Self-only (DenySelf above) → owner projection.
+                Ok(UserSelfResponse.FromUser(user)),
+            _ => NotFound(),
+        };
     }
 
     /// <summary>

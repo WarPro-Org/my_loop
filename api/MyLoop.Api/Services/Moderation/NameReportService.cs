@@ -99,15 +99,21 @@ public sealed class NameReportService(
             && r.CreatedAt >= reviewCase.OpenedAt);
 
         var hiddenNow = false;
-        // AutoHidden too: if the name is showing again despite an open hide decision, hide it again.
+        // Any status but Restored (which OpenCaseAsync has just reopened): a name that is showing
+        // despite an AutoHidden or Confirmed decision is hidden again.
         if (reportCount >= GameConstants.NameReportHideThreshold
-            && reviewCase.Status is ModerationCaseStatus.Open or ModerationCaseStatus.AutoHidden)
+            && reviewCase.Status != ModerationCaseStatus.Restored)
         {
             hiddenNow = await NameHiding.HideAsync(db, reportedUserId, target.DisplayName, now);
             if (hiddenNow)
             {
+                // A Confirmed case stays Confirmed: moving it back to AutoHidden would let a
+                // moderator "restore" a name that already carries a strike.
+                var status = reviewCase.Status == ModerationCaseStatus.Confirmed
+                    ? ModerationCaseStatus.Confirmed
+                    : ModerationCaseStatus.AutoHidden;
                 await db.NameModerationCases.Where(c => c.Id == reviewCase.Id).ExecuteUpdateAsync(s => s
-                    .SetProperty(c => c.Status, ModerationCaseStatus.AutoHidden)
+                    .SetProperty(c => c.Status, status)
                     .SetProperty(c => c.HiddenAt, now));
             }
         }

@@ -64,25 +64,26 @@ public sealed class ModerationService(
             await using var tx = await db.Database.BeginTransactionAsync();
             var reviewCase = await LockCaseAsync(caseId);
             if (reviewCase is null) return ModerationDecisionOutcome.NotFound;
-            if (reviewCase.Status == ModerationCaseStatus.Confirmed) return ModerationDecisionOutcome.Done;
             if (reviewCase.Status == ModerationCaseStatus.Restored) return ModerationDecisionOutcome.InvalidState;
 
             var now = DateTime.UtcNow;
-            // Always try: the name may be showing whether the case is Open (below threshold) or
-            // AutoHidden (hide undone somehow). A no-op when it's already hidden or was renamed.
-            var hiddenAt = reviewCase.HiddenAt;
-            if (await NameHiding.HideAsync(db, reviewCase.UserId, reviewCase.NameSnapshot, now))
-                hiddenAt = now;
+            // Always try, whatever the status: the name may be showing whether the case is Open
+            // (below threshold), AutoHidden or even Confirmed (hide undone somehow). A no-op when it's
+            // already hidden or was renamed.
+            var hiddenNow = await NameHiding.HideAsync(db, reviewCase.UserId, reviewCase.NameSnapshot, now);
+            if (reviewCase.Status == ModerationCaseStatus.Confirmed)
+            {
+                // A repeat confirm never adds a second strike; it only re-applies the hide.
+                if (hiddenNow) await MarkHiddenAsync(caseId, now);
+                await tx.CommitAsync();
+                if (hiddenNow)
+                    logger.LogInformation("Moderator {ModeratorUid} re-hid confirmed case {CaseId} for user {UserId}",
+                        moderatorUid, caseId, reviewCase.UserId);
+                return ModerationDecisionOutcome.Done;
+            }
 
-            // Increment and lock in SQL so the strike count cannot be lost to a concurrent write.
-            await db.Users.Where(u => u.Id == reviewCase.UserId)
-                .ExecuteUpdateAsync(s => s.SetProperty(u => u.ConfirmedNameStrikes, u => u.ConfirmedNameStrikes + 1));
-            await db.Users
-                .Where(u => u.Id == reviewCase.UserId
-                    && u.ConfirmedNameStrikes >= GameConstants.NameStrikesToLock
-                    && u.NameLockedAt == null)
-                .ExecuteUpdateAsync(s => s.SetProperty(u => u.NameLockedAt, now));
-
+            await AddStrikeAsync(reviewCase.UserId, now);
+            var hiddenAt = hiddenNow ? now : reviewCase.HiddenAt;
             await ResolveAsync(caseId, ModerationCaseStatus.Confirmed, moderatorUid, now, hiddenAt);
             await tx.CommitAsync();
             logger.LogInformation("Moderator {ModeratorUid} confirmed case {CaseId} for user {UserId}",
@@ -157,21 +158,6 @@ public sealed class ModerationService(
         }
         logger.LogInformation("Name rescan checked {Scanned} users and hid {Hidden}", scanned, hidden.Count);
         return new RescanResponse(scanned, hidden.Count);
-    }
-
-    public async Task<RenameCheck> CheckRenameAsync(Guid userId, string requestedName)
-    {
-        var locked = await db.Users.AnyAsync(u => u.Id == userId && u.NameLockedAt != null);
-        if (locked) return RenameCheck.Locked;
-
-        // AutoHidden as well as Confirmed: renaming straight back to a hidden name would put it on
-        // show again while its case can no longer re-hide it (#194 review).
-        var normalized = ValidationService.NormalizeDisplayName(requestedName);
-        var removed = await db.NameModerationCases.AnyAsync(c =>
-            c.UserId == userId
-            && c.NameSnapshot == normalized
-            && (c.Status == ModerationCaseStatus.Confirmed || c.Status == ModerationCaseStatus.AutoHidden));
-        return removed ? RenameCheck.RemovedName : RenameCheck.Allowed;
     }
 
     /// <summary>Stored names predate #189's normalisation, so normalise before matching.</summary>
@@ -259,6 +245,22 @@ public sealed class ModerationService(
             $@"SELECT 1 FROM ""NameModerationCases"" WHERE ""Id"" = {caseId} FOR UPDATE");
         return await db.NameModerationCases.AsNoTracking().SingleOrDefaultAsync(c => c.Id == caseId);
     }
+
+    /// <summary>Increments and locks in SQL so the strike count cannot be lost to a concurrent write.</summary>
+    private async Task AddStrikeAsync(Guid userId, DateTime now)
+    {
+        await db.Users.Where(u => u.Id == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.ConfirmedNameStrikes, u => u.ConfirmedNameStrikes + 1));
+        await db.Users
+            .Where(u => u.Id == userId
+                && u.ConfirmedNameStrikes >= GameConstants.NameStrikesToLock
+                && u.NameLockedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.NameLockedAt, now));
+    }
+
+    private Task MarkHiddenAsync(Guid caseId, DateTime hiddenAt) =>
+        db.NameModerationCases.Where(c => c.Id == caseId)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.HiddenAt, hiddenAt));
 
     private Task ResolveAsync(Guid caseId, ModerationCaseStatus status, string moderatorUid, DateTime now, DateTime? hiddenAt) =>
         db.NameModerationCases.Where(c => c.Id == caseId).ExecuteUpdateAsync(s => s

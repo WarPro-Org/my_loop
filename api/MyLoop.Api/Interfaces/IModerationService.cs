@@ -39,11 +39,4 @@ public interface IModerationService
 
     /// <summary>Re-checks every visible name against the current blocklist and hides matches.</summary>
     Task<RescanResponse> RescanAsync(CancellationToken cancellationToken);
-
-    /// <summary>
-    /// Moderation gates on a rename: refused while confirmed strikes lock the name, or when a
-    /// moderator already removed this exact name from this player. <paramref name="requestedName"/>
-    /// must already have passed display-name validation.
-    /// </summary>
-    Task<RenameCheck> CheckRenameAsync(Guid userId, string requestedName);
 }
