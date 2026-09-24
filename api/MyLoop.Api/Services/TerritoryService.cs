@@ -20,13 +20,14 @@ public class TerritoryService : ITerritoryService
     private readonly GeocodingService _geocoding;
     private readonly IMissionService _missionService;
     private readonly IAchievementService _achievementService;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<TerritoryService> _logger;
 
     public TerritoryService(AppDbContext db, IHexGridService hexGrid, IGeoService geo,
         ITerritoryNotifier notifier, IPathValidationService pathValidator,
         IPushNotificationService pushService, GeocodingService geocoding,
         IMissionService missionService, IAchievementService achievementService,
-        ILogger<TerritoryService> logger)
+        IServiceScopeFactory scopeFactory, ILogger<TerritoryService> logger)
     {
         _db = db;
         _hexGrid = hexGrid;
@@ -37,6 +38,7 @@ public class TerritoryService : ITerritoryService
         _geocoding = geocoding;
         _missionService = missionService;
         _achievementService = achievementService;
+        _scopeFactory = scopeFactory;
         _logger = logger;
     }
 
@@ -88,18 +90,15 @@ public class TerritoryService : ITerritoryService
                 await _db.Database.ExecuteSqlRawAsync(
                     "SELECT pg_advisory_xact_lock({0})", BitConverter.ToInt64(userId.ToByteArray(), 0));
 
-                var todayStart = DateTime.UtcNow.Date;
                 // Resolve the session's Claim id first: this walk's batch-step drains may have
-                // already created the Claim earlier today, so exclude it from the per-day cap —
+                // already created the Claim earlier today, so it is excluded from the per-day cap —
                 // the cap counts distinct walks, not the batches/loop within one walk (#56).
                 var claimId = await ResolveSessionClaimId(userId, walkSessionId);
-                var todayClaimCount = await _db.Claims
-                    .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart && c.Id != claimId);
-                if (todayClaimCount >= GameConstants.MaxClaimsPerDay)
+                if (await IsDailyClaimCapReached(userId, claimId))
                 {
                     await transaction.RollbackAsync();
                     return new TerritoryCommit<ClaimResult>(
-                        ClaimResult.Failure($"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day"),
+                        ClaimResult.Failure(DailyClaimCapMessage),
                         Pushed: false, [], [], null, null, 0, null, []);
                 }
 
@@ -120,7 +119,7 @@ public class TerritoryService : ITerritoryService
             // only fills interior hexes and awards the one-time distance XP computed below;
             // it must not re-add DistanceKm or WalkDistance mission progress, which the
             // batch-step drain already accumulated during the walk.
-            await UpdateUserStats(userId, transfers);
+            await UpdateUserStats(userId, transfers, gameDay);
 
             // Record exploration for all captured cells (single batched upsert)
             var newExplorations = await RecordExplorationBatch(userId, cells.Select(c => c.CellId));
@@ -139,7 +138,10 @@ public class TerritoryService : ITerritoryService
                 missionResult = await _missionService.RecordProgress(userId, MissionType.CaptureHexes, newCells + stolenCells, gameDay);
             if (stolenCells > 0)
                 await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCells, gameDay);
-            await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, newCells + stolenCells, gameDay);
+            // CaptureInOneWalk is max-of-session (#108): pass the walk's cumulative captured total
+            // (this session's Claim, which already folds in the earlier batch-step trail), not just
+            // this loop's delta, so the mission reflects the whole walk.
+            await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, claim.CellCount, gameDay);
             // WalkDistance mission progress is recorded by the live batch-step path (#54),
             // not here, to avoid double-counting this walk's distance.
             if (newExplorations > 0)
@@ -277,14 +279,26 @@ public class TerritoryService : ITerritoryService
             // walkSessionId, so they upsert the same Claim instead of each adding a row.
             var claimId = await ResolveSessionClaimId(userId, walkSessionId);
 
+            // Enforce the daily cap on the batch-step path too (#87). It was previously only on the
+            // loop path, so the primary claiming route was uncapped. Checked inside the transaction
+            // (mirroring ProcessClaim) and counting distinct walks/day — the session's own Claim is
+            // excluded, so multiple batches of THIS walk never count as separate claims.
+            if (await IsDailyClaimCapReached(userId, claimId))
+            {
+                await transaction.RollbackAsync();
+                return new TerritoryCommit<BatchStepClaimResponse>(
+                    new BatchStepClaimResponse { RejectionReason = DailyClaimCapMessage },
+                    Pushed: false, [], [], null, null, 0, null, []);
+            }
+
             // Aggregate state across batch
             var results = new List<BatchStepResult>(points.Count);
             var transfers = new List<CellTransfer>();
             var capturedHexes = new List<HexCell>(); // for ownership broadcast
             var processedThisBatch = new HashSet<long>(); // dedupe same hex hit twice
+            var exploredCellIds = new HashSet<long>(); // recorded in ONE statement after the loop (#107)
             var newCellsCount = 0;
             var stolenCellsCount = 0;
-            var newExplorations = 0;
 
             // Build path for the synthetic Claim entity (stitches all points together)
             var pathPoints = points.Select(p => new[] { p.Lat, p.Lng }).ToArray();
@@ -314,7 +328,7 @@ public class TerritoryService : ITerritoryService
                 if (existing != null && existing.OwnerId == userId)
                 {
                     existing.LastRefreshedAt = DateTime.UtcNow;
-                    await RecordExploration(userId, cellId);
+                    exploredCellIds.Add(cellId);
                     processedThisBatch.Add(cellId);
                     results.Add(new BatchStepResult
                     {
@@ -340,7 +354,7 @@ public class TerritoryService : ITerritoryService
                 }
 
                 var cellCenter = _hexGrid.GetCellCenter(cellId);
-                var decayDays = await CalculateDecayDays(user, cellCenter.Lat, cellCenter.Lng);
+                var decayDays = CalculateDecayDays(user, cellCenter.Lat, cellCenter.Lng);
 
                 string? previousOwnerName = null;
                 bool wasStolen;
@@ -367,9 +381,7 @@ public class TerritoryService : ITerritoryService
                     newCellsCount++;
                 }
 
-                if (await RecordExploration(userId, cellId))
-                    newExplorations++;
-
+                exploredCellIds.Add(cellId);
                 processedThisBatch.Add(cellId);
                 capturedHexes.Add(hexCell);
 
@@ -386,6 +398,12 @@ public class TerritoryService : ITerritoryService
 
             var totalClaimedThisBatch = newCellsCount + stolenCellsCount;
 
+            // One ExploredCells statement for the whole batch (#107). The per-point upsert was
+            // up to 200 sequential round-trips inside this serializable transaction — seconds of
+            // pure RTT on cloud Postgres. The insert count preserves newExplorations semantics:
+            // distinct cells this batch that had no ExploredCells row yet.
+            var newExplorations = await RecordExplorationBatch(userId, exploredCellIds);
+
             // Real distance walked this slice (full GPS path, including travel over cells
             // already owned). Fixes HIGH-11: DistanceKm was never incremented on the
             // batch-step path, so the Distance achievement / leaderboard distance and the
@@ -398,11 +416,15 @@ public class TerritoryService : ITerritoryService
             // 5. Upsert the walk's single Claim (FK target for transfers, #56). CellCount
             // accumulates the net cells claimed across all of this walk's batches; AreaM2 is
             // derived from the canonical cell area, not the legacy 4234 literal.
+            // The claim is scoped to this block, so capture its cumulative count for the
+            // max-of-session CaptureInOneWalk mission recorded below (#108).
+            var walkCumulativeCells = 0;
             if (totalClaimedThisBatch > 0)
             {
                 var claim = await GetOrCreateSessionClaim(userId, claimId, pathPoints);
                 claim.CellCount += totalClaimedThisBatch;
                 claim.AreaM2 = claim.CellCount * GameConstants.CellAreaSquareMeters;
+                walkCumulativeCells = claim.CellCount;
 
                 // 6. Update user stats (atomic)
                 user.HexCount += totalClaimedThisBatch;
@@ -423,7 +445,9 @@ public class TerritoryService : ITerritoryService
                     userId, MissionType.CaptureHexes, totalClaimedThisBatch, gameDay);
                 if (stolenCellsCount > 0)
                     await _missionService.RecordProgress(userId, MissionType.StealHex, stolenCellsCount, gameDay);
-                await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, totalClaimedThisBatch, gameDay);
+                // Max-of-session (#108): the walk's cumulative captured total (persisted on the
+                // session Claim across this walk's batches), not just this batch's delta.
+                await _missionService.RecordProgress(userId, MissionType.CaptureInOneWalk, walkCumulativeCells, gameDay);
                 if (newExplorations > 0)
                     await _missionService.RecordProgress(userId, MissionType.ExploreNewArea, newExplorations, gameDay);
                 if (user.IsStreakActive)
@@ -566,14 +590,27 @@ public class TerritoryService : ITerritoryService
         return commit.Response;
     }
 
-    public async Task<List<TerritoryCellResponse>> GetTerritoriesInViewport(
+    public async Task<TerritoryViewportResult> GetTerritoriesInViewport(
         double minLat, double minLng, double maxLat, double maxLng)
     {
-        var filtered = await _db.TerritoryCells
-            .AsNoTracking()
+        // Bucket-first pruning per docs/architecture/spatial-model.md (#114): filter on the
+        // indexed res-3 ParentCellId set covering the bbox, then refine by center coords.
+        // ORDER BY CellId makes the capped result deterministic — an unordered Take let
+        // Postgres return a different arbitrary subset each poll, so dense-city viewports
+        // flickered as hexes popped in and out. Fetch one row past the cap to learn whether
+        // the viewport was truncated without a second COUNT query.
+        var regionIds = _hexGrid.GetRegionIdsForBbox(minLat, minLng, maxLat, maxLng).ToList();
+
+        // Empty = "viewport too wide to prune" (see IHexGridService) — coordinate filter only.
+        var cells = _db.TerritoryCells.AsNoTracking().AsQueryable();
+        if (regionIds.Count > 0)
+            cells = cells.Where(t => regionIds.Contains(t.ParentCellId));
+
+        var filtered = await cells
             .Where(t => t.CenterLat >= minLat && t.CenterLat <= maxLat
                      && t.CenterLng >= minLng && t.CenterLng <= maxLng)
-            .Take(GameConstants.MaxViewportCells)
+            .OrderBy(t => t.CellId)
+            .Take(GameConstants.MaxViewportCells + 1)
             .Select(t => new
             {
                 t.CellId, t.BoundaryJson, t.OwnerId,
@@ -586,17 +623,24 @@ public class TerritoryService : ITerritoryService
             })
             .ToListAsync();
 
-        return filtered.Select(t => new TerritoryCellResponse
+        return new TerritoryViewportResult
         {
-            CellId = t.CellId,
-            Boundary = JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
-            OwnerId = t.OwnerId,
-            OwnerColor = t.OwnerColor,
-            OwnerName = t.OwnerName,
-            CooldownExpiresAtUtc = t.CooldownExpiresAt,
-            ParentCellId = t.ParentCellId,
-            DecayProgress = ComputeDecayProgress(t.LastRefreshedAt, t.DecayDays),
-        }).ToList();
+            Truncated = filtered.Count > GameConstants.MaxViewportCells,
+            Cells = filtered
+                .Take(GameConstants.MaxViewportCells)
+                .Select(t => new TerritoryCellResponse
+                {
+                    CellId = t.CellId,
+                    Boundary = JsonSerializer.Deserialize<double[][]>(t.BoundaryJson),
+                    OwnerId = t.OwnerId,
+                    OwnerColor = t.OwnerColor,
+                    OwnerName = t.OwnerName,
+                    CooldownExpiresAtUtc = t.CooldownExpiresAt,
+                    ParentCellId = t.ParentCellId,
+                    DecayProgress = ComputeDecayProgress(t.LastRefreshedAt, t.DecayDays),
+                })
+                .ToList(),
+        };
     }
 
     /// <summary>
@@ -626,7 +670,10 @@ public class TerritoryService : ITerritoryService
         var since = DateTime.UtcNow.AddDays(-clampedDays);
 
         var stolen = await _db.CellTransfers
-            .Where(t => t.FromUserId == userId && t.TransferredAt >= since)
+            // Decay releases write FromUserId == ToUserId audit rows (#104) — losing a hex
+            // to the reaper is not a theft and must not appear in the revenge list.
+            .Where(t => t.FromUserId == userId && t.Reason != TransferReason.Decay
+                     && t.TransferredAt >= since)
             .OrderByDescending(t => t.TransferredAt)
             .Select(t => new StolenCellDetail
             {
@@ -744,7 +791,7 @@ public class TerritoryService : ITerritoryService
         }).ToList();
     }
 
-    public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId, double lat, double lng)
+    public async Task<List<ExplorationNeighborhood>> GetExplorationStats(Guid userId)
     {
         // Group by res-8 neighborhood — use average of actual cell centers for geocoding
         var areas = await _db.ExploredCells
@@ -774,15 +821,30 @@ public class TerritoryService : ITerritoryService
             .Select(g => new { NeighborhoodId = g.Key, OwnedCount = g.Count() })
             .ToDictionaryAsync(x => x.NeighborhoodId, x => x.OwnedCount);
 
-        // Geocode neighborhoods in parallel-safe manner:
-        // First pass: resolve names (cached hits are instant, uncached queued)
+        // Resolve area names from the persisted, shared-across-all-users cache instead of calling
+        // Nominatim inline on this hot path (`/game-state` — every login and every walk-end,
+        // ML-ERR-024): a neighborhood not yet in the table gets an immediate lat/lng fallback
+        // name here, and the real name is resolved in the background so the NEXT caller —
+        // themselves or anyone else who has explored the same neighborhood — gets it for free.
+        var neighborhoodIds = areas.Select(a => a.NeighborhoodId).ToList();
+        var persistedNames = await _db.NeighborhoodNames
+            .AsNoTracking()
+            .Where(n => neighborhoodIds.Contains(n.NeighborhoodId))
+            .ToDictionaryAsync(n => n.NeighborhoodId, n => n.AreaName);
+
         var results = new List<ExplorationNeighborhood>();
-        var geocodeTasks = new List<(int Index, Task<string> Task)>();
+        var unresolved = new List<(long NeighborhoodId, double Lat, double Lng)>();
 
         foreach (var a in areas.OrderByDescending(a => a.ExploredCount))
         {
             var percent = Math.Round(a.ExploredCount * 100.0 / GameConstants.CellsPerNeighborhood, 1);
             ownedByNeighborhood.TryGetValue(a.NeighborhoodId, out var owned);
+
+            if (!persistedNames.TryGetValue(a.NeighborhoodId, out var areaName))
+            {
+                areaName = GeocodingService.FallbackName(a.AvgLat, a.AvgLng);
+                unresolved.Add((a.NeighborhoodId, a.AvgLat, a.AvgLng));
+            }
 
             results.Add(new ExplorationNeighborhood
             {
@@ -793,32 +855,12 @@ public class TerritoryService : ITerritoryService
                 OwnedCount = owned,
                 TotalCount = GameConstants.CellsPerNeighborhood,
                 Percent = Math.Min(percent, 100.0),
-                AreaName = "", // Will be filled below
+                AreaName = areaName,
             });
-
-            geocodeTasks.Add((results.Count - 1, _geocoding.GetAreaName(a.AvgLat, a.AvgLng)));
         }
 
-        // Await all geocoding (throttled internally, but cached hits resolve instantly)
-        // Cap at 5 seconds total — return what we have if Nominatim is slow
-        var allNames = Task.WhenAll(geocodeTasks.Select(t => t.Task));
-        if (await Task.WhenAny(allNames, Task.Delay(5000)) == allNames)
-        {
-            var names = await allNames;
-            for (int i = 0; i < geocodeTasks.Count; i++)
-                results[geocodeTasks[i].Index].AreaName = names[i];
-        }
-        else
-        {
-            // Timeout — fill in whatever completed
-            for (int i = 0; i < geocodeTasks.Count; i++)
-            {
-                if (geocodeTasks[i].Task.IsCompletedSuccessfully)
-                    results[geocodeTasks[i].Index].AreaName = geocodeTasks[i].Task.Result;
-                else
-                    results[geocodeTasks[i].Index].AreaName = $"Area {i + 1}";
-            }
-        }
+        if (unresolved.Count > 0)
+            ResolveNeighborhoodNamesInBackground(unresolved);
 
         // Merge neighborhoods that geocode to the same area name
         var merged = results
@@ -838,6 +880,45 @@ public class TerritoryService : ITerritoryService
             .ToList();
 
         return merged;
+    }
+
+    /// <summary>
+    /// Resolves and persists names for neighborhoods not yet in <see cref="AppDbContext.NeighborhoodNames"/>,
+    /// detached from the request that triggered it (fire-and-forget — <see cref="GetExplorationStats"/>
+    /// has already returned its response by the time this runs). Uses its own DI scope because the
+    /// request's <see cref="AppDbContext"/> is disposed once the HTTP response completes; <see cref="_geocoding"/>
+    /// and <see cref="_logger"/> are safe to reuse past that point since both are process-lifetime.
+    /// A failed lookup is logged and simply leaves the neighborhood unresolved for the next caller to retry.
+    /// </summary>
+    private void ResolveNeighborhoodNamesInBackground(List<(long NeighborhoodId, double Lat, double Lng)> unresolved)
+    {
+        _ = Task.Run(async () =>
+        {
+            foreach (var (neighborhoodId, geoLat, geoLng) in unresolved)
+            {
+                try
+                {
+                    var name = await _geocoding.GetAreaName(geoLat, geoLng);
+
+                    using var scope = _scopeFactory.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    // Upsert: two concurrent requests can race to resolve the same neighborhood
+                    // for the first time; whichever commits first wins and the second is a
+                    // harmless duplicate write, not a constraint violation.
+                    await db.Database.ExecuteSqlAsync($"""
+                        INSERT INTO "NeighborhoodNames" ("NeighborhoodId", "AreaName", "ResolvedAt")
+                        VALUES ({neighborhoodId}, {name}, {DateTime.UtcNow})
+                        ON CONFLICT ("NeighborhoodId")
+                        DO UPDATE SET "AreaName" = EXCLUDED."AreaName", "ResolvedAt" = EXCLUDED."ResolvedAt"
+                        """);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex,
+                        "Background neighborhood-name resolution failed for {NeighborhoodId}", neighborhoodId);
+                }
+            }
+        });
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -931,6 +1012,26 @@ public class TerritoryService : ITerritoryService
     // of fragmenting into one row per drained batch plus a loop row.
     // ────────────────────────────────────────────────────────────────────────────
 
+    /// <summary>Rejection message shared by both claim paths when the daily cap is hit.</summary>
+    private static string DailyClaimCapMessage =>
+        $"Daily limit reached — max {GameConstants.MaxClaimsPerDay} claims per day";
+
+    /// <summary>
+    /// True when the user has already reached <see cref="GameConstants.MaxClaimsPerDay"/> distinct
+    /// walks today. One walk = one Claim (#56), so this counts today's Claims excluding this
+    /// session's own Claim — the loop and every batch drain of a single walk must not each count.
+    /// The single source of truth for the cap, shared by <c>ProcessClaim</c> and
+    /// <c>ProcessBatchStepClaim</c>; call inside the claim transaction so the count is consistent
+    /// with concurrent claims.
+    /// </summary>
+    private async Task<bool> IsDailyClaimCapReached(Guid userId, Guid sessionClaimId)
+    {
+        var todayStart = DateTime.UtcNow.Date;
+        var todayClaimCount = await _db.Claims
+            .CountAsync(c => c.UserId == userId && c.CreatedAt >= todayStart && c.Id != sessionClaimId);
+        return todayClaimCount >= GameConstants.MaxClaimsPerDay;
+    }
+
     /// <summary>
     /// Resolves the Claim id that should record this walk. Empty (older client) → a fresh id,
     /// so each batch stays a standalone claim as before. A supplied id that already belongs to
@@ -998,7 +1099,7 @@ public class TerritoryService : ITerritoryService
             var cellCenter = _hexGrid.GetCellCenter(hexCell.CellId);
 
             // Calculate per-cell decay based on geographic comparison
-            var cellDecayDays = await CalculateDecayDays(assignUser, cellCenter.Lat, cellCenter.Lng);
+            var cellDecayDays = CalculateDecayDays(assignUser, cellCenter.Lat, cellCenter.Lng);
 
             if (existingCells.TryGetValue(hexCell.CellId, out var existing))
             {
@@ -1079,39 +1180,26 @@ public class TerritoryService : ITerritoryService
     /// <summary>
     /// Calculates decay days for a hex at (lat, lng) relative to the user's home.
     /// - If user has no home set → default 7 days (they need to set home in onboarding).
-    /// - If within 30km of home → 7 days (skip geocoding, definitely same city).
-    /// - If farther → reverse-geocode and compare city/state/country/continent.
-    /// Geocoding results are cached per coordinate bucket so repeated nearby hexes are fast.
+    /// - Otherwise, a pure-distance ladder (no I/O) approximates the city/region/country/
+    ///   continent tiers. This intentionally does NOT reverse-geocode: it used to call
+    ///   GeocodingService per cell here, but that awaited an externally-throttled (1
+    ///   req/1.1s) Nominatim call while holding the per-user advisory lock inside the
+    ///   serializable claim transaction — a 60-cell batch could hold the transaction open
+    ///   for a minute and monopolize the app-wide geocoding throttle (ML-ERR-004).
     /// </summary>
-    private async Task<int> CalculateDecayDays(User? user, double hexLat, double hexLng)
+    private int CalculateDecayDays(User? user, double hexLat, double hexLng)
     {
         // No home set → use default (user hasn't completed onboarding)
         if (user == null || user.HomeLat == null || user.HomeLng == null)
             return GameConstants.DecayDays;
 
-        // Fast path: within 30km of home = definitely same city, no geocoding needed
         var distanceKm = _geo.HaversineMeters(
             user.HomeLat.Value, user.HomeLng.Value, hexLat, hexLng) / 1000.0;
 
-        if (distanceKm < GameConstants.SameCityDistanceKm)
-            return GameConstants.DecayDays;
-
-        // Far from home → geocode the hex location and compare against user's home
-        // GeocodingService caches results, so repeated calls for nearby hexes are free
-        var hexLocation = await _geocoding.GetLocationInfo(hexLat, hexLng);
-
-        if (hexLocation.IsEmpty)
-        {
-            // Geocoding failed — fall back to distance-based estimate
-            return GameConstants.GetDecayDaysForDistance(distanceKm);
-        }
-
-        return GameConstants.GetDecayDaysFromLocation(
-            user.HomeCity, user.HomeState, user.HomeCountry, user.HomeContinent,
-            hexLocation.City, hexLocation.State, hexLocation.Country, hexLocation.Continent);
+        return GameConstants.GetDecayDaysForDistance(distanceKm);
     }
 
-    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers)
+    private async Task UpdateUserStats(Guid userId, List<CellTransfer> transfers, DateOnly gameDay)
     {
         var user = await _db.Users.FindAsync(userId);
         if (user == null) return;
@@ -1125,14 +1213,12 @@ public class TerritoryService : ITerritoryService
         // this walk's full GPS distance before this loop-claim runs, so re-adding it here
         // would double-count distance on every walk-and-loop journey.
 
-        UpdateStreak(user);
+        UpdateStreak(user, gameDay);
         await DecrementVictimHexCounts(userId, transfers);
     }
 
-    private static void UpdateStreak(User user)
-    {
-        UpdateStreak(user, DateOnly.FromDateTime(DateTime.UtcNow));
-    }
+    // No parameterless UpdateStreak overload: every caller must pass the resolved game day
+    // (GameDay.Resolve), or the loop and batch paths drift onto different "todays" (#106, #88).
 
     /// <summary>
     /// Updates the user's streak using the supplied date as "today".
@@ -1168,20 +1254,6 @@ public class TerritoryService : ITerritoryService
             user.MaxStreak = user.Streak;
     }
 
-
-    private async Task<bool> RecordExploration(Guid userId, long cellId)
-    {
-        var neighborhoodId = _hexGrid.GetNeighborhoodId(cellId);
-        var now = DateTime.UtcNow;
-
-        // Upsert: INSERT ... ON CONFLICT DO NOTHING — single round-trip, no race conditions
-        var rowsAffected = await _db.Database.ExecuteSqlAsync($"""
-            INSERT INTO "ExploredCells" ("UserId", "CellId", "NeighborhoodId", "FirstVisitedAt")
-            VALUES ({userId}, {cellId}, {neighborhoodId}, {now})
-            ON CONFLICT ("UserId", "CellId") DO NOTHING
-            """);
-        return rowsAffected > 0;
-    }
 
     private async Task DecrementVictimHexCounts(Guid userId, List<CellTransfer> transfers)
     {

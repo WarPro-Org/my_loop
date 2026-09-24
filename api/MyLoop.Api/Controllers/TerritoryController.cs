@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Interfaces;
+using MyLoop.Api.Services;
 
 namespace MyLoop.Api.Controllers;
 
@@ -16,6 +18,11 @@ namespace MyLoop.Api.Controllers;
 [Authorize]
 public class TerritoryController : ControllerBase
 {
+    private static readonly string InvalidViewportMessage =
+        "Invalid viewport: coordinates must be finite, " +
+        $"lat within [{GameConstants.MinLatitudeDegrees}, {GameConstants.MaxLatitudeDegrees}], " +
+        $"lng within [{GameConstants.MinLongitudeDegrees}, {GameConstants.MaxLongitudeDegrees}], and min <= max";
+
     private readonly ITerritoryService _territoryService;
     private readonly ICurrentUser _currentUser;
     private readonly ILogger<TerritoryController> _logger;
@@ -38,8 +45,16 @@ public class TerritoryController : ControllerBase
         [FromQuery] double maxLat,
         [FromQuery] double maxLng)
     {
-        var territories = await _territoryService.GetTerritoriesInViewport(minLat, minLng, maxLat, maxLng);
-        return Ok(territories);
+        // The double binder accepts NaN/Infinity/huge values; reject them before they reach
+        // the region-set computation, which must only ever see a real, bounded bbox (#114).
+        if (!ViewportBounds.IsValid(minLat, minLng, maxLat, maxLng))
+            return BadRequest(InvalidViewportMessage);
+
+        var viewport = await _territoryService.GetTerritoriesInViewport(minLat, minLng, maxLat, maxLng);
+        // The body stays the bare cell array the mobile client already parses; truncation is
+        // additive metadata in a header so existing clients are unaffected (#114).
+        Response.Headers["X-Viewport-Truncated"] = viewport.Truncated ? "true" : "false";
+        return Ok(viewport.Cells);
     }
 
     /// <summary>
@@ -79,17 +94,14 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get exploration stats for neighborhoods near a GPS point (private progress).
+    /// Get exploration stats for all of a user's explored neighborhoods (private progress).
     /// </summary>
     [HttpGet("exploration/{userId:guid}")]
-    public async Task<IActionResult> GetExplorationStats(
-        [FromRoute] Guid userId,
-        [FromQuery] double lat,
-        [FromQuery] double lng)
+    public async Task<IActionResult> GetExplorationStats([FromRoute] Guid userId)
     {
         if (await DenySelf(userId) is { } deny) return deny;
 
-        var stats = await _territoryService.GetExplorationStats(userId, lat, lng);
+        var stats = await _territoryService.GetExplorationStats(userId);
         return Ok(stats);
     }
 

@@ -179,6 +179,10 @@ class MockWalkOverlay extends ConsumerWidget {
           fontSize: 12,
         ),
       ),
+      // Reads the one-shot `error` during build, which `copyWith` warns against:
+      // the reason shows for about a second, until the next tick clears it.
+      // Accepted because this is a debug-only HUD and the durable signal,
+      // rejectionCount, is shown above. Do not copy this into player-facing UI.
       if (journey.rejectionCount > 0 && journey.error != null)
         Padding(
           padding: const EdgeInsets.only(top: 2),

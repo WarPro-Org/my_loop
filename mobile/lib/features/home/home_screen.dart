@@ -17,6 +17,7 @@ import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/profile_cache.dart';
 import 'package:myloop/shared/services/territory_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 
 /// Global key so child widgets (like home_tab) can open the end drawer.
@@ -71,7 +72,8 @@ class _ProfileDrawer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider);
-    final title = getTitleForHexes(profile.hexCount);
+    final hexCount = ref.watch(profileSliceProvider.select((s) => s.hexCount));
+    final title = getTitleForHexes(hexCount);
     final avatarColor = Color(int.parse(profile.color.replaceFirst('#', ''), radix: 16) | 0xFF000000);
 
     return Drawer(
@@ -212,6 +214,7 @@ class _ProfileDrawer extends ConsumerWidget {
             onTap: () async {
               Navigator.pop(context);
               ref.read(userProfileProvider.notifier).clear();
+              ref.invalidate(profileSliceProvider);
               await ref.read(authServiceProvider).signOut();
               if (context.mounted) context.go('/login');
             },
@@ -316,6 +319,7 @@ class _ProfileDrawer extends ConsumerWidget {
               final api = ref.read(apiServiceProvider);
               final uid = profile.userId;
               if (uid == null) return;
+              ref.invalidate(profileSliceProvider);
               await ProfileCache.clear();
               await GameStateCache.clear();
               await TerritoryCache.clear();

@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace MyLoop.Api.Constants;
 
 /// <summary>
@@ -12,6 +14,11 @@ public static class GameConstants
     public const double MaxClaimAreaSquareMeters = 5_000_000.0; // 5 km²
     /// <summary>Hard cap on cells assigned in one claim (secondary guard alongside area).</summary>
     public const int MaxCellsPerClaim = 3000;
+    /// <summary>
+    /// Max distinct walks (Claims) per day, counted by UTC day ON PURPOSE: this is an
+    /// anti-abuse bound with a fixed window immune to client-supplied local dates — unlike
+    /// streaks and missions, which follow the player's local day via GameDay.Resolve (#106).
+    /// </summary>
     public const int MaxClaimsPerDay = 20;
     public const double LoopClosureDistanceMeters = 50.0;
     public const int MinLoopPoints = 20;
@@ -33,6 +40,12 @@ public static class GameConstants
     public const int H3Resolution = 11;
     public const int H3ParentResolution = 3;
     public const int H3NeighborhoodResolution = 8;
+    /// <summary>
+    /// Viewport bbox span (per axis, degrees) beyond which region pruning is skipped:
+    /// a wider box would need thousands of res-3 parents, and a giant ANY() array pushes
+    /// the planner off the index — the coordinate filter alone serves zoomed-out maps (#114).
+    /// </summary>
+    public const double MaxRegionPruneSpanDegrees = 10.0;
     public const double CellAreaSquareMeters = 2_150.0;
 
     // --- Decay ---
@@ -48,44 +61,9 @@ public static class GameConstants
     public const int DecayDaysOtherContinent = 90;
 
     /// <summary>
-    /// Distance threshold (km) below which we skip geocoding and assume "same city".
-    /// </summary>
-    public const double SameCityDistanceKm = 30;
-
-    /// <summary>
-    /// Returns decay days based on geographic comparison between user's home and hex location.
-    /// Uses actual administrative boundaries (city/state/country/continent).
-    /// </summary>
-    public static int GetDecayDaysFromLocation(
-        string homeCity, string homeState, string homeCountry, string homeContinent,
-        string hexCity, string hexState, string hexCountry, string hexContinent)
-    {
-        // Same city → local decay
-        if (!string.IsNullOrEmpty(homeCity) && !string.IsNullOrEmpty(hexCity)
-            && string.Equals(homeCity, hexCity, StringComparison.OrdinalIgnoreCase))
-            return DecayDays;
-
-        // Same state/region → other city decay
-        if (!string.IsNullOrEmpty(homeState) && !string.IsNullOrEmpty(hexState)
-            && string.Equals(homeState, hexState, StringComparison.OrdinalIgnoreCase))
-            return DecayDaysOtherCity;
-
-        // Same country → other region decay
-        if (!string.IsNullOrEmpty(homeCountry) && !string.IsNullOrEmpty(hexCountry)
-            && string.Equals(homeCountry, hexCountry, StringComparison.OrdinalIgnoreCase))
-            return DecayDaysOtherRegion;
-
-        // Same continent → other country decay
-        if (!string.IsNullOrEmpty(homeContinent) && !string.IsNullOrEmpty(hexContinent)
-            && string.Equals(homeContinent, hexContinent, StringComparison.OrdinalIgnoreCase))
-            return DecayDaysOtherCountry;
-
-        // Different continent
-        return DecayDaysOtherContinent;
-    }
-
-    /// <summary>
-    /// Fallback: returns decay days based on raw distance when geocoding is unavailable.
+    /// Returns decay days from the great-circle distance between a hex and the user's home,
+    /// approximating the city/region/country/continent tiers without reverse-geocoding
+    /// (ML-ERR-004 — geocoding is I/O and must never run inside the claim transaction).
     /// </summary>
     public static int GetDecayDaysForDistance(double distanceKm)
     {
@@ -113,6 +91,12 @@ public static class GameConstants
 
     // --- Viewport / Query Limits ---
     public const int MaxViewportCells = 500;
+    /// <summary>Valid WGS84 latitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLatitudeDegrees = -90.0;
+    public const double MaxLatitudeDegrees = 90.0;
+    /// <summary>Valid WGS84 longitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLongitudeDegrees = -180.0;
+    public const double MaxLongitudeDegrees = 180.0;
     public const int MaxUserTerritoryCells = 2000;
     public const int MaxPreviewPathLength = 10_000;
 
@@ -148,7 +132,27 @@ public static class GameConstants
     // --- Validation ---
     public const int MinDisplayNameLength = 2;
     public const int MaxDisplayNameLength = 20;
-    public const int MaxAvatarId = 50;
+
+    /// <summary>
+    /// Number of avatars in the client catalogue — mirrors <c>avatarEmojis</c> in
+    /// mobile/lib/shared/widgets/avatar_widget.dart; valid ids are 0..AvatarCount-1.
+    /// Ids are positional and permanent: append only, never reorder or delete, and bump
+    /// this in the same change. The client clamps unknown ids, so a wider server range
+    /// stores values the app renders as a different avatar (DR-001, #188).
+    /// </summary>
+    public const int AvatarCount = 12;
+
+    /// <summary>
+    /// Allowed player colours — mirrors <c>playerColors</c> in
+    /// mobile/lib/shared/widgets/color_picker_row.dart, compared exactly (the client sends
+    /// these uppercase literals and matches the stored value case-sensitively). A free-form
+    /// hex let players pick invisible or rival-matching territory colours (DR-001, #188).
+    /// </summary>
+    public static readonly FrozenSet<string> PlayerColors = new[]
+    {
+        "#00D4AA", "#1CB0F6", "#FF4B4B", "#FF9600",
+        "#A560E8", "#FFC800", "#FF6B81", "#2ED8A3",
+    }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
     /// Minimum days between home-location changes. Home drives decay distance and the

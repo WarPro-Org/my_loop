@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
+using MyLoop.Api.Entities;
+using MyLoop.Api.Interfaces;
 
 namespace MyLoop.Api.Services;
 
@@ -50,12 +52,18 @@ public class DecayCleanupService : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var notifier = scope.ServiceProvider.GetRequiredService<ITerritoryNotifier>();
 
-        var deleted = await ReleaseDecayedCellsAsync(db, DecayBatchSize, ct);
+        var released = await ReleaseDecayedCellsAsync(db, DecayBatchSize, ct);
 
-        if (deleted > 0)
+        if (released.Count > 0)
         {
-            _logger.LogInformation("Decay cleanup: released {Count} cells", deleted);
+            _logger.LogInformation("Decay cleanup: released {Count} cells", released.Count);
+            // Post-commit side effect (database-retry-resilience): the delete is durable,
+            // so a broadcast failure can't be retried into a double-release. Clients that
+            // miss it self-heal on their next viewport poll.
+            await notifier.NotifyHexesReleasedAsync(ToReleaseEvents(released));
+            await TryPushOwnerStatsAsync(db, notifier, released, ct);
         }
 
         var brokenStreaks = await BreakStaleStreaksAsync(db, GameConstants.StreakBreakUtcGraceDays, ct);
@@ -63,6 +71,54 @@ public class DecayCleanupService : BackgroundService
         {
             _logger.LogInformation("Streak cleanup: broke {Count} stale streaks", brokenStreaks);
         }
+    }
+
+    /// <summary>
+    /// Owner stats push is best-effort: a failure must not skip this run's streak cleanup,
+    /// and the client's next game-state fetch corrects a missed push anyway.
+    /// </summary>
+    private async Task TryPushOwnerStatsAsync(
+        AppDbContext db, ITerritoryNotifier notifier, IReadOnlyCollection<DecayedCellRow> released,
+        CancellationToken ct)
+    {
+        try
+        {
+            await PushOwnerStatsAsync(db, notifier, released, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Decay cleanup: failed to push post-release owner stats");
+        }
+    }
+
+    /// <summary>
+    /// Pushes each affected owner's post-release ABSOLUTE stats (UserStatsDelta) to their
+    /// personal group, so their HexCount display drops with the release instead of staying
+    /// stale until the next game-state fetch — parity with the theft path's victim push.
+    /// Must run after the release commits and outside its retried block
+    /// (database-retry-resilience rule 5). Absolute values make a duplicate or reordered
+    /// push harmless.
+    /// </summary>
+    internal static async Task PushOwnerStatsAsync(
+        AppDbContext db, ITerritoryNotifier notifier, IEnumerable<DecayedCellRow> released,
+        CancellationToken ct)
+    {
+        var ownerIds = released.Select(r => r.OwnerId).Distinct().ToArray();
+        if (ownerIds.Length == 0) return;
+
+        var owners = await db.Users.AsNoTracking()
+            .Where(u => ownerIds.Contains(u.Id))
+            .Select(u => new
+            {
+                u.Id,
+                Delta = new UserStatsDelta(
+                    u.HexCount, u.TotalHexesCaptured, u.TotalHexesStolen,
+                    u.Streak, u.IsStreakActive, u.DistanceKm),
+            })
+            .ToListAsync(ct);
+
+        foreach (var owner in owners)
+            await notifier.NotifyUserStatsAsync(owner.Id, owner.Delta);
     }
 
     /// <summary>
@@ -89,43 +145,91 @@ public class DecayCleanupService : BackgroundService
     }
 
     /// <summary>
-    /// Releases up to <paramref name="batchSize"/> decayed cells and decrements their owners'
-    /// HexCount in a SINGLE atomic statement, both derived from the same MATERIALIZED
-    /// <c>decayed</c> set. Returns the number of cells released.
+    /// Releases up to <paramref name="batchSize"/> decayed cells: deletes them, decrements
+    /// their owners' HexCount, and writes Reason=Decay CellTransfer audit rows — all inside
+    /// one transaction acting on the same locked row set. Returns the released cells so the
+    /// caller can broadcast HexesReleased AFTER the commit (#104).
     ///
-    /// This is the fix for the HexCount drift bug: the previous version decremented HexCount for
-    /// EVERY currently-decayed cell but deleted only a capped batch, so any decayed cell beyond
-    /// the cap survived and was decremented again on the next run — permanently under-counting
-    /// heavy owners. Here the decrement (the <c>upd</c> data-modifying CTE) and the delete (the
-    /// top-level statement) act on exactly the rows in <c>decayed</c>, so an owner's HexCount is
-    /// only ever reduced by the number of their cells actually released this run.
+    /// The batch is selected FOR UPDATE first (indexed DecayAt range scan — the old
+    /// per-row interval predicate was unindexable), so an owner refreshing a cell mid-run
+    /// can't resurrect a row between the select and the delete. The decrement, audit
+    /// insert, and delete then act on exactly that set, preserving the HexCount-drift fix
+    /// (#78): an owner is only ever decremented by the number of their cells actually
+    /// deleted this run.
     ///
-    /// Single statement ⇒ one implicit transaction ⇒ delete and decrement can never diverge, and
-    /// it participates in the configured Npgsql retry strategy automatically. <c>batchSize</c> is
-    /// passed as a bound SQL parameter (not string-interpolated), so the query is injection-safe.
+    /// Accepted gap: if a commit lands but its acknowledgement is lost and the strategy
+    /// re-runs the block, the retry returns only still-decayed rows, so the first batch's
+    /// HexesReleased broadcast is never sent. The database stays exact (no double
+    /// decrement, no duplicate audit rows); clients drop the ghosts on their next poll.
     /// </summary>
-    internal static Task<int> ReleaseDecayedCellsAsync(AppDbContext db, int batchSize, CancellationToken ct) =>
-        db.Database.ExecuteSqlRawAsync("""
-            WITH decayed AS MATERIALIZED (
-                SELECT "CellId", "OwnerId"
+    internal static async Task<List<DecayedCellRow>> ReleaseDecayedCellsAsync(
+        AppDbContext db, int batchSize, CancellationToken ct)
+    {
+        var strategy = db.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
+        {
+            db.ChangeTracker.Clear();
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+
+            var decayed = await db.Database.SqlQueryRaw<DecayedCellRow>("""
+                SELECT "CellId", "OwnerId", "ParentCellId"
                 FROM "TerritoryCells"
-                WHERE "LastRefreshedAt" + ("DecayDays" || ' days')::interval < NOW()
+                WHERE "DecayAt" < (NOW() AT TIME ZONE 'UTC')
+                ORDER BY "DecayAt"
                 LIMIT {0}
-            ),
-            counts AS (
-                SELECT "OwnerId", COUNT(*) AS cnt
-                FROM decayed
-                GROUP BY "OwnerId"
-            ),
-            upd AS (
-                UPDATE "Users" u
-                SET "HexCount" = GREATEST(0, u."HexCount" - c.cnt)
-                FROM counts c
-                WHERE u."Id" = c."OwnerId"
-                RETURNING 1
-            )
-            DELETE FROM "TerritoryCells" t
-            USING decayed d
-            WHERE t."CellId" = d."CellId"
-            """, new object[] { batchSize }, ct);
+                FOR UPDATE
+                """, batchSize).ToListAsync(ct);
+
+            if (decayed.Count == 0)
+            {
+                await transaction.RollbackAsync(ct);
+                return decayed;
+            }
+
+            var cellIds = decayed.Select(d => d.CellId).ToArray();
+            await db.Database.ExecuteSqlRawAsync("""
+                WITH decayed AS MATERIALIZED (
+                    SELECT "CellId", "OwnerId"
+                    FROM "TerritoryCells"
+                    WHERE "CellId" = ANY({0})
+                ),
+                counts AS (
+                    SELECT "OwnerId", COUNT(*) AS cnt
+                    FROM decayed
+                    GROUP BY "OwnerId"
+                ),
+                upd AS (
+                    UPDATE "Users" u
+                    SET "HexCount" = GREATEST(0, u."HexCount" - c.cnt)
+                    FROM counts c
+                    WHERE u."Id" = c."OwnerId"
+                    RETURNING 1
+                ),
+                audit AS (
+                    INSERT INTO "CellTransfers"
+                        ("Id", "CellId", "FromUserId", "ToUserId", "ClaimId", "TransferredAt", "Reason")
+                    SELECT gen_random_uuid(), d."CellId", d."OwnerId", d."OwnerId", {1}, NOW(), {2}
+                    FROM decayed d
+                    RETURNING 1
+                )
+                DELETE FROM "TerritoryCells" t
+                USING decayed d
+                WHERE t."CellId" = d."CellId"
+                """, new object[] { cellIds, Guid.Empty, (int)TransferReason.Decay }, ct);
+
+            await transaction.CommitAsync(ct);
+            return decayed;
+        });
+    }
+
+    internal static List<HexReleasedEvent> ToReleaseEvents(IEnumerable<DecayedCellRow> released) =>
+        released.Select(r => new HexReleasedEvent(r.CellId.ToString(), r.ParentCellId)).ToList();
+}
+
+/// <summary>A cell released by the decay reaper (see ReleaseDecayedCellsAsync).</summary>
+public class DecayedCellRow
+{
+    public long CellId { get; set; }
+    public Guid OwnerId { get; set; }
+    public long ParentCellId { get; set; }
 }

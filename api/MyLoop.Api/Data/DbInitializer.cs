@@ -28,7 +28,7 @@ public static class DbInitializer
         DatabaseSeeder.EnsureTodayLeaderboard(db);
     }
 
-    private static void ApplySchemaPatches(AppDbContext db, IHexGridService hexGrid, ILogger logger)
+    internal static void ApplySchemaPatches(AppDbContext db, IHexGridService hexGrid, ILogger logger)
     {
         // The DDL is idempotent (IF NOT EXISTS) because EnsureCreated won't add columns/tables to an
         // existing database. A throw here is unlikely to be a benign "already exists" — surface it
@@ -41,6 +41,11 @@ public static class DbInitializer
             ApplyDecayAndMissionsSchema(db);
             ApplyAchievementsSchema(db);
             ApplyTerritoryIndexes(db);
+            ApplyNeighborhoodNamesSchema(db);
+            // Last on purpose: adding the stored DecayAt column rewrites TerritoryCells under
+            // an ACCESS EXCLUSIVE lock, the heaviest and likeliest-to-fail step. Running it
+            // last means a failure here cannot skip the cheaper patches above.
+            ApplyDecayReleaseSchema(db);
         }
         catch (Exception ex)
         {
@@ -147,9 +152,32 @@ public static class DbInitializer
                 ""Description"" text NOT NULL DEFAULT '',
                 CONSTRAINT ""PK_DailyMissions"" PRIMARY KEY (""Id"")
             )");
+        ApplyDailyMissionUniqueIndexPatch(db);
+    }
+
+    /// <summary>
+    /// One mission per type per user-day (#131). The old non-unique (UserId, Date) index let two
+    /// concurrent first-of-day generations both insert, yielding 6 missions and double XP surface.
+    /// Collapses any existing duplicates (keeping the row with the most progress, then the lowest
+    /// Id) before swapping the index, so the unique create can't fail. Idempotent — safe to run
+    /// on every startup and on fresh databases where EnsureCreated already built the unique index.
+    /// </summary>
+    internal static void ApplyDailyMissionUniqueIndexPatch(AppDbContext db)
+    {
         db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_DailyMissions_UserId_Date""
-            ON ""DailyMissions"" (""UserId"", ""Date"")");
+            DELETE FROM ""DailyMissions"" d
+            USING ""DailyMissions"" k
+            WHERE d.""UserId"" = k.""UserId""
+              AND d.""Date"" = k.""Date""
+              AND d.""Type"" = k.""Type""
+              AND d.""Id"" <> k.""Id""
+              AND (d.""CurrentProgress"" < k.""CurrentProgress""
+                   OR (d.""CurrentProgress"" = k.""CurrentProgress"" AND d.""Id"" > k.""Id""))");
+        db.Database.ExecuteSqlRaw(
+            @"DROP INDEX IF EXISTS ""IX_DailyMissions_UserId_Date""");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE UNIQUE INDEX IF NOT EXISTS ""IX_DailyMissions_UserId_Date_Type""
+            ON ""DailyMissions"" (""UserId"", ""Date"", ""Type"")");
     }
 
     private static void ApplyAchievementsSchema(AppDbContext db)
@@ -171,7 +199,7 @@ public static class DbInitializer
             ON ""UserAchievements"" (""UserId"")");
     }
 
-    private static void ApplyTerritoryIndexes(AppDbContext db)
+    internal static void ApplyTerritoryIndexes(AppDbContext db)
     {
         // NeighborhoodId on TerritoryCells for per-area ownership queries.
         db.Database.ExecuteSqlRaw(
@@ -186,9 +214,58 @@ public static class DbInitializer
             ON ""TerritoryCells"" USING BRIN (""CenterLat"", ""CenterLng"")
             WITH (pages_per_range = 128)");
 
-        // Index for the decay cleanup query (avoids a full table scan).
+        // Bucket-first viewport query (#114): prune by res-3 parent, refine by center.
+        // The composite's prefix covers the old single-column ParentCellId index, so drop it.
         db.Database.ExecuteSqlRaw(@"
-            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_Decay""
-            ON ""TerritoryCells"" (""LastRefreshedAt"", ""DecayDays"")");
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId_CenterLat_CenterLng""
+            ON ""TerritoryCells"" (""ParentCellId"", ""CenterLat"", ""CenterLng"")");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_ParentCellId_OwnerId""
+            ON ""TerritoryCells"" (""ParentCellId"", ""OwnerId"")");
+        db.Database.ExecuteSqlRaw(
+            @"DROP INDEX IF EXISTS ""IX_TerritoryCells_ParentCellId""");
+
+        // Daily claim-cap count + claim-history grouping both filter Claims by
+        // (UserId, CreatedAt); the cap check runs inside EVERY claim transaction (#124).
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_Claims_UserId_CreatedAt""
+            ON ""Claims"" (""UserId"", ""CreatedAt"")");
+    }
+
+    // Persisted, shared-across-all-users reverse-geocode cache (#121 / ML-ERR-024) — lets
+    // /game-state's exploration stats return without ever awaiting Nominatim inline.
+    private static void ApplyNeighborhoodNamesSchema(AppDbContext db)
+    {
+        db.Database.ExecuteSqlRaw(@"
+            CREATE TABLE IF NOT EXISTS ""NeighborhoodNames"" (
+                ""NeighborhoodId"" bigint NOT NULL,
+                ""AreaName"" text NOT NULL,
+                ""ResolvedAt"" timestamp with time zone NOT NULL,
+                CONSTRAINT ""PK_NeighborhoodNames"" PRIMARY KEY (""NeighborhoodId"")
+            )");
+    }
+
+    /// <summary>
+    /// Decay-release schema (#104): the CellTransfer Reason audit column, and the stored
+    /// DecayAt generated column + index that make the hourly reaper scan indexable
+    /// (the old per-row interval predicate forced a full-table scan; its helper index
+    /// on (LastRefreshedAt, DecayDays) never served the predicate and is dropped).
+    /// Nothing may CREATE that old index any more: a non-concurrent build takes a SHARE
+    /// lock that blocks claim writes, and rebuilding it only to drop it here would repeat
+    /// on every cold start. The DROP stays so existing databases are cleaned up.
+    /// Idempotent — safe on every startup and on fresh EnsureCreated databases.
+    /// </summary>
+    internal static void ApplyDecayReleaseSchema(AppDbContext db)
+    {
+        db.Database.ExecuteSqlRaw(
+            "ALTER TABLE \"CellTransfers\" ADD COLUMN IF NOT EXISTS \"Reason\" integer NOT NULL DEFAULT 0");
+        db.Database.ExecuteSqlRaw(@"
+            ALTER TABLE ""TerritoryCells"" ADD COLUMN IF NOT EXISTS ""DecayAt"" timestamp without time zone
+            GENERATED ALWAYS AS ((""LastRefreshedAt"" AT TIME ZONE 'UTC') + make_interval(days => ""DecayDays"")) STORED");
+        db.Database.ExecuteSqlRaw(@"
+            CREATE INDEX IF NOT EXISTS ""IX_TerritoryCells_DecayAt""
+            ON ""TerritoryCells"" (""DecayAt"")");
+        db.Database.ExecuteSqlRaw(
+            @"DROP INDEX IF EXISTS ""IX_TerritoryCells_Decay""");
     }
 }

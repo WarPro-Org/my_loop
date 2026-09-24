@@ -91,6 +91,19 @@ public class MissionService : IMissionService
 
         if (missions.Count == 0)
         {
+            // Callers batch several RecordProgress calls before one save, so an earlier call in
+            // this transaction may already hold the day's generated-but-unsaved set — the DB query
+            // can't see those Added entities, and regenerating (deterministic seed) would
+            // self-collide on the unique (UserId, Date, Type) index at save (#131).
+            missions = _db.ChangeTracker.Entries<DailyMission>()
+                .Where(e => e.State == EntityState.Added
+                            && e.Entity.UserId == userId && e.Entity.Date == today)
+                .Select(e => e.Entity)
+                .ToList();
+        }
+
+        if (missions.Count == 0)
+        {
             // Missions not yet generated (first claim of the day) — generate now
             var user = await _db.Users.FindAsync(userId);
             missions = GenerateAdaptiveMissions(userId, today, user);
@@ -102,7 +115,12 @@ public class MissionService : IMissionService
 
         foreach (var mission in matchingMissions)
         {
-            mission.CurrentProgress += amount;
+            // CaptureInOneWalk is scored as the best SINGLE walk, so the caller passes that walk's
+            // cumulative captured total and we keep the maximum — several small walks must not add
+            // up to complete a "capture N in ONE walk" mission (#108). Every other type is additive.
+            mission.CurrentProgress = IsMaxOfSession(type)
+                ? Math.Max(mission.CurrentProgress, amount)
+                : mission.CurrentProgress + amount;
             if (mission.CurrentProgress >= mission.TargetValue && !mission.IsCompleted)
             {
                 mission.CompletedAt = DateTime.UtcNow;
@@ -137,6 +155,13 @@ public class MissionService : IMissionService
 
         return result;
     }
+
+    /// <summary>
+    /// CaptureInOneWalk is the only mission scored as the maximum of a single walk's total rather
+    /// than a running sum across the day (#108), so callers pass that walk's cumulative captured
+    /// count (its Claim.CellCount). Every other type accumulates additively.
+    /// </summary>
+    private static bool IsMaxOfSession(MissionType type) => type == MissionType.CaptureInOneWalk;
 
     /// <summary>
     /// Awards XP and saves all pending changes (hex claim + missions + XP) in one transaction.
@@ -232,8 +257,12 @@ public class MissionService : IMissionService
                 .Where(t => !usedTypes.Contains(t.Type))
                 .ToList();
 
+            // Diversity holds by construction: every tier's template pool has more distinct
+            // types than MissionsPerDay. A duplicate type would now violate the unique
+            // (UserId, Date, Type) index at save (#131), so fail loud instead of falling back.
             if (candidates.Count == 0)
-                candidates = templates; // Fallback if we exhaust unique types
+                throw new InvalidOperationException(
+                    $"Mission template pool has fewer than {GameConstants.MissionsPerDay} distinct types");
 
             var chosen = WeightedSelect(candidates, weights, rng);
             selected.Add(chosen);
