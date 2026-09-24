@@ -50,6 +50,16 @@ this document wins (notably: trail cells no longer capture territory; home locat
 11. Safety alarm: if the app gets killed, the phone buzzes "tap to resume" within about 2 minutes. It's the only alert that buzzes during a walk.
 12. Weak GPS shows as a message on screen or in the tracking notification, with no buzz.
 
+## Starting and ending a walk
+
+30. A walk starts only when the user taps "Start walk". There is no automatic start — location is tracked only while a walk is running.
+31. Standing still doesn't break a walk (coffee, traffic lights, a chat).
+32. There is a Pause button. Nothing is recorded while paused. On resume, if the user is within the loop-closing distance of where they paused, the loop carries on; otherwise the loop starts fresh. How long the pause lasted doesn't matter. This uses the same setting as the loop-closing distance.
+33. A walk ends when the user taps "Stop".
+34. A forgotten walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves for a long time (around 30 minutes). The app notifies them that the walk was saved.
+35. When a walk ends, these are kept: explored hexes, any loops closed during the walk, and the walk record (path, distance, time). Land from an unfinished last stretch that never closed is not captured.
+36. The result screen shows how close an unfinished loop came to closing ("You were 150 m from closing this loop"), with the gap drawn on the map.
+
 ## Anti-cheat
 
 13. Walking and running count. Anything faster (cycling, driving) doesn't.
@@ -90,5 +100,5 @@ this document wins (notably: trail cells no longer capture territory; home locat
 
 ## Open — to be decided later
 
-- Exact numbers: loop-closing distance, short-gap limit, speed limit, grace period, strength cap — tune from real test walks.
+- Exact numbers: loop-closing distance (also used for resuming after a pause), short-gap limit, speed limit, auto-end thresholds, grace period, strength cap — tune from real test walks.
 - Rival rules (how land is taken, how strength defends it) — designed in a later 0.x version, before 1.0.
