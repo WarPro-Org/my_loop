@@ -82,6 +82,11 @@ this document wins (notably: trail cells no longer capture territory; home locat
 21. People can try a walk as a guest. A guest is a real user in the database, kept permanently once they link Apple or Google. Unlinked guests are cleaned up after a while.
 22. Guests can walk, explore and capture, but their land stays private and can't take anyone else's until they sign in.
 
+## Profile
+
+37. The profile shows: total land captured, hexes explored, total distance, number of walks, and the passport.
+38. The profile also keeps what exists today: display name, avatar and colour, edit name, walk history, notification settings, contact support, sign out, and delete account.
+
 ## Areas and passport
 
 25. Areas are real places (suburbs, cities) with their real names.
