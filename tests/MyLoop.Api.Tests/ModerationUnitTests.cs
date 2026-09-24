@@ -4,9 +4,12 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Infrastructure;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Moq;
+using MyLoop.Api.Configuration;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Controllers;
 using MyLoop.Api.Entities;
@@ -160,6 +163,59 @@ public class ModerationUnitTests
             Host = host, From = from, To = Enumerable.Repeat("mods@example.com", recipients).ToArray(),
         };
         Assert.Equal(valid, options.IsValid());
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(-1, false)]
+    [InlineData(65536, false)]
+    [InlineData(1, true)]
+    [InlineData(465, true)]
+    [InlineData(65535, true)]
+    public void Email_options_require_a_port_in_range(int port, bool valid)
+    {
+        var options = new ModerationEmailOptions { Host = "smtp.example.com", Port = port, From = "a@b.c", To = ["mods@example.com"] };
+        Assert.Equal(valid, options.IsValid());
+    }
+
+    [Theory]
+    [InlineData("MyLoop Alerts <alerts@example.com>", "mods@example.com", true)]
+    [InlineData("not an address", "mods@example.com", false)]
+    [InlineData("alerts@", "mods@example.com", false)]
+    [InlineData("alerts@example.com", "mods", false)]
+    [InlineData("alerts@example.com", "", false)]
+    [InlineData("alerts@example.com", "mods@example.com", true)]
+    public void Email_options_require_addresses_that_parse(string from, string to, bool valid)
+    {
+        var options = new ModerationEmailOptions { Host = "smtp.example.com", From = from, To = ["ok@example.com", to] };
+        Assert.Equal(valid, options.IsValid());
+    }
+
+    [Fact]
+    public void A_disabled_email_channel_ignores_its_other_settings()
+    {
+        Assert.True(new ModerationEmailOptions { Host = "", Port = 0, From = "junk", To = ["junk"] }.IsValid());
+    }
+
+    [Theory]
+    [InlineData(new string[0], true)]
+    [InlineData(new[] { "uid-1", "uid-2" }, true)]
+    [InlineData(new[] { "uid-1", "" }, false)]
+    [InlineData(new[] { " " }, false)]
+    public void Moderation_options_refuse_blank_moderator_uids(string[] uids, bool valid)
+    {
+        Assert.Equal(valid, new ModerationOptions { ModeratorUids = uids }.IsValid());
+    }
+
+    [Fact]
+    public void A_blank_moderator_uid_fails_startup_validation()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Moderation:ModeratorUids:0"] = " " })
+            .Build();
+        using var provider = new ServiceCollection().AddMyLoopModeration(configuration).BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(() => provider.GetRequiredService<IOptions<ModerationOptions>>().Value);
     }
 
     // ---- Placeholder ---------------------------------------------------------------------

@@ -14,10 +14,11 @@ public static class ModerationExtensions
     {
         services.AddOptions<ModerationOptions>()
             .Bind(configuration.GetSection(ModerationOptions.SectionName))
+            .Validate(o => o.IsValid(), "Moderation:ModeratorUids contains a blank UID")
             .ValidateOnStart();
         services.AddOptions<ModerationEmailOptions>()
             .Bind(configuration.GetSection(ModerationEmailOptions.SectionName))
-            .Validate(o => o.IsValid(), "Moderation:Email:Host is set but From or To is missing")
+            .Validate(o => o.IsValid(), "Moderation:Email:Host is set but Port, From or To is missing or invalid")
             .ValidateOnStart();
 
         services.AddSingleton<IModeratorDirectory, ModeratorDirectory>();

@@ -1,3 +1,6 @@
+using System.Net;
+using MimeKit;
+
 namespace MyLoop.Api.Options;
 
 /// <summary>
@@ -9,6 +12,7 @@ public sealed class ModerationEmailOptions
 {
     public const string SectionName = "Moderation:Email";
     public const int DefaultSubmissionPort = 587;
+    private const int MinPort = 1; // port 0 means "any free port", never a server to connect to
 
     public string? Host { get; init; }
     public int Port { get; init; } = DefaultSubmissionPort;
@@ -22,6 +26,20 @@ public sealed class ModerationEmailOptions
 
     public bool IsEnabled => !string.IsNullOrWhiteSpace(Host);
 
-    /// <summary>An enabled channel with nowhere to send from or to is a misconfiguration.</summary>
-    public bool IsValid() => !IsEnabled || (!string.IsNullOrWhiteSpace(From) && To.Length > 0);
+    /// <summary>
+    /// An enabled channel needs a usable port and addresses that parse. Checked at startup: a bad
+    /// address would otherwise fail every send at runtime, each failure only a logged warning.
+    /// </summary>
+    public bool IsValid() =>
+        !IsEnabled
+        || (Port is >= MinPort and <= IPEndPoint.MaxPort
+            && IsMailbox(From)
+            && To.Length > 0
+            && To.All(IsMailbox));
+
+    /// <summary>What <see cref="MailboxAddress.Parse(string)"/> will accept at send time, with a domain.</summary>
+    private static bool IsMailbox(string? text) =>
+        !string.IsNullOrWhiteSpace(text)
+        && MailboxAddress.TryParse(text, out var mailbox)
+        && mailbox.Address.Contains('@');
 }
