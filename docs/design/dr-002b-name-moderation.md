@@ -97,6 +97,46 @@ Bangalore/Mumbai/Tokyo players:
 - `scripts/moderation/fold_vectors.json` is asserted by both the generator and the xUnit suite,
   so the two folds cannot drift apart. (The old fold-stability test could not detect that drift.)
 
+**Review fixes, round 2 (#193) — deviations from the Matching rules above.**
+- **Severe terms match inside one word, not on `joined`.** Scanning the concatenation of all
+  words let a first name and surname form a term across the boundary: Thomas Lutz (s+lut →
+  *slut*), Margaret Ardern (*retard*), Philip Ornstein (*porn*), Louisa Lopez (*salope*), Mari
+  Conti (*maricon*). Crossing the generator's first-name and surname corpora found 2,291 such
+  pairs. Each word is now scanned on its own. The only joining left is for **spelled-out
+  letters**: each maximal run of tokens of at most `GameConstants.MaxSpelledOutTokenLength`
+  (= 1) characters is joined and checked against both tiers, so "s-h-i-t", "f u c k" and
+  "A-s-s" are still refused. The same rule replaces the whole-word check on `joined`, so
+  "Ana L" (an+al) is no longer refused. "my_loop" / "My Loop" are still refused by the brand
+  rule (`myloop` anywhere in the concatenation, reserved tier only).
+- **The limit is 1, not 2.** At 2, real two-letter name parts join into listed terms (Si Ki →
+  *siki*, Su Ka → *suka*, As Lu Ty → *slut*). Accepted cost: spellings that split a word into
+  two-letter chunks ("fu ck") are not caught; the report path is the backstop.
+- **Generator check.** Because the matcher never joins two real name parts, checking each
+  corpus name on its own is sufficient; a first × surname pair check is not needed. The
+  generator instead fails if any corpus name is short enough to be joined as a spelled-out
+  letter, and an xUnit test asserts its `MAX_SPELLED_OUT_TOKEN_LENGTH` equals the C# constant.
+  The generated list did not change and is still byte-reproducible.
+- **Reserved words** also match with digits trimmed from both ends, before and after leetspeak
+  ("2Admin", "4dmin2", "M0derator1"), and inside an x wrapper at both ends ("xXAdminXx").
+  One-sided x (Max, Rex, Xander) is not a wrapper.
+- **`root` is no longer reserved** — Root is an ordinary surname (Joe Root). `system` and
+  `admin` cover system impersonation.
+
+**Accepted false positives (whole-word tier).** These whole-word terms are also real names, and
+are kept on purpose because the slur or sexual reading is the common one in an English-language
+leaderboard:
+
+| Term | Real names refused | Why kept |
+|---|---|---|
+| `coon` | Carrie Coon (surname) | Racial slur |
+| `semen` | Semen Petrenko (Ukrainian transliteration of Semyon), Semen Padang | Sexual term |
+| `fuk` | Lau Fuk Wing, Fuk-sang (Cantonese given name) | Common spelling of *fuck*; already narrowed from substring to whole word, so Fukuda/Fukuoka pass |
+
+Remedy for an affected player: the report/restore path's human review. The player contacts
+support (§7) and a moderator reviews the name, as for a reported name (§4.3). Adding the folded
+word to `EXCEPTIONS` in the generator would un-block it for every player, so that is a product
+decision per term, not the default remedy.
+
 ---
 
 ## 3. DB schema changes
