@@ -24,6 +24,10 @@ public class NameModerationTests
     [InlineData("\u0192uck")]          // ƒ folds to f
     [InlineData("Admin2")]             // reserved word + trailing digits
     [InlineData("Moderator1")]         // digits checked before leetspeak turns 1 into i
+    [InlineData("4dmin2")]             // leetspeak plus a trailing digit
+    [InlineData("2Admin")]             // leading digits
+    [InlineData("M0derator1")]         // leetspeak inside, digit after
+    [InlineData("xXAdminXx")]          // gamer-tag x wrapper
     [InlineData("MyLoopSupport")]      // brand anywhere
     [InlineData("s-h-i-t")]            // single letters joined back into the word they spell
     [InlineData("f u c k")]
@@ -78,6 +82,9 @@ public class NameModerationTests
     [InlineData("Cazzola")]
     [InlineData("Cumming")]
     [InlineData("Admiral")]            // reserved words stay whole-word
+    [InlineData("Max")]                // x at one end only is not a wrapper
+    [InlineData("Rex")]
+    [InlineData("Xander")]
     [InlineData("Thomas Lutz")]        // #193 review: severe terms are matched per word, so a
     [InlineData("Margaret Ardern")]    // first name + surname can't form one across the boundary
     [InlineData("Louisa Lopez")]       // (s+lut, retard, salope, porn, maricon)

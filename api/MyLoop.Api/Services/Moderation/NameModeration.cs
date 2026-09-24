@@ -38,6 +38,7 @@ public static class NameModeration
 
     private static readonly char[] WordSeparators = [' ', '-', '_', '\''];
     private static readonly char[] Digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+    private const char XWrapper = 'x';
 
     /// <summary>The brand is reserved anywhere in a name ("MyLoopSupport", "TheMyLoopTeam").</summary>
     private const string ReservedBrand = "myloop";
@@ -81,15 +82,40 @@ public static class NameModeration
         IsReserved(normalizedName) || MatchesBlocklist(normalizedName);
 
     /// <summary>
-    /// Staff impersonation: a reserved word as a whole word even with trailing digits ("Admin2",
-    /// "Moderator1"), or the brand anywhere ("MyLoopSupport").
+    /// Staff impersonation: a reserved word as a whole word even with digits or leetspeak around
+    /// it ("Admin2", "2Admin", "4dmin2", "M0derator1"), inside a gamer-tag x wrapper
+    /// ("xXAdminXx"), or the brand anywhere ("MyLoopSupport").
     /// </summary>
     private static bool IsReserved(string normalizedName)
     {
         var words = Fold(normalizedName, mapLeetspeak: false).Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
         if (string.Concat(words).Contains(ReservedBrand, StringComparison.Ordinal)) return true;
-        return words.Any(w => ReservedWords.Contains(w.TrimEnd(Digits)));
+        return words.SelectMany(ReservedCandidates).Any(ReservedWords.Contains);
     }
+
+    /// <summary>
+    /// Readings of one word to test against <see cref="ReservedWords"/>. Digits are trimmed both
+    /// before leetspeak ("Moderator1", where '1' would become 'i') and after it ("4dmin2", where
+    /// '4' is the 'a').
+    /// </summary>
+    private static IEnumerable<string> ReservedCandidates(string word)
+    {
+        var trimmed = word.Trim(Digits);
+        foreach (var reading in new[] { trimmed, MapLeetspeak(trimmed), MapLeetspeak(word).Trim(Digits) })
+        {
+            yield return reading;
+            if (IsXWrapped(reading)) yield return reading.Trim(XWrapper);
+        }
+    }
+
+    /// <summary>
+    /// "xXAdminXx": x at BOTH ends. One-sided x is ordinary spelling (Max, Rex, Xander).
+    /// </summary>
+    private static bool IsXWrapped(string word) =>
+        word.Length > 2 && word[0] == XWrapper && word[^1] == XWrapper;
+
+    private static string MapLeetspeak(string foldedWord) =>
+        string.Concat(foldedWord.Select(c => LeetFolds.TryGetValue(c, out var plain) ? plain : c));
 
     private static bool MatchesBlocklist(string normalizedName)
     {
