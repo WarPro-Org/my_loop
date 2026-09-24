@@ -720,4 +720,29 @@ public class ModerationFlowTests : IAsyncLifetime
         Assert.False(await check.NameReports.AnyAsync(r => r.ReporterId == target || r.ReportedUserId == target));
         Assert.False(await check.NameModerationCases.AnyAsync(c => c.UserId == target));
     }
+
+    [Fact]
+    public async Task Deleting_an_account_purges_moderation_rows_without_relying_on_cascades()
+    {
+        await using (var db = NewDb())
+        {
+            // Without the foreign keys only UserService's explicit purge can remove these rows.
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""NameReports"" DROP CONSTRAINT ""FK_NameReports_Users_ReporterId"";
+                ALTER TABLE ""NameReports"" DROP CONSTRAINT ""FK_NameReports_Users_ReportedUserId"";
+                ALTER TABLE ""NameModerationCases"" DROP CONSTRAINT ""FK_NameModerationCases_Users_UserId"";");
+        }
+        var target = await SeedUser("Rude Name");
+        var other = (await SeedUsers(1))[0];
+        await Report(other, target);
+        await Report(target, other);
+
+        await using (var db = NewDb())
+            Assert.True(await Users(db).DeleteAccount(target));
+
+        await using var check = NewDb();
+        Assert.False(await check.NameReports.AnyAsync(r => r.ReporterId == target || r.ReportedUserId == target));
+        Assert.False(await check.NameModerationCases.AnyAsync(c => c.UserId == target));
+        Assert.True(await check.NameModerationCases.AnyAsync(c => c.UserId == other)); // not theirs to delete
+    }
 }

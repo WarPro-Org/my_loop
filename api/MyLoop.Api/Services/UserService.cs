@@ -270,5 +270,10 @@ public class UserService : IUserService
         await _db.DailyMissions.Where(m => m.UserId == userId).ExecuteDeleteAsync();
         await _db.UserAchievements.Where(a => a.UserId == userId).ExecuteDeleteAsync();
         await _db.DeviceTokens.Where(d => d.UserId == userId).ExecuteDeleteAsync();
+        // Name moderation (#190). These tables do cascade at the DB level, but are purged here too
+        // so this method stays the one complete list and never depends on the FK definition.
+        // Both directions: reports this player filed, and reports about them.
+        await _db.NameReports.Where(r => r.ReporterId == userId || r.ReportedUserId == userId).ExecuteDeleteAsync();
+        await _db.NameModerationCases.Where(c => c.UserId == userId).ExecuteDeleteAsync();
     }
 }
