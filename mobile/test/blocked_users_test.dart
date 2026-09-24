@@ -11,11 +11,14 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myloop/features/journey/theft_alerts.dart';
 import 'package:myloop/features/moderation/blocked_users.dart';
 import 'package:myloop/features/moderation/player_actions_menu.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/block_list_cache.dart';
+import 'package:myloop/shared/services/notification_service.dart';
+import 'package:myloop/shared/services/realtime_resync.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
@@ -40,9 +43,11 @@ class _FakeApi extends ApiService {
   /// When set, each block call waits for it — lets two blocks overlap.
   Completer<void>? writeGate;
   String? reportedReason;
+  int listCalls = 0;
 
   @override
   Future<Set<String>> getBlockedUserIds() async {
+    listCalls++;
     if (listError != null) throw listError!;
     final snapshot = {...serverBlocks}; // what the server had when the request was made
     await listGate?.future;
@@ -87,13 +92,16 @@ DioException _status(int code, String message) {
 
 void main() {
   late Directory tmp;
+  late StreamController<ResyncTrigger> resyncTriggers;
 
   setUp(() async {
     tmp = await Directory.systemTemp.createTemp('block_list_test');
     PathProviderPlatform.instance = _FakePathProvider(tmp.path);
+    resyncTriggers = StreamController<ResyncTrigger>.broadcast();
   });
 
   tearDown(() async {
+    await resyncTriggers.close();
     if (await tmp.exists()) await tmp.delete(recursive: true);
   });
 
@@ -102,6 +110,7 @@ void main() {
     final container = ProviderContainer(overrides: [
       apiServiceProvider.overrideWithValue(api),
       territoryRealtimeProvider.overrideWithValue(TerritoryRealtimeService(baseUrl: 'http://test.local')),
+      resyncTriggersProvider.overrideWithValue(resyncTriggers.stream),
     ]);
     addTearDown(container.dispose);
     container.listen(blockedUsersProvider, (_, _) {});
@@ -208,6 +217,56 @@ void main() {
       expect(await BlockListCache.load('me'), {'a', 'b', 'x'});
     });
 
+    test('a failed edit restores an earlier successful edit to the same player', () async {
+      // Block succeeds, an offline unblock fails, then the slow sign-in fetch (started before the
+      // block, so it holds the old empty list) lands: the player must stay blocked.
+      final api = _FakeApi()..listGate = Completer<void>();
+      final container = signedIn(api);
+      await settle(); // fetch in flight, holding {}
+
+      final notifier = container.read(blockedUsersProvider.notifier);
+      expect(await notifier.block('rival'), isNull);
+      api.writeError = _unreachable();
+      expect(await notifier.unblock('rival'), blockOfflineError);
+      expect(container.read(blockedUsersProvider), {'rival'});
+
+      api.listGate!.complete();
+      await settle();
+
+      expect(container.read(blockedUsersProvider), {'rival'});
+      expect(await BlockListCache.load('me'), {'rival'});
+    });
+
+    test('a first load that failed offline is retried on resume or reconnect', () async {
+      final api = _FakeApi()..listError = _unreachable();
+      final container = signedIn(api);
+      await settle();
+      expect(container.read(blockedUsersProvider), isEmpty);
+
+      api
+        ..listError = null
+        ..serverBlocks = {'rival'};
+      resyncTriggers.add(ResyncTrigger.resume);
+      await settle();
+
+      expect(container.read(blockedUsersProvider), {'rival'});
+      expect(await BlockListCache.load('me'), {'rival'});
+    });
+
+    test('once a fetch has succeeded, resume and reconnect do not re-fetch', () async {
+      final api = _FakeApi();
+      signedIn(api);
+      await settle();
+      expect(api.listCalls, 1);
+
+      resyncTriggers
+        ..add(ResyncTrigger.resume)
+        ..add(ResyncTrigger.reconnect);
+      await settle();
+
+      expect(api.listCalls, 1);
+    });
+
     test('a failed block rolls back only its own id, not an overlapping one', () async {
       final api = _FakeApi()
         ..failIds = {'first'}
@@ -250,6 +309,52 @@ void main() {
       container.read(userProfileProvider.notifier).clear();
 
       expect(container.read(blockedUsersProvider), isEmpty);
+    });
+  });
+
+  group('theft alerts right after sign-in', () {
+    HexChangeEvent stolenBy(String thiefId, String thiefName) => HexChangeEvent(
+          h3Index: '8a2a1072b59ffff', centerLat: 0, centerLng: 0,
+          newOwnerId: thiefId, newOwnerColor: '#FF4B4B', newOwnerDisplayName: thiefName,
+          previousOwnerId: 'me',
+        );
+
+    Future<List<String>> alertBodies(ProviderContainer container, List<HexChangeEvent> events) async {
+      final notifications = container.read(notificationProvider.notifier);
+      await notifications.hydration;
+      await recordTheftAlerts(
+        userId: 'me',
+        events: events,
+        blockedUsers: container.read(blockedUsersProvider.notifier),
+        notifications: notifications,
+      );
+      await notifications.pendingWrite;
+      return container.read(notificationProvider).map((n) => n.body).toList();
+    }
+
+    test('a theft the moment the session starts masks a blocked thief from the cached list', () async {
+      // Cold start: the block list is on disk, the API is slow, and a theft event arrives before
+      // the provider has restored anything — its state is still the empty initial set.
+      await BlockListCache.save('me', {'rival'});
+      final container = signedIn(_FakeApi()..listGate = Completer<void>());
+
+      final bodies = await alertBodies(container, [stolenBy('rival', 'Rude Name'), stolenBy('kai', 'Kai')]);
+
+      expect(bodies, containsAll(['$blockedActorLabel captured 1 of your hex!', 'Kai captured 1 of your hex!']));
+      expect(bodies.join(), isNot(contains('Rude Name')));
+    });
+
+    test('with no cached list, the alert waits for the first fetch', () async {
+      final api = _FakeApi()
+        ..serverBlocks = {'rival'}
+        ..listGate = Completer<void>();
+      final container = signedIn(api);
+
+      final recorded = alertBodies(container, [stolenBy('rival', 'Rude Name')]);
+      await settle();
+      api.listGate!.complete();
+
+      expect(await recorded, ['$blockedActorLabel captured 1 of your hex!']);
     });
   });
 

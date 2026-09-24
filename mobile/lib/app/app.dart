@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/app/router.dart';
 import 'package:myloop/features/auth/user_session_teardown.dart';
+import 'package:myloop/features/moderation/blocked_users.dart';
 import 'package:myloop/features/splash/splash_screen.dart';
 import 'package:myloop/shared/services/realtime_resync.dart';
 
@@ -28,6 +29,10 @@ class _MyLoopAppState extends ConsumerState<MyLoopApp> {
     // App-lifetime: tears down user-bound state when Firebase ends the session
     // behind the UI's back (revoked token, account deleted elsewhere — #110).
     ref.watch(forcedSignOutGuardProvider);
+    // App-lifetime: starts loading the block list as soon as an account signs in, before any
+    // realtime event or map tap needs it, and keeps it alive for the session (#195 review).
+    // Listened to, not watched: a block-list change must not rebuild the app root.
+    ref.listen(blockedUsersProvider, (_, _) {});
     if (!_splashDone) {
       return MaterialApp(
         title: 'MyLoop',

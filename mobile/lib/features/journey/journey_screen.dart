@@ -19,6 +19,7 @@ import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
 import 'package:myloop/features/journey/post_walk_refresh.dart';
+import 'package:myloop/features/journey/theft_alerts.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
@@ -370,26 +371,17 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       // on every SignalR delta (issue #129).
       _hexManager.applyRealtimeChanges(events);
 
-      // Detect thefts from the current user → add in-app notifications
+      // Detect thefts from the current user → add in-app notifications. The notifiers are
+      // app-scoped, so they are read now: the alert still lands if this screen goes away while
+      // the block list finishes loading.
       final userId = ref.read(userProfileProvider).userId;
       if (userId != null) {
-        // Grouped by thief id, not name: names are not unique (DR-002c), so two same-named thieves
-        // must not merge into one alert. A blocked thief is named "Blocked player" (#195 review).
-        final stolenByThief = <String, List<HexChangeEvent>>{};
-        for (final e in events) {
-          if (e.previousOwnerId == userId && e.newOwnerId != userId) {
-            stolenByThief.putIfAbsent(e.newOwnerId, () => []).add(e);
-          }
-        }
-        final blocked = ref.read(blockedUsersProvider);
-        for (final entry in stolenByThief.entries) {
-          final first = entry.value.first;
-          ref.read(notificationProvider.notifier).addTheftAlert(
-            thiefName: displayNameFor(blocked, entry.key, first.newOwnerDisplayName),
-            thiefColor: first.newOwnerColor,
-            hexCount: entry.value.length,
-          );
-        }
+        unawaited(recordTheftAlerts(
+          userId: userId,
+          events: events,
+          blockedUsers: ref.read(blockedUsersProvider.notifier),
+          notifications: ref.read(notificationProvider.notifier),
+        ));
       }
     });
   }
@@ -516,7 +508,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _onMapTap(LatLng latLng) {
     final tappedCell = _findTappedCell(latLng.latitude, latLng.longitude);
     if (tappedCell != null) {
-      _showHexOwnerSheet(tappedCell);
+      unawaited(_showHexOwnerSheet(tappedCell));
     } else {
       widget.onMapTapEmpty?.call();
     }
@@ -541,10 +533,17 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     return inside;
   }
 
-  void _showHexOwnerSheet(TerritoryCell rawCell) {
+  Future<void> _showHexOwnerSheet(TerritoryCell rawCell) async {
     final profile = ref.read(userProfileProvider);
-    // A blocked owner is shown as "Blocked player" to this viewer only (#190).
-    final ownerName = displayNameFor(ref.read(blockedUsersProvider), rawCell.ownerId, rawCell.ownerName);
+    // A blocked owner is shown as "Blocked player" to this viewer only (#190). Waits for the block
+    // list's first load — normally long done, since the app root keeps it warm — so a tap right
+    // after a cold start can't show the name (#195 review).
+    final viewerId = profile.userId;
+    final blocked = viewerId == null
+        ? const <String>{}
+        : await ref.read(blockedUsersProvider.notifier).blockedIdsFor(viewerId) ?? const <String>{};
+    if (!mounted) return;
+    final ownerName = displayNameFor(blocked, rawCell.ownerId, rawCell.ownerName);
     final cell = rawCell.withOwnerName(ownerName);
     final isOwn = cell.ownerId == profile.userId;
     // Show owner's actual color only for own hexes; neutral for others. A hex
