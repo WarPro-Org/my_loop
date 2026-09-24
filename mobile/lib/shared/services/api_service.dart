@@ -347,6 +347,15 @@ class ApiService {
     }
   }
 
+  /// The server's explanation for a refused request — only for 4xx responses, where the body is
+  /// a message written for the player. A 5xx or proxy error page is not, and must be logged
+  /// rather than shown (#193 review).
+  static String? clientErrorReason(Object error) {
+    final status = error is DioException ? error.response?.statusCode : null;
+    if (status == null || status < 400 || status >= 500) return null;
+    return extractApiError(error);
+  }
+
   /// Extracts the server's `{ "error": "..." }` message from a failed response,
   /// or null if none is present (MEDIUM-5: surface real API errors to the user
   /// instead of a generic failure).

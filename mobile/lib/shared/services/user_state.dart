@@ -10,8 +10,11 @@
 library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/util/display_name.dart';
+
+final _log = Logger('UserProfile');
 
 /// Immutable snapshot of the current user's identity.
 class UserProfile {
@@ -53,11 +56,30 @@ class UserProfileNotifier extends Notifier<UserProfile> {
     _persistUpdate(avatarId: avatarId, color: color);
   }
 
-  /// Updates display name.
-  void updateDisplayName(String name) {
+  /// Saves a new display name. Returns null on success, or a message to show the player.
+  ///
+  /// Waits for the API instead of updating optimistically: the server can refuse a name the
+  /// client cannot pre-check (the moderation blocklist, #190), and a fire-and-forget save
+  /// would show the new name locally while the server kept the old one.
+  Future<String?> updateDisplayName(String name) async {
     final canonical = canonicalDisplayName(name);
+    final userId = state.userId;
+    if (userId != null) {
+      try {
+        await ref.read(apiServiceProvider).updateUser(userId: userId, displayName: canonical);
+      } catch (e, s) {
+        if (isServerUnreachable(e)) return displayNameOfflineError;
+        final serverReason = ApiService.clientErrorReason(e);
+        // A server reason is an expected refusal; anything else is a real failure worth a log.
+        if (serverReason == null) _log.warning('Rename failed unexpectedly', e, s);
+        return serverReason ?? displayNameSaveFailedError;
+      }
+      // The account may have signed out (and another signed in) while the request was in
+      // flight; writing now would put this name on the next account's profile.
+      if (state.userId != userId) return null;
+    }
     state = state.copyWith(displayName: canonical);
-    _persistUpdate(displayName: canonical);
+    return null;
   }
 
   /// Fire-and-forget API call to persist profile changes.

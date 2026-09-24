@@ -233,6 +233,7 @@ class ProfileDrawer extends ConsumerWidget {
     final profile = ref.read(userProfileProvider);
     final controller = TextEditingController(text: profile.displayName);
     String? errorText;
+    var saving = false;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -264,16 +265,27 @@ class ProfileDrawer extends ConsumerWidget {
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
-                  onPressed: () {
-                    final name = controller.text.trim();
-                    final validated = validateDisplayName(name);
-                    if (validated != null) {
-                      setSheetState(() => errorText = validated);
-                      return;
-                    }
-                    ref.read(userProfileProvider.notifier).updateDisplayName(name);
-                    Navigator.pop(ctx);
-                  },
+                  onPressed: saving
+                      ? null
+                      : () async {
+                          final name = controller.text.trim();
+                          final validated = validateDisplayName(name);
+                          if (validated != null) {
+                            setSheetState(() => errorText = validated);
+                            return;
+                          }
+                          setSheetState(() => saving = true);
+                          final error = await ref.read(userProfileProvider.notifier).updateDisplayName(name);
+                          if (!ctx.mounted) return;
+                          if (error != null) {
+                            setSheetState(() {
+                              saving = false;
+                              errorText = error;
+                            });
+                            return;
+                          }
+                          Navigator.pop(ctx);
+                        },
                   child: const Text('SAVE'),
                 ),
               ),

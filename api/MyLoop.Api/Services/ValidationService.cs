@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using MyLoop.Api.Constants;
+using MyLoop.Api.Services.Moderation;
 
 namespace MyLoop.Api.Services;
 
@@ -12,6 +13,7 @@ public partial class ValidationService : IValidationService
     private const char SmartApostrophe = '\u2019';
     private const string InvalidDisplayNameCharacters =
         "DisplayName contains invalid characters (Latin letters, numbers, spaces, hyphens, apostrophes only)";
+    private const string DisplayNameNotAllowed = "This name isn't allowed";
     private static readonly Regex DisplayNameRegex = MyDisplayNameRegex();
 
     /// <summary>
@@ -46,6 +48,10 @@ public partial class ValidationService : IValidationService
 
         if (!DisplayNameRegex.IsMatch(normalized))
             return InvalidDisplayNameCharacters;
+
+        // Deliberately generic: naming the matched term or tier would let a caller probe the list.
+        if (NameModeration.IsBlocked(normalized))
+            return DisplayNameNotAllowed;
 
         return null;
     }

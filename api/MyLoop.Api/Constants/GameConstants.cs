@@ -134,6 +134,22 @@ public static class GameConstants
     public const int MaxDisplayNameLength = 20;
 
     /// <summary>
+    /// Name tokens this short or shorter are treated as letters typed one at a time and joined
+    /// back together for moderation ("s-h-i-t", "f u c k"). Kept at 1 because two-letter tokens
+    /// are real name parts (Li, Wu, Ho, Si Ki, Su Ka) that would join into blocked terms.
+    /// Mirrors MAX_SPELLED_OUT_TOKEN_LENGTH in scripts/moderation/build_name_blocklist.py.
+    /// </summary>
+    public const int MaxSpelledOutTokenLength = 1;
+
+    /// <summary>
+    /// Shortest severe term that is still matched when it crosses the space between a single
+    /// letter and the next word ("N iggerboy"). At 4, real initial + surname names form terms
+    /// (S Luther → "slut", P Ornstead → "porn"). Mirrors MIN_SPANNING_SEVERE_TERM_LENGTH in
+    /// scripts/moderation/build_name_blocklist.py, which checks the corpora at this length.
+    /// </summary>
+    public const int MinSpanningSevereTermLength = 5;
+
+    /// <summary>
     /// Number of avatars in the client catalogue — mirrors <c>avatarEmojis</c> in
     /// mobile/lib/shared/widgets/avatar_widget.dart; valid ids are 0..AvatarCount-1.
     /// Ids are positional and permanent: append only, never reorder or delete, and bump
