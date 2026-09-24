@@ -6,7 +6,11 @@
 /// pure encode/decode, best-effort IO that logs and never throws) with one
 /// documented deviation: **no cross-user binding** — entries are tester-authored
 /// device-local fixtures containing no server or user data, so there is nothing
-/// to leak between accounts and nothing to clear on sign-out.
+/// to leak between accounts and nothing to clear on sign-out. The one field that
+/// could hold personal data is `lastUsed.startPoint`, which the designer often
+/// fills from a real GPS fix; [MockRouteLibraryNotifier.setLastUsed] refuses to
+/// persist a start point near that fix, so the tester's real location never
+/// lands in this plaintext (and iCloud-backed) file.
 ///
 /// Writes are serialized through a chained future so interleaved saves can
 /// never corrupt the file, and the file on disk always equals the last
@@ -21,6 +25,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -49,6 +55,12 @@ class MockRouteStore {
   /// Newest-first cap so a long-lived debug install can't grow the file
   /// unboundedly; saving beyond it drops the oldest route.
   static const int maxSavedRoutes = 20;
+
+  /// A last-used start point within this distance of a real GPS fix counts as
+  /// the tester's real location and is not persisted. Wide enough that a start
+  /// nudged a little off the fix (map tap, map-centre quick launch) is still
+  /// treated as the tester's position.
+  static const double deviceFixExclusionMeters = 250.0;
 
   /// Serializes all pending writes: each new write waits for the previous one,
   /// so two rapid saves can never interleave their file IO.
@@ -171,10 +183,23 @@ class MockRouteLibraryNotifier extends AsyncNotifier<MockRouteLibrary> {
   }
 
   /// Records the config of a walk the tester actually started.
-  Future<void> setLastUsed(MockWalkConfig config) async {
+  ///
+  /// [deviceFix] is the tester's real position if the designer took a GPS fix.
+  /// When the start point lies within [MockRouteStore.deviceFixExclusionMeters]
+  /// of it, nothing is recorded: the previous last-used entry (if any) stays,
+  /// and on the next open the silent GPS fix supplies the start anyway.
+  Future<void> setLastUsed(MockWalkConfig config, {LatLng? deviceFix}) async {
+    if (deviceFix != null && _isNear(config.startPoint, deviceFix)) {
+      _log.fine('Last-used start is the device location — not persisted');
+      return;
+    }
     await _ensureLoaded();
     await _replace(MockRouteLibrary(routes: _currentSync.routes, lastUsed: config));
   }
+
+  static bool _isNear(LatLng a, LatLng b) =>
+      Geolocator.distanceBetween(a.latitude, a.longitude, b.latitude, b.longitude) <=
+      MockRouteStore.deviceFixExclusionMeters;
 
   Future<void> _replace(MockRouteLibrary library) async {
     state = AsyncData(library);

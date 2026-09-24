@@ -128,6 +128,38 @@ void main() {
     });
   });
 
+  group('lastUsed never stores the real GPS location', () {
+    // 0.001° latitude ≈ 111 m (inside the exclusion radius); 0.01° ≈ 1.1 km.
+    const deviceFix = LatLng(37.4, -122.0);
+
+    test('a start at the device fix is not written to disk', () async {
+      await memory();
+      await notifier().setLastUsed(_configAt(37.401), deviceFix: deviceFix);
+
+      final raw = await File('${tmp.path}/mock_routes.json').exists()
+          ? await File('${tmp.path}/mock_routes.json').readAsString()
+          : '';
+      expect(raw, isNot(contains('37.401')));
+      expect((await MockRouteStore.load()).lastUsed, isNull);
+      expect((await memory()).lastUsed, isNull);
+    });
+
+    test('an earlier tester-placed lastUsed survives a device-fix launch', () async {
+      await memory();
+      await notifier().setLastUsed(_configAt(37.5), deviceFix: deviceFix);
+      await notifier().setLastUsed(_configAt(37.4), deviceFix: deviceFix);
+
+      expect((await MockRouteStore.load()).lastUsed!.startPoint.latitude, 37.5);
+    });
+
+    test('a start placed far from the device fix is still remembered', () async {
+      await memory();
+      await notifier().setLastUsed(_configAt(37.41), deviceFix: deviceFix);
+
+      expect((await MockRouteStore.load()).lastUsed!.startPoint.latitude, 37.41);
+    });
+  });
+
   group('write serialization', () {
     test('interleaved unawaited mutations still converge: disk == final memory', () async {
       await memory();
