@@ -12,7 +12,6 @@ import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/shared/services/api_service.dart';
-import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/util/display_name.dart';
 
@@ -54,7 +53,6 @@ void main() {
   ProviderContainer containerWith(_FakeApi api) {
     final container = ProviderContainer(overrides: [
       apiServiceProvider.overrideWithValue(api),
-      territoryRealtimeProvider.overrideWithValue(TerritoryRealtimeService(baseUrl: 'http://test.local')),
     ]);
     addTearDown(container.dispose);
     container.read(userProfileProvider.notifier).setFromApi(
@@ -62,9 +60,6 @@ void main() {
           avatarId: 0,
           color: '#00D4AA',
           displayName: 'Robin',
-          hexCount: 0,
-          streak: 0,
-          distanceKm: 0,
         );
     return container;
   }

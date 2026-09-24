@@ -11,9 +11,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/features/profile/profile_screen.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
+import 'package:myloop/shared/services/user_state.dart';
 
 /// Implements (not extends) [AuthService] so the fake never runs the real
 /// class's eager `FirebaseAuth.instance` field initializer, which throws
@@ -25,6 +27,9 @@ class _FakeAuthService implements AuthService {
   Future<void> signOut() async {
     signOutCalls++;
   }
+
+  @override
+  Future<void> deleteCurrentUser() async {}
 
   @override
   User? get currentUser => null;
@@ -49,6 +54,17 @@ class _FakeRealtime extends TerritoryRealtimeService {
   @override
   Future<void> disconnect() async {
     disconnectCalls++;
+  }
+}
+
+/// Records which account's walk/queue sign-out tore down, without touching
+/// GPS or the filesystem.
+class _SpyJourneyController extends JourneyController {
+  final abandonedFor = <String?>[];
+
+  @override
+  Future<void> abandonForSignOut(String? userId) async {
+    abandonedFor.add(userId);
   }
 }
 
@@ -81,6 +97,7 @@ void main() {
     (tester) async {
       final realtime = _FakeRealtime();
       final authService = _FakeAuthService();
+      final journey = _SpyJourneyController();
 
       final router = GoRouter(routes: [
         GoRoute(path: '/', builder: (_, __) => const ProfileScreen()),
@@ -92,10 +109,20 @@ void main() {
           overrides: [
             territoryRealtimeProvider.overrideWithValue(realtime),
             authServiceProvider.overrideWithValue(authService),
+            journeyControllerProvider.overrideWith(() => journey),
           ],
           child: MaterialApp.router(routerConfig: router),
         ),
       );
+      await tester.pumpAndSettle();
+
+      final container = ProviderScope.containerOf(tester.element(find.byType(ProfileScreen)));
+      container.read(userProfileProvider.notifier).setFromApi(
+            userId: 'user-1',
+            avatarId: 0,
+            color: '#FF0000',
+            displayName: 'Walker',
+          );
       await tester.pumpAndSettle();
 
       expect(realtime.disconnectCalls, 0);
@@ -106,6 +133,12 @@ void main() {
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Sign Out'));
+      // Sign-out clears the file-backed offline caches; real file I/O only
+      // completes outside the widget tester's fake-async zone.
+      for (var i = 0; i < 10 && authService.signOutCalls == 0; i++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+      }
       await tester.pumpAndSettle();
 
       expect(authService.signOutCalls, 1);
@@ -114,6 +147,10 @@ void main() {
         1,
         reason: 'logout must tear down the hub connection that Journey no longer does',
       );
+      // The outgoing account's id must be read BEFORE the profile is cleared,
+      // or its step-claim queue is never torn down (#110).
+      expect(journey.abandonedFor, ['user-1']);
+      expect(container.read(userProfileProvider).userId, isNull);
     },
   );
 }

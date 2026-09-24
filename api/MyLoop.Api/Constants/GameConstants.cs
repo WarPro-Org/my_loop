@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace MyLoop.Api.Constants;
 
 /// <summary>
@@ -38,6 +40,12 @@ public static class GameConstants
     public const int H3Resolution = 11;
     public const int H3ParentResolution = 3;
     public const int H3NeighborhoodResolution = 8;
+    /// <summary>
+    /// Viewport bbox span (per axis, degrees) beyond which region pruning is skipped:
+    /// a wider box would need thousands of res-3 parents, and a giant ANY() array pushes
+    /// the planner off the index — the coordinate filter alone serves zoomed-out maps (#114).
+    /// </summary>
+    public const double MaxRegionPruneSpanDegrees = 10.0;
     public const double CellAreaSquareMeters = 2_150.0;
 
     // --- Decay ---
@@ -83,6 +91,12 @@ public static class GameConstants
 
     // --- Viewport / Query Limits ---
     public const int MaxViewportCells = 500;
+    /// <summary>Valid WGS84 latitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLatitudeDegrees = -90.0;
+    public const double MaxLatitudeDegrees = 90.0;
+    /// <summary>Valid WGS84 longitude range (degrees) for a client-supplied viewport bbox.</summary>
+    public const double MinLongitudeDegrees = -180.0;
+    public const double MaxLongitudeDegrees = 180.0;
     public const int MaxUserTerritoryCells = 2000;
     public const int MaxPreviewPathLength = 10_000;
 
@@ -118,7 +132,27 @@ public static class GameConstants
     // --- Validation ---
     public const int MinDisplayNameLength = 2;
     public const int MaxDisplayNameLength = 20;
-    public const int MaxAvatarId = 50;
+
+    /// <summary>
+    /// Number of avatars in the client catalogue — mirrors <c>avatarEmojis</c> in
+    /// mobile/lib/shared/widgets/avatar_widget.dart; valid ids are 0..AvatarCount-1.
+    /// Ids are positional and permanent: append only, never reorder or delete, and bump
+    /// this in the same change. The client clamps unknown ids, so a wider server range
+    /// stores values the app renders as a different avatar (DR-001, #188).
+    /// </summary>
+    public const int AvatarCount = 12;
+
+    /// <summary>
+    /// Allowed player colours — mirrors <c>playerColors</c> in
+    /// mobile/lib/shared/widgets/color_picker_row.dart, compared exactly (the client sends
+    /// these uppercase literals and matches the stored value case-sensitively). A free-form
+    /// hex let players pick invisible or rival-matching territory colours (DR-001, #188).
+    /// </summary>
+    public static readonly FrozenSet<string> PlayerColors = new[]
+    {
+        "#00D4AA", "#1CB0F6", "#FF4B4B", "#FF9600",
+        "#A560E8", "#FFC800", "#FF6B81", "#2ED8A3",
+    }.ToFrozenSet(StringComparer.Ordinal);
 
     /// <summary>
     /// Minimum days between home-location changes. Home drives decay distance and the

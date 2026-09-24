@@ -208,20 +208,15 @@ public class PathValidationService : IPathValidationService
     // Helpers
     // ──────────────────────────────────────────────────────────────────────────
 
-    private static double HaversineDistance(double[] p1, double[] p2)
-    {
-        const double R = 6371000; // Earth radius in meters
-        var lat1 = p1[0] * Math.PI / 180;
-        var lat2 = p2[0] * Math.PI / 180;
-        var dLat = (p2[0] - p1[0]) * Math.PI / 180;
-        var dLng = (p2[1] - p1[1]) * Math.PI / 180;
-
-        var a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
-                Math.Cos(lat1) * Math.Cos(lat2) *
-                Math.Sin(dLng / 2) * Math.Sin(dLng / 2);
-        var c = 2 * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
-        return R * c;
-    }
+    /// <summary>
+    /// Great-circle distance between two <c>[lat, lng]</c> pairs, delegating to the API's single
+    /// implementation. This method used to carry a second copy of the Haversine formula with the
+    /// earth radius hardcoded (#139 D3); the shared one uses
+    /// <see cref="GameConstants.EarthRadiusMeters"/>, which is the same value, so distances are
+    /// unchanged.
+    /// </summary>
+    private static double HaversineDistance(double[] p1, double[] p2) =>
+        GeoService.Haversine(p1[0], p1[1], p2[0], p2[1]);
 
     private static double CalculateTotalDistance(double[][] path)
     {

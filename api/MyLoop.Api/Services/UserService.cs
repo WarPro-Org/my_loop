@@ -146,7 +146,20 @@ public class UserService : IUserService
         // before the day's first refresh would become the newest "snapshot" and hide the
         // real board from every reader until the refresh runs (#125).
         var snapshotDate = await LeaderboardService.LatestSnapshotDate(_db);
-        var totalUsers = await _db.Users.CountAsync();
+
+        // Rank the newcomer the way every reader computes rank (#167): count of strictly higher
+        // cell counts, plus one. They have zero cells, so that is however many players on this
+        // snapshot have captured anything — and all other zero-cell players get the same number,
+        // because they are genuinely tied.
+        //
+        // This used to be the total user count (#139 D7), which invented a rank twice over: it
+        // counted users with no row on this snapshot at all, so a newcomer could be told they were
+        // 1000th on a 51-row board, and it handed every zero-cell player a different rank. The
+        // value is short-lived — the next leaderboard refresh overwrites it — but it is what the
+        // profile tile shows a brand-new player, which is the one moment they have no other
+        // reference for whether the number is sane.
+        var rank = await _db.LeaderboardEntries
+            .CountAsync(l => l.Date == snapshotDate && l.CellCount > 0) + 1;
 
         _db.Set<LeaderboardEntry>().Add(new LeaderboardEntry
         {
@@ -155,7 +168,7 @@ public class UserService : IUserService
             Date = snapshotDate,
             CellCount = 0,
             AreaM2 = 0,
-            Rank = totalUsers,
+            Rank = rank,
         });
         await _db.SaveChangesAsync();
     }
