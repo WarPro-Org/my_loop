@@ -12,6 +12,7 @@ tags: [requirements, v0.1, single-player, capture-accuracy]
 # MyLoop — Version 0.1 Functional Requirements
 
 High-level functional requirements agreed in the fresh redesign discussion.
+Tracked by [WarPro-Org/my_loop#198](https://github.com/WarPro-Org/my_loop/issues/198).
 This is the "what", not the "how". Where it conflicts with `docs/product/spec.md`,
 this document wins (notably: trail cells no longer capture territory; home location is removed).
 

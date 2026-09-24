@@ -10,6 +10,7 @@ lives here and versions alongside the code it describes.
 |--------|-----------------|
 | `architecture/` | How the system actually works — system overview, claim pipeline, spatial model, real-time contract, and the full [frontend↔backend reference](architecture/frontend-backend-reference.md) (every endpoint, SignalR hub, and provider mapping). |
 | `product/` | Product & technical [spec](product/spec.md) and the game-design [decision log](product/design-log.md) — what we're building and why. |
+| `versions/` | Per-version functional requirements, agreed before design or code — start at the [versions index](versions/README.md). |
 | `decisions/` | Architectural Decision Records (ADRs). One file per decision, **append-only** once Accepted. |
 | `runbooks/` | Operational procedures — deploys, DB migrations, incident response. |
 | `compliance/` | Apple App Store review, privacy manifest mapping, data-deletion guarantees. |
