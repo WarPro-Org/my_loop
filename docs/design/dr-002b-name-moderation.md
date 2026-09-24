@@ -318,6 +318,8 @@ New `NameReportsController` and `BlocksController` (keeps `UsersController` thin
 `PATCH /api/users/{id}` with `displayName` while `NameLockedAt != null` → **`409`**
 `{ "code": "name_locked", "message": "Your name can't be changed right now." }`.
 A successful rename clears `NameHiddenAt` and broadcasts `PlayerNameChanged`.
+The moderation checks and the save run in one transaction under the player's `Users` row lock
+(§4.9).
 
 ### 4.3 Moderator endpoints (`[Authorize(Policy = "Moderator")]`, `ModerationController`)
 
@@ -344,7 +346,8 @@ Non-moderators get `403`; no endpoint reveals who the moderators are.
 strategy.ExecuteAsync(async () => {
   ChangeTracker.Clear();
   await using tx = BeginTransaction();
-  SELECT … FROM "Users" WHERE "Id" = @reported FOR UPDATE      -- serialises reports per target
+  SELECT pg_advisory_xact_lock(NREP, key(@reporter))         -- serialises one reporter's reports (§4.9)
+  SELECT … FROM "Users" WHERE "Id" = @reported FOR NO KEY UPDATE  -- serialises reports per target
   if reporter has ≥ 10 reports since UTC midnight → return Limited
   INSERT NameReport … ON CONFLICT (ReporterId, ReportedUserId, NameSnapshot) DO NOTHING
      → 0 rows ⇒ return Duplicate
@@ -363,7 +366,7 @@ if openedNow → alerts.Send(FirstReport)
 if hiddenNow → alerts.Send(AutoHidden); notifier.PlayerNameChanged(reported, placeholder)
 ```
 
-- The `FOR UPDATE` row lock means two concurrent third reports cannot both count 2 (missed hide)
+- The row lock means two concurrent third reports cannot both count 2 (missed hide)
   or both hide (double alert).
 - Retry after an ambiguous commit: the report insert hits `ON CONFLICT` → `Duplicate` → no
   duplicate alert. **Accepted:** in that rare case the alert for that transition is lost; the
@@ -403,7 +406,8 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
 ### 4.7 Implementation notes (PR 2) — deviations from the above
 
 - **Reporting a moderator returns `204`, not `400`.** A distinct answer would reveal who the
-  moderators are, contradicting §4.3. The report is simply not recorded.
+  moderators are, contradicting §4.3. The report is recorded (so it spends the daily budget, §4.9)
+  but opens no case and never hides the name.
 - **Threshold window.** Only reports with `CreatedAt >= case.OpenedAt` count. Without it, a name
   a moderator restored would be re-hidden by the very reports that were already judged plus one.
 - **Renaming back to a confirmed-removed name** is refused (`400 "This name isn't allowed"`),
@@ -414,8 +418,9 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
   in-memory queue drained by a `BackgroundService`, so a report never waits on SMTP. A dropped
   alert (queue full / restart) is recoverable: every alert is logged when raised and the case row
   is the source of truth.
-- **`PATCH /api/users/{id}` gets `IModerationService` via `[FromServices]`**, not the constructor,
-  so existing `UsersController` constructions (tests, open PRs) are unaffected.
+- **The rename checks live in `UserService.UpdateProfile`** (superseded the round-1
+  `[FromServices] IModerationService` + `CheckRenameAsync` call in the controller, §4.9), so the
+  `UsersController` constructor is unchanged.
 - **Rescan uses offset paging ordered by `Id`**, not keyset on `Guid` (translation of `Guid`
   comparison is not guaranteed). Hides never remove rows; a mid-scan registration can shift a page,
   which is harmless because that name passed the blocklist at registration.
@@ -436,6 +441,63 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
   rescan's read and its insert.
 - The rescan summary email is sent from `finally`, so names already hidden are reported even if
   the scan fails part-way.
+
+### 4.9 Review fixes, round 2 (#194 agent review)
+
+- **The rename is one locked transaction.** `PATCH /api/users/{id}` with `displayName` makes one
+  call, `UserService.UpdateProfile`, which (inside `CreateExecutionStrategy`, after
+  `ChangeTracker.Clear()`) locks the player's `Users` row `FOR NO KEY UPDATE` — the same lock,
+  taken first, as reports, confirm, restore and rescan — then runs the rename gate (locked /
+  removed name), re-reads the user and saves, marking `DisplayName` and `NameHiddenAt` modified.
+  It returns `ProfileUpdateResult { Status: Updated | NotFound | NameLocked | NameRemoved, User? }`,
+  which the controller maps to `200` / `404` / `409 name_locked` / `400`. The wire contract is
+  unchanged. This closes two races: a confirm committing between the old unlocked check and the
+  save let a player re-adopt a `Confirmed` name; a hide committing while a profile save resent the
+  current name left the placeholder showing with `NameHiddenAt = NULL`, which restore could never
+  match. `IModerationService.CheckRenameAsync` is removed (it was only safe under the lock).
+- **Re-hiding under any status but `Restored`** (defence in depth). A report at or above the
+  threshold, or a confirm, hides a name that is showing under an `Open`, `AutoHidden` or
+  `Confirmed` case. A `Confirmed` case keeps its status (so it can't then be "restored") and a
+  repeat confirm never adds a second strike.
+- **Rename-back check ignores letter case and normalises snapshots.** The player's few
+  `AutoHidden`/`Confirmed` snapshots are loaded, each normalised with `NormalizeDisplayName`
+  (the stored text is used if it is ill-formed UTF-16) and compared to the request with
+  `OrdinalIgnoreCase`. "Rude Name" → "rude name" is refused, and so is a snapshot stored before
+  #189 (smart apostrophe, decomposed accents).
+- **A report of a moderator spends the reporter's budget.** It is inserted like any report, after
+  the daily-limit check, and then short-circuits: no case, no hide, no alert, `Ignored` → `204`.
+  Before, it inserted nothing, so at limit − 1 a report of a candidate followed by one of a fresh
+  player answered `429` (candidate counted, not a moderator) or `204` (a moderator). Such rows are
+  never counted later: a case window opened after the player leaves the allowlist starts after
+  them, and the queue counts only reports inside a window. **Accepted edge:** if a case for that
+  exact name was already open before the player became a moderator, reports filed while they
+  moderate fall inside its window and show in the queue; a moderator still decides, and reports
+  can't hide a moderator's name. A reporter who reported the name while its owner moderated can't
+  report the same name again after demotion (unique per reporter, target and name).
+- **`FOR NO KEY UPDATE` instead of `FOR UPDATE`** on the `Users` row (`ModerationLocks`). It still
+  conflicts with itself and with `UPDATE`, so it serialises every moderation write, but not with
+  the `FOR KEY SHARE` lock a `NameReports` foreign-key check takes on the reporter's row. A→B
+  racing B→A no longer deadlocks.
+- **One reporter's reports are serialised**, so concurrent reports against different targets
+  can't each count N − 1 and overshoot the daily limit. **Deviation from the suggested fix** (lock
+  the reporter's `Users` row as well, both rows in `Guid` order): leaderboard, decay,
+  hex-count reconciliation and territory code update many `Users` rows in no fixed order, so a
+  second row lock in reports could deadlock with them. Reports instead take a transaction-scoped
+  advisory lock on the reporter first — two-key form in its own namespace (`NREP`), which never
+  overlaps the one-key advisory locks `TerritoryService` and `LeaderboardService` use. Nothing that
+  holds a lock ever waits for it, so it can't join a deadlock cycle. Reporters whose 32-bit keys
+  collide are merely serialised with each other.
+- **Unlock is audited.** `UnlockNameAsync(userId, moderatorUid)` logs the moderator's UID
+  (structured), like confirm and restore.
+- **Options are validated at startup.** `Moderation:Email`, when enabled, needs a port in
+  1–65535 and a `From` and every `To` that parse as a mailbox with a domain. `Moderation` refuses
+  a blank moderator UID (it could never match and would silently leave that moderator out).
+- **Flutter shows the `name_locked` message.** `ApiService.extractApiError` also reads `message`
+  (after `error`), so a `409 { code, message }` body reaches the player instead of the generic
+  save error.
+- **Account deletion purges moderation rows explicitly.** `UserService.DeleteUserData` deletes
+  the player's `NameReports` (both directions) and `NameModerationCases` in its transaction, per
+  its "no reliance on cascades" contract; the DB cascades remain as a second line.
 
 ---
 
@@ -504,11 +566,15 @@ case-folding needed as long as every id originates from the API.
 
 | Risk | Status |
 |---|---|
-| Two concurrent third reports → double hide / double email, or both count 2 → missed hide | **Mitigated** — `FOR UPDATE` on the target row + conditional `UPDATE … WHERE DisplayName = @snapshot` |
+| Two concurrent third reports → double hide / double email, or both count 2 → missed hide | **Mitigated** — `FOR NO KEY UPDATE` on the target row + conditional `UPDATE … WHERE DisplayName = @snapshot` |
+| Rename racing a hide or a moderator decision (re-adopted confirmed name; placeholder with no hide flag) | **Mitigated** — rename checks and saves in one transaction under the same row lock (§4.9) |
+| Two players reporting each other at once deadlock | **Mitigated** — `FOR NO KEY UPDATE` doesn't block FK key-share checks (§4.9) |
+| Moderator identity probed via the report response or budget | **Mitigated** — moderator targets answer `204` and spend budget like any report (§4.9) |
+| Concurrent reports by one player overshoot the daily limit | **Mitigated** — per-reporter advisory lock (§4.9) |
 | Execution-strategy retry duplicates side effects | **Mitigated** — alerts/broadcast post-commit outside the retried block; inserts are `ON CONFLICT DO NOTHING` |
 | Lost alert after ambiguous commit | **Accepted** — case still visible in `GET /cases` |
 | Brigading (3 friends wipe a rival's name) | **Accepted by design** — victim renames immediately; no strike without a moderator |
-| Report spam by one account | **Mitigated** — unique per (reporter, target, name) + 10/day + existing global rate limiter |
+| Report spam by one account | **Mitigated** — unique per (reporter, target, name) + 10/day (serialised per reporter) + existing global rate limiter |
 | Restore clobbers a newer name the player chose | **Mitigated** — restore is conditional on the placeholder still being current |
 | Blocklist false positive on a real surname | **Mitigated** — exceptions set; generic error; report-review path unaffected |
 | Blocklist evasion via Cyrillic/Greek homoglyphs | **Mitigated by #189** (Latin-only) + accent fold |
@@ -522,7 +588,7 @@ case-folding needed as long as every id originates from the API.
 | Offline cold start shows blocked names unmasked | **Mitigated** — user-bound block-list cache |
 | Moderation DDL patch fails silently at startup | **Mitigated** — one transactional block, `Error` log |
 | Rescan request too long at scale | **Accepted for beta** (keyset paging); revisit if user count > ~50k |
-| Report stores reporter identity (PII) | **Mitigated** — cascade on account deletion; never included in alert emails. App Store privacy label: check whether "Other User Content" must be declared (UNVERIFIED) |
+| Report stores reporter identity (PII) | **Mitigated** — explicit purge (and cascade) on account deletion; never included in alert emails. App Store privacy label: check whether "Other User Content" must be declared (UNVERIFIED) |
 | Anti-cheat: block used to protect territory | **N/A by design** — block never affects gameplay |
 
 ---
