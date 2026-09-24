@@ -74,6 +74,9 @@ class MockWalkRunner {
   // ── Run lifecycle ──────────────────────────────────────────────────────────
 
   void _begin() {
+    // The engine outlives a run (one per MockLocationService), so each run
+    // starts its own correlated-jitter track instead of inheriting the last one.
+    _engine.resetJitter();
     _listener?.begin(totalMeters: _engine.totalLengthMeters, speedMps: _speedMps, runner: this);
     _emitFix(); // first fix immediately, like a real stream's initial position
     _timer = Timer.periodic(MockWalkConstants.tickInterval, (_) => _onTick());

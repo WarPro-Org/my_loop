@@ -33,17 +33,25 @@ class MockWalkConstants {
   static const double minSpeedMps = 0.5;
   static const double maxSpeedMps = 4.0; // brisk jog
 
-  /// Std-dev of per-fix positional jitter, in metres.
+  /// Stationary std-dev of the positional jitter, per axis, in metres.
   ///
   /// Calibrated against BOTH server gates, which pull in opposite directions:
   /// too little jitter and a straight route falls under the 2° bearing-std-dev
   /// smoothness floor; too much and the noise itself dominates displacement,
   /// inflating the measured path until it trips the 9.0 m/s sustained-average
-  /// speed gate (jitter is independent per 1 Hz fix, so σ adds ~2σ·√2 m/s of
-  /// phantom speed — real GPS error is time-correlated and does not).
-  /// At 2.5 m the worst case over 40 seeds is 15° std-dev (floor 2°) and
-  /// 5.1 m/s measured (cap 9.0). Asserted in `mock_walk_engine_test.dart`.
+  /// speed gate. Asserted in `mock_walk_engine_test.dart`.
   static const double jitterSigmaMeters = 2.5;
+
+  /// Fix-to-fix correlation of the jitter (AR(1) coefficient per axis).
+  ///
+  /// Real GPS error drifts slowly; it does not re-roll every second. Independent
+  /// per-fix jitter made the 8 m client noise floor keep mostly the fixes noise
+  /// had pushed far, so the short 2–5 point batches the drain sends showed
+  /// phantom speed and ~30% of default walks had a batch rejected by the 9.0 m/s
+  /// per-batch average. At 0.9 consecutive fixes differ by only
+  /// σ·√(2·(1−ρ)) ≈ 1.1 m per axis while the spread over a walk stays σ, which
+  /// keeps every drain batch under the gate and bearing std-dev above 2°.
+  static const double jitterCorrelation = 0.9;
 
   /// Default and bounds for the generated closed loop radius, in metres. The minimum
   /// is held high enough that the loop perimeter, after the client noise-floor dedup

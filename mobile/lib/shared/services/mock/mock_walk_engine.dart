@@ -48,6 +48,17 @@ class MockWalkEngine {
   /// internally consistent (and reproducible when a seeded [Random] is supplied).
   List<MockRoutePoint>? _plotted;
 
+  /// Current AR(1) jitter offset per axis, in metres; null before the first
+  /// fix of a run (see [jitterPoint]).
+  double? _jitterNorthMeters;
+  double? _jitterEastMeters;
+
+  /// Per-fix innovation std-dev that keeps the AR(1) stationary std-dev at
+  /// [MockWalkConstants.jitterSigmaMeters]: σ·√(1−ρ²).
+  static final double _jitterInnovationSigmaMeters = MockWalkConstants.jitterSigmaMeters *
+      sqrt(1 -
+          MockWalkConstants.jitterCorrelation * MockWalkConstants.jitterCorrelation);
+
   MockWalkEngine(this.config, {Random? random}) : _random = random ?? Random();
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -132,13 +143,35 @@ class MockWalkEngine {
     return anchors.last;
   }
 
-  /// Applies the configured Gaussian positional jitter to [point] (identity when
-  /// jitter is disabled). Consumes the engine's seeded [Random].
+  /// Applies the configured positional jitter to [point] (identity when jitter
+  /// is disabled). Consumes the engine's seeded [Random].
+  ///
+  /// The jitter is time-correlated, like real GPS error: each call is one fix,
+  /// and the offset follows an AR(1) process per axis,
+  /// `e_t = ρ·e_{t−1} + σ·√(1−ρ²)·N(0,1)`, whose stationary std-dev is σ.
+  /// The first fix after construction or [resetJitter] draws from that
+  /// stationary distribution. See [MockWalkConstants.jitterCorrelation].
   LatLng jitterPoint(LatLng point) {
     if (!config.jitterEnabled) return point;
-    final north = _gaussian() * MockWalkConstants.jitterSigmaMeters;
-    final east = _gaussian() * MockWalkConstants.jitterSigmaMeters;
+    final north = _nextJitterMeters(_jitterNorthMeters);
+    final east = _nextJitterMeters(_jitterEastMeters);
+    _jitterNorthMeters = north;
+    _jitterEastMeters = east;
     return _offsetMeters(point, north, east);
+  }
+
+  /// Forgets the jitter history so the next fix starts a fresh, independent
+  /// error track. Called at the start of each run and each fixed-speed plot.
+  void resetJitter() {
+    _jitterNorthMeters = null;
+    _jitterEastMeters = null;
+  }
+
+  double _nextJitterMeters(double? previousMeters) {
+    const sigma = MockWalkConstants.jitterSigmaMeters;
+    if (previousMeters == null) return _gaussian() * sigma;
+    return MockWalkConstants.jitterCorrelation * previousMeters +
+        _gaussian() * _jitterInnovationSigmaMeters;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -155,6 +188,7 @@ class MockWalkEngine {
     final stepMeters = config.speedMps * MockWalkConstants.tickInterval.inMilliseconds / 1000.0;
     final points = <MockRoutePoint>[];
 
+    resetJitter();
     final first = jitterPoint(cleanPointAt(0));
     points.add(MockRoutePoint(first.latitude, first.longitude, 0.0));
 
