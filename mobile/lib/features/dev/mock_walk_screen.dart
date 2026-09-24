@@ -12,6 +12,13 @@
 /// "Use my location" button runs the full (real) permission flow and surfaces
 /// failures as a snackbar.
 ///
+/// While the mock is on (after any START), the app bar offers "Use real GPS",
+/// the only way back to the real [LocationService] without a restart. Editing
+/// or loading a route never changes the mode.
+///
+/// A start point that came from a real GPS fix is never persisted as the
+/// last-used location (see [MockRouteLibraryNotifier.setLastUsed]).
+///
 /// Reachable only via the debug-only route `/dev/mock-walk` (registered under
 /// `kDebugMode`).
 library;
@@ -70,6 +77,8 @@ class _Strings {
   static const saveDialogCancel = 'Cancel';
   static const saveDialogSave = 'Save';
   static const deleteRouteTooltip = 'Delete route';
+  static const mockOff = 'Use real GPS';
+  static const mockOffDone = 'Mock off — the next walk uses real GPS.';
   static String tapHintWaypoints(int count) =>
       'Tap the map to add waypoints in order — $count set.';
   static const tapHintStart = 'Tap the map to move the start point.';
@@ -95,6 +104,9 @@ class _Strings {
 class MockWalkScreen extends ConsumerStatefulWidget {
   const MockWalkScreen({super.key});
 
+  /// The app-bar control that switches the simulator off (real GPS again).
+  static const mockOffKey = Key('mockWalk.mockOff');
+
   @override
   ConsumerState<MockWalkScreen> createState() => _MockWalkScreenState();
 }
@@ -106,6 +118,10 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
   /// start-point resolution can never clobber an explicit choice.
   bool _userChoseStart = false;
   bool _locating = false;
+
+  /// The tester's real position, when a GPS fix was taken on this screen. Kept
+  /// only in memory, so [_launch] can avoid persisting it as the last-used start.
+  LatLng? _deviceFix;
 
   @override
   void initState() {
@@ -128,6 +144,15 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
             _Badge(label: _Strings.debugBadge, color: AppColors.orange),
           ],
         ),
+        actions: [
+          if (config.enabled)
+            TextButton.icon(
+              key: MockWalkScreen.mockOffKey,
+              icon: const Icon(Icons.gps_fixed, size: 18),
+              label: const Text(_Strings.mockOff),
+              onPressed: _turnMockOff,
+            ),
+        ],
       ),
       body: Column(
         children: [
@@ -472,7 +497,7 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
           permission == LocationPermission.always;
       if (!granted) return;
       final pos = await LocationService().getCurrentPosition();
-      _moveStart(LatLng(pos.latitude, pos.longitude));
+      _moveStart(_recordDeviceFix(pos));
     } catch (_) {
       // No fix (timeout / services off) — the fallback start point stands.
     }
@@ -487,7 +512,7 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
       await service.requestPermission();
       final pos = await service.getCurrentPosition();
       _userChoseStart = true;
-      _moveStart(LatLng(pos.latitude, pos.longitude), force: true);
+      _moveStart(_recordDeviceFix(pos), force: true);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -498,6 +523,9 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
       if (mounted) setState(() => _locating = false);
     }
   }
+
+  LatLng _recordDeviceFix(Position pos) =>
+      _deviceFix = LatLng(pos.latitude, pos.longitude);
 
   void _moveStart(LatLng point, {bool force = false}) {
     if (!mounted || (_userChoseStart && !force)) return;
@@ -540,8 +568,9 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
 
   void _loadSavedRoute(SavedMockRoute route) {
     _userChoseStart = true;
-    // Saved configs are persisted with `enabled` forced off; keep it off until START.
-    _set(route.config);
+    // Saved configs are persisted with `enabled` forced off. Loading a route
+    // edits the route only — it must not silently switch the mock on or off.
+    _set(route.config.copyWith(enabled: ref.read(mockWalkConfigProvider).enabled));
     _mapController.move(route.config.startPoint, 16);
   }
 
@@ -558,8 +587,20 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
     final live = config.copyWith(enabled: true);
     ref.read(mockWalkConfigProvider.notifier).update(live);
     // Remember for next open; durability is best-effort by design.
-    unawaited(ref.read(mockRouteLibraryProvider.notifier).setLastUsed(live));
+    unawaited(ref
+        .read(mockRouteLibraryProvider.notifier)
+        .setLastUsed(live, deviceFix: _deviceFix));
     context.go('/journey');
+  }
+
+  /// Switches the simulator off: `locationServiceProvider` goes back to the real
+  /// [LocationService] for the next START. A walk already in progress keeps the
+  /// stream it started with until it is stopped.
+  void _turnMockOff() {
+    _set(ref.read(mockWalkConfigProvider).copyWith(enabled: false));
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text(_Strings.mockOffDone)),
+    );
   }
 
   /// Route geometry preview (no jitter) so the tester sees the shape they'll walk.
