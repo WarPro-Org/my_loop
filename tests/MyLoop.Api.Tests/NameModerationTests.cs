@@ -92,7 +92,7 @@ public class NameModerationTests
     [InlineData("Philip Ornstein")]
     [InlineData("Mari Conti")]
     [InlineData("Ana L")]              // "an"+"al" is not a spelled-out run
-        [InlineData("Jean-Luc_2")]
+    [InlineData("Jean-Luc_2")]
     [InlineData("Łukasz")]
     public void Real_names_and_innocent_words_are_accepted(string name) =>
         Assert.Null(_validation.ValidateDisplayName(name));
