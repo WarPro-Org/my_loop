@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Services;
 using MyLoop.Api.Services.Moderation;
@@ -24,7 +25,9 @@ public class NameModerationTests
     [InlineData("Admin2")]             // reserved word + trailing digits
     [InlineData("Moderator1")]         // digits checked before leetspeak turns 1 into i
     [InlineData("MyLoopSupport")]      // brand anywhere
-    [InlineData("s-h-i-t")]            // separators stripped before substring match
+    [InlineData("s-h-i-t")]            // single letters joined back into the word they spell
+    [InlineData("f u c k")]
+    [InlineData("F-u-c-k Face")]       // a spelled-out run next to an ordinary word
     [InlineData("Fuckface")]
     [InlineData("N1gg3r")]
     [InlineData("Arschloch")]          // German
@@ -75,6 +78,12 @@ public class NameModerationTests
     [InlineData("Cazzola")]
     [InlineData("Cumming")]
     [InlineData("Admiral")]            // reserved words stay whole-word
+    [InlineData("Thomas Lutz")]        // #193 review: severe terms are matched per word, so a
+    [InlineData("Margaret Ardern")]    // first name + surname can't form one across the boundary
+    [InlineData("Louisa Lopez")]       // (s+lut, retard, salope, porn, maricon)
+    [InlineData("Philip Ornstein")]
+    [InlineData("Mari Conti")]
+    [InlineData("Ana L")]              // "an"+"al" is not a spelled-out run
         [InlineData("Jean-Luc_2")]
     [InlineData("Łukasz")]
     public void Real_names_and_innocent_words_are_accepted(string name) =>
@@ -111,6 +120,17 @@ public class NameModerationTests
             if (File.Exists(candidate)) return File.ReadAllText(candidate);
         }
         throw new FileNotFoundException($"{relativePath} not found above {AppContext.BaseDirectory}");
+    }
+
+    [Fact]
+    public void Spelled_out_token_length_matches_the_generator()
+    {
+        // The generator's safety check only covers names one word at a time, which is sound only
+        // while it and the matcher agree on which short tokens get joined.
+        var script = ReadRepoFile("scripts/moderation/build_name_blocklist.py");
+        var match = Regex.Match(script, @"(?m)^MAX_SPELLED_OUT_TOKEN_LENGTH = (\d+)$");
+        Assert.True(match.Success);
+        Assert.Equal(GameConstants.MaxSpelledOutTokenLength, int.Parse(match.Groups[1].Value));
     }
 
     [Fact]

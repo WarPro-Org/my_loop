@@ -72,9 +72,10 @@ public static class NameModeration
     }
 
     /// <summary>
-    /// True when the name matches the blocklist: a severe term anywhere in the folded,
-    /// separator-stripped name, or a whole-word/reserved term as a complete word (or as the
-    /// whole name once separators are removed, so "my_loop" and "a-s-s" still match).
+    /// True when the name matches the blocklist: a severe term anywhere inside one word, or a
+    /// whole-word/reserved term equal to one word. Letters spelled out one at a time
+    /// ("s-h-i-t", "a-s-s") are joined back into a word first. Words are never otherwise joined,
+    /// so a first name and surname cannot form a term across the boundary (Thomas Lutz).
     /// </summary>
     public static bool IsBlocked(string normalizedName) =>
         IsReserved(normalizedName) || MatchesBlocklist(normalizedName);
@@ -92,22 +93,38 @@ public static class NameModeration
 
     private static bool MatchesBlocklist(string normalizedName)
     {
-        // Exception words (real names/places that contain a severe term) are removed before
-        // matching, so they also pass inside longer names ("Scunthorpe United", "Harshit Kumar").
-        var words = Fold(normalizedName)
-            .Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries)
+        var words = Fold(normalizedName).Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
+        // Exception words (real names/places that contain a severe term) are skipped, so they
+        // also pass inside longer names ("Scunthorpe United", "Harshit Kumar").
+        var candidates = words
             .Where(w => !NameBlocklist.Exceptions.Contains(w))
-            .ToArray();
-        var joined = string.Concat(words);
-        if (joined.Length == 0) return false;
-
-        if (IsWholeWordMatch(joined) || words.Any(IsWholeWordMatch)) return true;
-        foreach (var term in NameBlocklist.SevereSubstrings)
-        {
-            if (joined.Contains(term, StringComparison.Ordinal)) return true;
-        }
-        return false;
+            .Concat(SpelledOutRuns(words));
+        return candidates.Any(c => IsWholeWordMatch(c) || ContainsSevereTerm(c));
     }
+
+    /// <summary>
+    /// Each maximal run of consecutive single-letter tokens, joined: "f u c k" becomes "fuck".
+    /// Longer tokens end a run, because joining real name parts is what formed slurs across
+    /// word boundaries (#193 review).
+    /// </summary>
+    private static IEnumerable<string> SpelledOutRuns(IEnumerable<string> words)
+    {
+        var run = new StringBuilder();
+        foreach (var word in words)
+        {
+            if (word.Length <= GameConstants.MaxSpelledOutTokenLength)
+            {
+                run.Append(word);
+                continue;
+            }
+            if (run.Length > 0) yield return run.ToString();
+            run.Clear();
+        }
+        if (run.Length > 0) yield return run.ToString();
+    }
+
+    private static bool ContainsSevereTerm(string word) =>
+        NameBlocklist.SevereSubstrings.Any(term => word.Contains(term, StringComparison.Ordinal));
 
     private static bool IsWholeWordMatch(string word) =>
         NameBlocklist.WholeWords.Contains(word) || ReservedWords.Contains(word);

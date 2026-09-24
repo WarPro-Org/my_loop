@@ -15,6 +15,14 @@ Tiering (why each list exists):
                       path handles those — and identity terms (IDENTITY), which are never blocked.
   exceptions        : folded names that must never be blocked even if a tier matches.
 
+Matching semantics the safety check relies on (NameModeration.MatchesBlocklist): terms are
+matched inside ONE word of the name, never across words, except that runs of tokens of at most
+MAX_SPELLED_OUT_TOKEN_LENGTH characters ("s-h-i-t") are joined back together. So checking each
+corpus name on its own is sufficient; a first-name x surname pair check is not needed, because
+the matcher never joins two real name parts. That only holds while no corpus name is short
+enough to be part of a spelled-out run, which main() asserts. (A pair check under the old
+join-every-word semantics found 2,291 blocked first+last pairs — Thomas Lutz -> "slut".)
+
 Sources are pinned to commits so a re-run is reproducible. Usage:
     python3 scripts/moderation/build_name_blocklist.py
 """
@@ -118,6 +126,10 @@ SEPARATORS = re.compile(r"[ \-_'’.]+")
 LATIN_FOLDED = re.compile(r"^[a-z0-9]+$")
 MIN_SUBSTRING_LENGTH = 7  # shorter foreign words hide inside names (pipari, jajko, poppen)
 MIN_WHOLE_WORD_LENGTH = 3
+# Mirrors GameConstants.MaxSpelledOutTokenLength (C#; NameModerationTests asserts they match).
+# At 2, two-letter name parts would be joined (Si Ki -> "siki", Su Ka -> "suka",
+# As Lu Ty -> "slut"), and the joinable-names check in main() fails.
+MAX_SPELLED_OUT_TOKEN_LENGTH = 1
 
 
 def fold(text: str) -> str:
@@ -173,6 +185,9 @@ def main() -> None:
     name_hits = sorted(n for n in names - exceptions if any(t in n for t in severe))
     if name_hits:
         raise SystemExit(f"severe terms hit real names — move the term or add an exception: {name_hits}")
+    joinable = sorted(n for n in names if len(n) <= MAX_SPELLED_OUT_TOKEN_LENGTH)
+    if joinable:
+        raise SystemExit(f"real names short enough to be joined as spelled-out letters: {joinable}")
     render(sorted(severe), sorted(whole - severe), sorted(exceptions))
     print(f"severe={len(severe)} whole={len(whole - severe)} exceptions={len(exceptions)}")
 
