@@ -36,7 +36,7 @@ this document wins (notably: trail cells no longer capture territory; home locat
 7. Accuracy means the rule is applied 100% correctly, and the path is as good as the phone's GPS allows.
 8. No surprises:
    - a live preview during the walk shows the hexes you'd capture;
-   - the phone and the server use exactly the same rule;
+   - the server is the only judge of what is captured. The phone's preview is a close estimate of the same rule (without the anti-cheat checks), and an automated test replays real recorded walks and fails if the preview and the server ever disagree;
    - weak GPS is flagged at that moment;
    - the result screen shows your path over the captured hexes.
 
