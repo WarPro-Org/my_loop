@@ -11,6 +11,7 @@ library;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/services/api_service.dart';
+import 'package:myloop/shared/util/display_name.dart';
 
 /// Immutable snapshot of the current user's identity.
 class UserProfile {
@@ -54,8 +55,9 @@ class UserProfileNotifier extends Notifier<UserProfile> {
 
   /// Updates display name.
   void updateDisplayName(String name) {
-    state = state.copyWith(displayName: name);
-    _persistUpdate(displayName: name);
+    final canonical = canonicalDisplayName(name);
+    state = state.copyWith(displayName: canonical);
+    _persistUpdate(displayName: canonical);
   }
 
   /// Fire-and-forget API call to persist profile changes.

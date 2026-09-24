@@ -54,7 +54,7 @@ public class UserService : IUserService
         var user = await _db.Users.FindAsync(id);
         if (user == null) return null;
 
-        if (request.DisplayName != null) user.DisplayName = request.DisplayName.Trim();
+        if (request.DisplayName != null) user.DisplayName = ValidationService.NormalizeDisplayName(request.DisplayName);
         if (request.Color != null) user.Color = request.Color;
         if (request.AvatarId != null) user.AvatarId = request.AvatarId.Value;
 
@@ -126,7 +126,7 @@ public class UserService : IUserService
         {
             Id = Guid.NewGuid(),
             FirebaseUid = firebaseUid,
-            DisplayName = request.DisplayName.Trim(),
+            DisplayName = ValidationService.NormalizeDisplayName(request.DisplayName),
             Color = request.Color,
             AvatarId = request.AvatarId,
             AuthProvider = authProvider,

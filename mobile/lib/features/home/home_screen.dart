@@ -15,6 +15,7 @@ import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
+import 'package:myloop/shared/util/display_name.dart';
 
 /// Global key so child widgets (like home_tab) can open the end drawer.
 final homeScaffoldKey = GlobalKey<ScaffoldState>();
@@ -265,7 +266,7 @@ class ProfileDrawer extends ConsumerWidget {
                 child: ElevatedButton(
                   onPressed: () {
                     final name = controller.text.trim();
-                    final validated = _validateDisplayName(name);
+                    final validated = validateDisplayName(name);
                     if (validated != null) {
                       setSheetState(() => errorText = validated);
                       return;
@@ -281,17 +282,6 @@ class ProfileDrawer extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  /// Validates display name: 2-20 chars, alphanumeric + spaces + basic punctuation only.
-  String? _validateDisplayName(String name) {
-    if (name.isEmpty) return 'Name cannot be empty';
-    if (name.length < 2) return 'Name must be at least 2 characters';
-    if (name.length > 20) return 'Name must be 20 characters or less';
-    // Allow letters, numbers, spaces, hyphens, underscores, apostrophes
-    final valid = RegExp(r"^[a-zA-Z0-9 \-_']+$");
-    if (!valid.hasMatch(name)) return 'Only letters, numbers, spaces, hyphens allowed';
-    return null;
   }
 
   void _confirmDeleteAccount(BuildContext context, WidgetRef ref) {

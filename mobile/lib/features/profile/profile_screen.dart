@@ -12,6 +12,7 @@ import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
+import 'package:myloop/shared/util/display_name.dart';
 
 /// The player's profile screen with identity, stats, and settings.
 class ProfileScreen extends ConsumerWidget {
@@ -139,47 +140,56 @@ class ProfileScreen extends ConsumerWidget {
   void _showNameEditor(BuildContext context, WidgetRef ref) {
     final profile = ref.read(userProfileProvider);
     final controller = TextEditingController(text: profile.displayName);
+    String? errorText;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 24, right: 24, top: 24, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Edit Display Name', style: Theme.of(ctx).textTheme.headlineMedium),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: InputDecoration(
-                hintText: 'Enter your name',
-                filled: true,
-                fillColor: AppColors.snow,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.greyLight)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(left: 24, right: 24, top: 24, bottom: MediaQuery.of(ctx).viewInsets.bottom + 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Edit Display Name', style: Theme.of(ctx).textTheme.headlineMedium),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Enter your name',
+                  errorText: errorText,
+                  filled: true,
+                  fillColor: AppColors.snow,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.greyLight)),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () {
-                  final name = controller.text.trim();
-                  if (name.isNotEmpty) {
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final name = controller.text.trim();
+                    // Validate before the optimistic update: the save is fire-and-forget, so a
+                    // name the API rejects would otherwise show locally but never persist (#189).
+                    final validated = validateDisplayName(name);
+                    if (validated != null) {
+                      setSheetState(() => errorText = validated);
+                      return;
+                    }
                     ref.read(userProfileProvider.notifier).updateDisplayName(name);
-                  }
-                  Navigator.pop(ctx);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Name updated!'), backgroundColor: AppColors.primary),
-                  );
-                },
-                child: const Text('SAVE'),
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Name updated!'), backgroundColor: AppColors.primary),
+                    );
+                  },
+                  child: const Text('SAVE'),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

@@ -16,6 +16,11 @@ class AppConstants {
   static const int gpsDistanceFilterMeters = 5;
   static const int gpsTimeoutSeconds = 15;
 
+  // --- Player identity ---
+  /// Display-name length bounds — must match GameConstants.Min/MaxDisplayNameLength (API).
+  static const int minDisplayNameLength = 2;
+  static const int maxDisplayNameLength = 20;
+
   // --- Territory / Claims ---
   static const int minGpsPointsPerClaim = 10;
   static const double minWalkDistanceMeters = 200.0;

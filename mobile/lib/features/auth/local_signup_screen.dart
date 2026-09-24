@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
+import 'package:myloop/shared/util/display_name.dart';
 
 /// Screen for users who prefer not to use Google/Apple sign-in.
 ///
@@ -23,14 +24,22 @@ class LocalSignupScreen extends StatefulWidget {
 class _LocalSignupScreenState extends State<LocalSignupScreen> {
   final _nameController = TextEditingController();
   bool _isValid = false;
+  /// Why the current name is refused; null while empty or valid (#189 review).
+  String? _nameError;
 
   @override
   void initState() {
     super.initState();
     _nameController.addListener(() {
       final name = _nameController.text.trim();
-      final valid = name.length >= 2 && name.length <= 20 && RegExp(r"^[a-zA-Z0-9 \-_']+$").hasMatch(name);
-      if (valid != _isValid) setState(() => _isValid = valid);
+      final error = name.isEmpty ? null : validateDisplayName(name);
+      final valid = name.isNotEmpty && error == null;
+      if (valid != _isValid || error != _nameError) {
+        setState(() {
+          _isValid = valid;
+          _nameError = error;
+        });
+      }
     });
   }
 
@@ -88,6 +97,7 @@ class _LocalSignupScreenState extends State<LocalSignupScreen> {
                 textCapitalization: TextCapitalization.words,
                 decoration: InputDecoration(
                   hintText: 'Your display name',
+                  errorText: _nameError,
                   prefixIcon: const Icon(Icons.person_outline),
                   counterText: '',
                   filled: true,
