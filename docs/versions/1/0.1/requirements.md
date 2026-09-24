@@ -86,6 +86,8 @@ this document wins (notably: trail cells no longer capture territory; home locat
 
 37. The profile shows: total land captured, hexes explored, total distance, number of walks, and the passport.
 38. The profile also keeps what exists today: display name, avatar and colour, edit name, walk history, notification settings, contact support, sign out, and delete account.
+39. Opening a past walk from walk history shows the same result screen as when it ended: the path, what was captured, what was explored, and any "you were X m from closing" hint.
+40. Deleting an account deletes everything — walks, captured land, explored hexes and the passport. Nothing is left behind.
 
 ## Areas and passport
 
