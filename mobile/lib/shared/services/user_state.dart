@@ -74,6 +74,9 @@ class UserProfileNotifier extends Notifier<UserProfile> {
         if (serverReason == null) _log.warning('Rename failed unexpectedly', e, s);
         return serverReason ?? displayNameSaveFailedError;
       }
+      // The account may have signed out (and another signed in) while the request was in
+      // flight; writing now would put this name on the next account's profile.
+      if (state.userId != userId) return null;
     }
     state = state.copyWith(displayName: canonical);
     return null;

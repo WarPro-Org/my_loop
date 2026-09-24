@@ -6,6 +6,7 @@
 /// waits for the API and returns the reason instead.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
@@ -106,5 +107,21 @@ void main() {
 
     expect(error, displayNameOfflineError);
     expect(container.read(userProfileProvider).displayName, 'Robin');
+  });
+
+  test('a rename that finishes after sign-out does not overwrite the next account', () async {
+    final pending = Completer<void>();
+    final container = containerWith(_FakeApi(() => pending.future));
+    final notifier = container.read(userProfileProvider.notifier);
+
+    final rename = notifier.updateDisplayName('Kai');
+    notifier.clear();
+    notifier.setFromApi(userId: 'u2', avatarId: 1, color: '#FF5733', displayName: 'Bob');
+    pending.complete();
+    await rename;
+
+    final profile = container.read(userProfileProvider);
+    expect(profile.userId, 'u2');
+    expect(profile.displayName, 'Bob');
   });
 }
