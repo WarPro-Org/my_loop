@@ -17,6 +17,9 @@ internal static class ModerationLocks
     /// </summary>
     private const int ReporterLockNamespace = 0x4E524550; // "NREP"
 
+    /// <summary>First key of the two-key advisory lock for "one player's blocks".</summary>
+    private const int BlockerLockNamespace = 0x55424C4B; // "UBLK"
+
     /// <summary>
     /// Serialises one reporter's reports until the transaction ends, so the daily-limit count and
     /// the insert can't interleave. Must be the first lock a report takes: it is an advisory lock,
@@ -28,6 +31,16 @@ internal static class ModerationLocks
     public static Task LockReporterAsync(AppDbContext db, Guid reporterId) =>
         db.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock({ReporterLockNamespace}, {BitConverter.ToInt32(reporterId.ToByteArray(), 0)})");
+
+    /// <summary>
+    /// Serialises one player's blocks until the transaction ends, so the limit count and the insert
+    /// can't interleave. The only lock a block takes, and nothing holding another lock waits for
+    /// it, so it can't join a deadlock cycle. Two blockers whose keys collide are merely
+    /// serialised with each other.
+    /// </summary>
+    public static Task LockBlockerAsync(AppDbContext db, Guid blockerId) =>
+        db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({BlockerLockNamespace}, {BitConverter.ToInt32(blockerId.ToByteArray(), 0)})");
 
     /// <summary>
     /// Locks the player's <c>Users</c> row until the transaction ends. <c>FOR NO KEY UPDATE</c>

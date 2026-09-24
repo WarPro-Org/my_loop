@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
 using MyLoop.Api.Interfaces;
@@ -16,8 +17,6 @@ public class PushNotificationService : IPushNotificationService
     private readonly AppDbContext _db;
     private readonly IFcmSender _fcmSender;
     private readonly ILogger<PushNotificationService> _logger;
-
-    private const string AnonymousActor = "A player";
 
     public PushNotificationService(AppDbContext db, IFcmSender fcmSender, ILogger<PushNotificationService> logger)
     {
@@ -37,7 +36,7 @@ public class PushNotificationService : IPushNotificationService
 
         // A blocked player's name never reaches the blocker's lock screen (Guideline 1.2).
         var blocked = await _db.UserBlocks.AnyAsync(b => b.BlockerId == victimUserId && b.BlockedId == thiefUserId);
-        var actor = blocked ? AnonymousActor : thiefDisplayName;
+        var actor = blocked ? GameConstants.BlockedActorLabel : thiefDisplayName;
 
         var title = "Territory Under Attack! ⚔️";
         var body = stolenCount == 1
