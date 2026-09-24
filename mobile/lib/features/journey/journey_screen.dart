@@ -27,6 +27,7 @@ import 'package:myloop/features/dev/mock_walk_overlay.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
+import 'package:myloop/shared/widgets/app_map_tiles.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
@@ -207,10 +208,10 @@ class _JourneyScreenState extends ConsumerState<JourneyScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.deepOrange,
+                  color: AppColors.orange,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text('MOCK', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                child: const Text('MOCK', style: TextStyle(color: AppColors.white, fontWeight: FontWeight.bold, fontSize: 12)),
               ),
             ),
           // Debug-only mock-walk HUD / post-run summary (#29 follow-up). Read-only;
@@ -649,8 +650,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         onTap: (tapPos, latLng) => _onMapTap(latLng),
       ),
       children: [
-        _buildTileLayer(),
-        if (_useSatellite) _buildLabelsLayer(),
+        ...AppMapTiles.layers(satellite: _useSatellite),
         // Other-players' + own owned-hex layers repaint from hexManager's
         // hexRevision alone, not the screen-wide setState the other map
         // layers rebuild from — a SignalR delta, viewport poll, or step
@@ -751,26 +751,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       lng += p[1];
     }
     return [lat / boundary.length, lng / boundary.length];
-  }
-
-  TileLayer _buildTileLayer() {
-    return TileLayer(
-      urlTemplate: _useSatellite
-          ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
-          : 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
-      subdomains: _useSatellite ? const [] : const ['a', 'b', 'c', 'd'],
-      userAgentPackageName: 'com.myloop.app',
-      keepBuffer: 4,
-      panBuffer: 2,
-      maxNativeZoom: 19,
-    );
-  }
-
-  TileLayer _buildLabelsLayer() {
-    return TileLayer(
-      urlTemplate: 'https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
-      userAgentPackageName: 'com.myloop.app',
-    );
   }
 
   List<Widget> _buildOtherPlayerHexes() {
