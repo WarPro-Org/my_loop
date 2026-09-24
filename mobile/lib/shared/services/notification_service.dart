@@ -4,6 +4,7 @@
 /// so users can see a history of what happened to their territory.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:myloop/shared/services/notification_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -48,9 +49,16 @@ class AppNotification {
 /// written after every mutation, and bound to the signed-in user id so a second account
 /// on the same device never inherits the first user's notifications.
 class NotificationNotifier extends Notifier<List<AppNotification>> {
+  Future<void> _hydration = Future<void>.value();
+
+  /// Completes once the initial disk restore has finished. Tests await this
+  /// instead of guessing at a delay; nothing in the app needs it.
+  @visibleForTesting
+  Future<void> get hydration => _hydration;
+
   @override
   List<AppNotification> build() {
-    _hydrate();
+    _hydration = _hydrate();
     return [];
   }
 
@@ -67,7 +75,26 @@ class NotificationNotifier extends Notifier<List<AppNotification>> {
     }
   }
 
-  Future<void> _persist() async {
+  Future<void> _pendingWrite = Future<void>.value();
+
+  /// Completes once every write queued so far has hit disk. The session
+  /// teardown awaits it before disposing this notifier (a queued write reads
+  /// `ref`); tests await it instead of guessing at a delay.
+  Future<void> get pendingWrite => _pendingWrite;
+
+  /// Queues a write behind any still in flight. Without the chain two mutations
+  /// race to the same file, and an earlier unread-state write completing last
+  /// resurrects the badge that [markAllRead] just cleared.
+  void _persist() {
+    _pendingWrite = _pendingWrite.then((_) => _write());
+  }
+
+  /// Reads `state` when the write actually runs, not when it was queued, so a
+  /// burst of mutations converges on the latest state rather than replaying
+  /// stale snapshots. [NotificationCache.save] swallows its own IO errors, so a
+  /// failed disk write does not break the chain for later writes; an error
+  /// thrown outside `save` (e.g. reading `ref` after disposal) is not caught.
+  Future<void> _write() async {
     final userId = _userId;
     if (userId == null || userId.isEmpty) return;
     await NotificationCache.save(userId, state);

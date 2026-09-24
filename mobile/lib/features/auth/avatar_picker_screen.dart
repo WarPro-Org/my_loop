@@ -12,6 +12,8 @@ import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_rank_sync.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
@@ -225,10 +227,12 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
         avatarId: user.avatarId,
         color: user.color,
         displayName: user.displayName,
-        hexCount: user.hexCount,
-        streak: user.streak,
-        distanceKm: user.distanceKm,
       );
+      ref.read(profileSliceProvider.notifier).applyStats(
+            hexCount: user.hexCount,
+            streak: user.streak,
+            distanceKm: user.distanceKm,
+          );
 
       if (mounted) context.go('/set-home');
     } catch (e) {
@@ -242,10 +246,15 @@ class _AvatarPickerScreenState extends ConsumerState<AvatarPickerScreen> {
             avatarId: existing.avatarId,
             color: existing.color,
             displayName: existing.displayName,
-            hexCount: existing.hexCount,
-            streak: existing.streak,
-            distanceKm: existing.distanceKm,
           );
+          ref.read(profileSliceProvider.notifier).applyStats(
+                hexCount: existing.hexCount,
+                streak: existing.streak,
+                distanceKm: existing.distanceKm,
+              );
+          // Going straight to Home skips onboarding, so hydrate here for the
+          // live rank (and slices) the Home tiles read.
+          await hydrateAndSyncProfileRank(ref, isMounted: () => mounted);
           if (mounted) context.go('/home');
           return;
         }

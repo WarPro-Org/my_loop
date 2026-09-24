@@ -6,12 +6,15 @@ library;
 import 'package:flutter/material.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
 
+/// Where a signed-out user lands.
+const loginRoute = '/login';
+
 /// Routes reachable without a signed-in session. Everything else is protected.
 ///
 /// Onboarding routes (`/avatar`, `/set-home`) are intentionally NOT here: they are
 /// only reached once Firebase already has a session, so an *unauthenticated* caller
 /// deep-linking to them should still be bounced to `/login`.
-const authRoutes = {'/login', '/local-signup'};
+const authRoutes = {loginRoute, '/local-signup'};
 
 /// Pure route guard (see the router's `redirect`). Returns the path to redirect to,
 /// or `null` to allow the navigation.
@@ -25,7 +28,7 @@ const authRoutes = {'/login', '/local-signup'};
 /// Offline is handled implicitly: Firebase restores the session from disk with no
 /// network, so [isAuthenticated] is true offline and a cached user is not bounced.
 String? authRedirect({required bool isAuthenticated, required String location}) {
-  if (!isAuthenticated && !authRoutes.contains(location)) return '/login';
+  if (!isAuthenticated && !authRoutes.contains(location)) return loginRoute;
   return null;
 }
 

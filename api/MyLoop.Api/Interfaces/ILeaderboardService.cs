@@ -14,7 +14,9 @@ public interface ILeaderboardService
     Task<LeaderboardResponse> GetLeaderboard(double lat, double lng, Guid? userId, string scope);
 
     /// <summary>
-    /// Refreshes today's leaderboard from current territory data.
+    /// Refreshes today's leaderboard from current territory data. The token lets
+    /// <c>LeaderboardRefreshWorker</c> abandon a run (e.g. one waiting on another instance's
+    /// advisory lock or a Neon cold-start retry) at host shutdown.
     /// </summary>
-    Task<int> RefreshLeaderboard();
+    Task<int> RefreshLeaderboard(CancellationToken ct = default);
 }
