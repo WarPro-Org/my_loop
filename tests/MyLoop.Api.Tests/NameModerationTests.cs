@@ -85,6 +85,7 @@ public class NameModerationTests
     [InlineData("Max")]                // x at one end only is not a wrapper
     [InlineData("Rex")]
     [InlineData("Xander")]
+    [InlineData("Joe Root")]           // Root is an ordinary surname; not a reserved word
     [InlineData("Thomas Lutz")]        // #193 review: severe terms are matched per word, so a
     [InlineData("Margaret Ardern")]    // first name + surname can't form one across the boundary
     [InlineData("Louisa Lopez")]       // (s+lut, retard, salope, porn, maricon)

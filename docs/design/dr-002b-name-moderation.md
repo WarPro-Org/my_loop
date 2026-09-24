@@ -58,7 +58,7 @@ Fold pipeline (input is already `ValidationService.NormalizeDisplayName` output)
 
 Matching:
 - **Severe** (`FrozenSet<string>` in `Constants/NameBlocklist.cs`): blocked if `joined.Contains(term)` for any term
-- **Reserved** (`admin, administrator, mod, moderator, official, support, staff, myloop, system, root`): blocked if **any token equals** a term, or `joined` equals a term (`my_loop`, `My Loop`)
+- **Reserved** (`admin, administrator, mod, moderator, official, support, staff, myloop, system`): blocked if **any token equals** a term, or `joined` equals a term (`my_loop`, `My Loop`)
 - **Exceptions** (`FrozenSet`, initially empty): a folded `joined` value in this set is never blocked — for real surnames that trip the severe tier
 
 `ValidationService.ValidateDisplayName` adds, after the regex check:

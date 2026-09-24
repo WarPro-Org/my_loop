@@ -19,7 +19,7 @@ public static class NameModeration
     private static readonly FrozenSet<string> ReservedWords = new[]
     {
         "admin", "administrator", "mod", "moderator", "official", "support", "staff", "myloop",
-        "system", "root",
+        "system",
     }.ToFrozenSet(StringComparer.Ordinal);
 
     // Letters that NFD does not split into base + mark, mapped to their plain-Latin reading.
