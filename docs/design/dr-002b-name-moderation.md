@@ -399,7 +399,8 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
 
 `IPushNotificationService.NotifyHexStolen(Guid victimUserId, Guid thiefUserId, string thiefDisplayName, int stolenCount)`
 — new `thiefUserId` parameter. If `UserBlocks` has `(victim, thief)`, the body uses
-`"A player captured …"`. Single call site: `TerritoryService.cs:1309`.
+`"A player captured …"` (`GameConstants.BlockedActorLabel`, matched by the app's in-app theft alert —
+see §7.1). Single call site: `TerritoryService.cs:1309`.
 
 ---
 
@@ -543,8 +544,9 @@ The same address must be the App Store Connect Support URL/contact.
 ### 7.1 Implementation notes (PR 3) — deviations from the above
 
 - **Support address is a build flag**, `--dart-define=SUPPORT_EMAIL=…` (decision 2026-09-22), like
-  `API_URL`: the address never lives in the repo. A build without it shows the row disabled —
-  **release/TestFlight builds must pass it**, and it must match App Store Connect.
+  `API_URL`: the address never lives in the repo. In a build without it, tapping the row shows a
+  "not configured" snackbar and logs a warning — **release/TestFlight builds must pass it**, and it
+  must match App Store Connect.
 - **Masking changes the name only, not the avatar.** Avatars are one of 12 fixed emoji, not
   user-generated content, so there is nothing to moderate in them.
 - **Inbox masking moves to PR 4**, which adds `actorUserId` to inbox items — masking needs the id.
@@ -553,8 +555,8 @@ The same address must be the App Store Connect Support URL/contact.
   (DR-002c), so another player with my name was highlighted as me and could not be tapped; masking
   would also break a name comparison.
 - **Stale-fetch race fixed:** a slow block-list fetch at sign-in could overwrite (in state and on
-  disk) a block made while it was in flight. The provider counts local edits and discards a fetch
-  that started before one. Regression test fails without the fix.
+  disk) a block made while it was in flight. Fixed by the edit overlay described under the review
+  fixes below. Regression test fails without the fix.
 - **Review fixes (#195 agent review):**
   - The stale-fetch guard discarded the whole server list whenever a block was made during a slow
     load. The notifier now keeps this session's edits and applies them on top of every cached or
@@ -566,6 +568,27 @@ The same address must be the App Store Connect Support URL/contact.
   - Contact Support never fails silently: with no mail app it shows the address, and a build
     without `SUPPORT_EMAIL` says so and logs a warning. The build-time guard belongs with #181's
     fail-closed release config (follow-up once both merge).
+- **Review fixes, round 2 (#195 agent review):**
+  - The app root keeps `blockedUsersProvider` alive from app start, so the list starts loading the
+    moment an account signs in, not when the first theft event arrives. Theft alerts (written to
+    the persisted inbox) and the map hex popup also wait for the list's first load
+    (`BlockedUsersNotifier.blockedIdsFor`: the cached list, or the first fetch when there is no
+    cache) instead of reading the still-empty initial state. Chosen over storing the actor id on
+    the alert because that is PR 4's inbox change; awaiting costs one local file read.
+  - A failed block/unblock restores the id's previous edit, not "no edit", so an older server list
+    can't undo an earlier successful edit.
+  - A first load that failed (offline with no cache, or a 5xx) is retried on app resume and hub
+    reconnect (`resyncTriggersProvider`, the trigger the other hydrated slices use). Once a fetch has
+    succeeded, the triggers don't re-fetch.
+  - The block limit is exact: the count and insert run in an execution-strategy-wrapped transaction
+    behind a per-blocker advisory lock (two-key namespace `UBLK`, beside the reporter lock). A
+    target deleted between the existence check and the insert (FK violation 23503) is `404`, not
+    `500`.
+  - **One label per kind of surface.** A theft alert names a blocked thief **"A player"**, in push
+    and in-app alike (`GameConstants.BlockedActorLabel` / `blockedActorLabel`): the same event now
+    reads the same in both places, and a lock screen doesn't reveal a block. Where the name stands
+    alone — leaderboard row, map popup, profile — it stays **"Blocked player"** (`blockedPlayerLabel`,
+    §6), because the viewer needs to see why the name is hidden and find the player to unblock.
 - **Account deletion purges `UserBlocks` explicitly, both directions** (blocks the player made and
   blocks against them), alongside PR 2's `NameReports` / `NameModerationCases` purge in
   `UserService.DeleteUserData`; the FK cascades remain a second line.

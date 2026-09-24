@@ -2,20 +2,20 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:logging/logging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/auth/session_end_ui.dart';
 import 'package:myloop/features/auth/user_session_teardown.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
+import 'package:myloop/shared/util/display_name.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
-import 'package:myloop/shared/util/display_name.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:myloop/shared/constants/app_constants.dart';
 
 final _log = Logger('ProfileScreen');
 
@@ -84,7 +84,7 @@ class ProfileScreen extends ConsumerWidget {
               // App Store Guideline 1.2: players must be able to reach us.
               _SettingsTile(
                 icon: Icons.support_agent_outlined,
-                label: contactSupportLabel,
+                label: AppConstants.contactSupportLabel,
                 onTap: () => _contactSupport(context),
               ),
 
@@ -155,16 +155,16 @@ class ProfileScreen extends ConsumerWidget {
     final messenger = ScaffoldMessenger.of(context);
     if (AppConstants.supportEmail.isEmpty) {
       _log.warning('Contact Support tapped but SUPPORT_EMAIL was not set for this build');
-      messenger.showSnackBar(const SnackBar(content: Text(supportNotConfiguredMessage)));
+      messenger.showSnackBar(const SnackBar(content: Text(AppConstants.supportNotConfiguredMessage)));
       return;
     }
     final opened = await launchUrl(Uri(
       scheme: 'mailto',
       path: AppConstants.supportEmail,
-      query: 'subject=${Uri.encodeComponent(supportEmailSubject)}',
+      query: 'subject=${Uri.encodeComponent(AppConstants.supportEmailSubject)}',
     ));
     if (!opened) {
-      messenger.showSnackBar(SnackBar(content: Text('$supportEmailFallbackPrefix${AppConstants.supportEmail}')));
+      messenger.showSnackBar(SnackBar(content: Text('${AppConstants.supportEmailFallbackPrefix}${AppConstants.supportEmail}')));
     }
   }
 
@@ -320,11 +320,6 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
     );
   }
 }
-
-const supportEmailSubject = 'MyLoop support';
-const contactSupportLabel = 'Contact Support';
-const supportEmailFallbackPrefix = 'Email us at ';
-const supportNotConfiguredMessage = 'Support contact is not configured in this build';
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
