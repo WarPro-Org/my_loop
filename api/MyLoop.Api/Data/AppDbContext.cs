@@ -53,6 +53,9 @@ public class AppDbContext : DbContext
     /// <summary>One review record per reported or rescanned (user, name) pair (DR-002b).</summary>
     public DbSet<NameModerationCase> NameModerationCases => Set<NameModerationCase>();
 
+    /// <summary>Who has blocked whom — identity masking only (DR-002b).</summary>
+    public DbSet<UserBlock> UserBlocks => Set<UserBlock>();
+
     /// <summary>
     /// Configures the entity model: primary keys, unique constraints, and indexes
     /// for efficient query patterns used by the game.
@@ -167,6 +170,13 @@ public class AppDbContext : DbContext
             e.HasOne<User>().WithMany().HasForeignKey(c => c.UserId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(c => new { c.UserId, c.NameSnapshot }).IsUnique(); // the "first report" claim
             e.HasIndex(c => c.Status); // moderator queue
+        });
+
+        modelBuilder.Entity<UserBlock>(e =>
+        {
+            e.HasKey(b => new { b.BlockerId, b.BlockedId }); // also serves the push-masking lookup
+            e.HasOne<User>().WithMany().HasForeignKey(b => b.BlockerId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<User>().WithMany().HasForeignKey(b => b.BlockedId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

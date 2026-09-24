@@ -21,6 +21,17 @@ class AppConstants {
   static const int minDisplayNameLength = 2;
   static const int maxDisplayNameLength = 20;
 
+  /// Support address for the in-app "Contact support" row (App Store Guideline 1.2 requires
+  /// published contact information). Supplied at build time so it never lives in the repo:
+  /// `flutter build ipa --dart-define=SUPPORT_EMAIL=...`. Empty = tapping the row says support is
+  /// not configured in this build (and logs a warning) instead of opening mail.
+  static const String supportEmail = String.fromEnvironment('SUPPORT_EMAIL');
+  static const String contactSupportLabel = 'Contact Support';
+  static const String supportEmailSubject = 'MyLoop support';
+  /// Shown with [supportEmail] appended when no mail app can open the address.
+  static const String supportEmailFallbackPrefix = 'Email us at ';
+  static const String supportNotConfiguredMessage = 'Support contact is not configured in this build';
+
   // --- Territory / Claims ---
   static const int minGpsPointsPerClaim = 10;
   static const double minWalkDistanceMeters = 200.0;

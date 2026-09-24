@@ -9,6 +9,9 @@ import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/widgets/shimmer_loading.dart';
+import 'package:myloop/features/moderation/blocked_users.dart';
+import 'package:myloop/features/moderation/player_actions_menu.dart';
+import 'package:myloop/shared/services/user_state.dart';
 
 /// Displays another user's rich public profile fetched from the API.
 class UserProfileScreen extends ConsumerStatefulWidget {
@@ -52,14 +55,19 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
     }
   }
 
+  /// The name to show: masked when this viewer has blocked the player (#190).
+  String get _shownName => displayNameFor(ref.watch(blockedUsersProvider), widget.userId, widget.name);
+
   @override
   Widget build(BuildContext context) {
+    final isMe = widget.userId == ref.watch(userProfileProvider.select((p) => p.userId));
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.name, overflow: TextOverflow.ellipsis),
+        title: Text(_shownName, overflow: TextOverflow.ellipsis),
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.dark,
         elevation: 0,
+        actions: [if (!isMe) PlayerActionsMenu(userId: widget.userId)],
       ),
       body: SafeArea(
         child: _loading
@@ -170,7 +178,7 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                         // Name — vertically centered with avatar middle
                         Flexible(
                           child: Text(
-                            widget.name,
+                            _shownName,
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800, fontSize: 20),
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,

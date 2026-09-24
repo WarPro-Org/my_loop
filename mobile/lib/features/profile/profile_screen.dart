@@ -4,15 +4,20 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/features/auth/session_end_ui.dart';
 import 'package:myloop/features/auth/user_session_teardown.dart';
+import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
+import 'package:myloop/shared/util/display_name.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
-import 'package:myloop/shared/util/display_name.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+final _log = Logger('ProfileScreen');
 
 /// The player's profile screen with identity, stats, and settings.
 class ProfileScreen extends ConsumerWidget {
@@ -76,6 +81,12 @@ class ProfileScreen extends ConsumerWidget {
                 label: 'Notifications',
                 onTap: () => context.push('/notifications'),
               ),
+              // App Store Guideline 1.2: players must be able to reach us.
+              _SettingsTile(
+                icon: Icons.support_agent_outlined,
+                label: AppConstants.contactSupportLabel,
+                onTap: () => _contactSupport(context),
+              ),
 
               const SizedBox(height: 24),
 
@@ -135,6 +146,26 @@ class ProfileScreen extends ConsumerWidget {
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) => _AvatarColorEditor(ref: ref),
     );
+  }
+
+  /// Opens the mail app. Never fails silently (#195 review): with no mail app the address is shown
+  /// so the player can still reach us, and a build without SUPPORT_EMAIL says so (and logs it)
+  /// instead of a greyed-out row nobody notices before App Review does.
+  Future<void> _contactSupport(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    if (AppConstants.supportEmail.isEmpty) {
+      _log.warning('Contact Support tapped but SUPPORT_EMAIL was not set for this build');
+      messenger.showSnackBar(const SnackBar(content: Text(AppConstants.supportNotConfiguredMessage)));
+      return;
+    }
+    final opened = await launchUrl(Uri(
+      scheme: 'mailto',
+      path: AppConstants.supportEmail,
+      query: 'subject=${Uri.encodeComponent(AppConstants.supportEmailSubject)}',
+    ));
+    if (!opened) {
+      messenger.showSnackBar(SnackBar(content: Text('${AppConstants.supportEmailFallbackPrefix}${AppConstants.supportEmail}')));
+    }
   }
 
   void _showNameEditor(BuildContext context, WidgetRef ref) {

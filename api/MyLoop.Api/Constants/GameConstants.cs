@@ -177,6 +177,14 @@ public static class GameConstants
     public const int MaxNameReportsPerReporterPerDay = 10;
     /// <summary>Moderator-confirmed hides that lock renaming until a moderator unlocks it.</summary>
     public const int NameStrikesToLock = 2;
+    /// <summary>Most players one account may block (bounds the list every client downloads).</summary>
+    public const int MaxBlocksPerUser = 200;
+    /// <summary>
+    /// Stands in for a blocked player's name in theft alerts, push and in-app alike (Flutter:
+    /// <c>blockedActorLabel</c> in <c>blocked_users.dart</c>). Neutral, so a lock screen never shows
+    /// that someone was blocked (DR-002b §7.1).
+    /// </summary>
+    public const string BlockedActorLabel = "A player";
     /// <summary>Users loaded per page by the moderator rescan.</summary>
     public const int NameRescanPageSize = 500;
     /// <summary>Column size for stored name snapshots — above MaxDisplayNameLength so legacy names fit.</summary>

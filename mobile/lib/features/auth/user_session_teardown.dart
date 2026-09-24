@@ -17,6 +17,7 @@ import 'package:logging/logging.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
+import 'package:myloop/shared/services/block_list_cache.dart';
 import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/notification_cache.dart';
 import 'package:myloop/shared/services/notification_service.dart';
@@ -102,11 +103,12 @@ class UserSessionTeardown {
     await _resetInMemoryState();
     // Offline caches, so the next account can't inherit this session on a later
     // offline launch: profile (#19), home cards (#34), own-hex territories (#33),
-    // notification inbox (#30).
+    // notification inbox (#30), block list (#190).
     await _bestEffort('profile cache', ProfileCache.clear);
     await _bestEffort('game-state cache', GameStateCache.clear);
     await _bestEffort('territory cache', TerritoryCache.clear);
     await _bestEffort('notification cache', NotificationCache.clear);
+    await _bestEffort('block list cache', BlockListCache.clear);
   }
 
   /// Resets every app-lifetime provider that holds this account's data in

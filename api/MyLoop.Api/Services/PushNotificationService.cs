@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
 using MyLoop.Api.Interfaces;
@@ -24,7 +25,7 @@ public class PushNotificationService : IPushNotificationService
         _logger = logger;
     }
 
-    public async Task NotifyHexStolen(Guid victimUserId, string thiefDisplayName, int stolenCount)
+    public async Task NotifyHexStolen(Guid victimUserId, Guid thiefUserId, string thiefDisplayName, int stolenCount)
     {
         var tokens = await _db.DeviceTokens
             .Where(t => t.UserId == victimUserId)
@@ -33,10 +34,14 @@ public class PushNotificationService : IPushNotificationService
 
         if (tokens.Count == 0) return;
 
+        // A blocked player's name never reaches the blocker's lock screen (Guideline 1.2).
+        var blocked = await _db.UserBlocks.AnyAsync(b => b.BlockerId == victimUserId && b.BlockedId == thiefUserId);
+        var actor = blocked ? GameConstants.BlockedActorLabel : thiefDisplayName;
+
         var title = "Territory Under Attack! ⚔️";
         var body = stolenCount == 1
-            ? $"{thiefDisplayName} captured one of your hexes!"
-            : $"{thiefDisplayName} captured {stolenCount} of your hexes!";
+            ? $"{actor} captured one of your hexes!"
+            : $"{actor} captured {stolenCount} of your hexes!";
 
         IReadOnlyList<FcmSendOutcome> outcomes;
         try

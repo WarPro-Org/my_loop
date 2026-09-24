@@ -19,6 +19,7 @@ import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
 import 'package:myloop/features/journey/post_walk_refresh.dart';
+import 'package:myloop/features/journey/theft_alerts.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
@@ -34,6 +35,7 @@ import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/notification_service.dart';
+import 'package:myloop/features/moderation/blocked_users.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -369,22 +371,17 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       // on every SignalR delta (issue #129).
       _hexManager.applyRealtimeChanges(events);
 
-      // Detect thefts from the current user → add in-app notifications
+      // Detect thefts from the current user → add in-app notifications. The notifiers are
+      // app-scoped, so they are read now: the alert still lands if this screen goes away while
+      // the block list finishes loading.
       final userId = ref.read(userProfileProvider).userId;
       if (userId != null) {
-        final stolenByThief = <String, List<HexChangeEvent>>{};
-        for (final e in events) {
-          if (e.previousOwnerId == userId && e.newOwnerId != userId) {
-            stolenByThief.putIfAbsent(e.newOwnerDisplayName, () => []).add(e);
-          }
-        }
-        for (final entry in stolenByThief.entries) {
-          ref.read(notificationProvider.notifier).addTheftAlert(
-            thiefName: entry.key,
-            thiefColor: entry.value.first.newOwnerColor,
-            hexCount: entry.value.length,
-          );
-        }
+        unawaited(recordTheftAlerts(
+          userId: userId,
+          events: events,
+          blockedUsers: ref.read(blockedUsersProvider.notifier),
+          notifications: ref.read(notificationProvider.notifier),
+        ));
       }
     });
   }
@@ -511,7 +508,7 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
   void _onMapTap(LatLng latLng) {
     final tappedCell = _findTappedCell(latLng.latitude, latLng.longitude);
     if (tappedCell != null) {
-      _showHexOwnerSheet(tappedCell);
+      unawaited(_showHexOwnerSheet(tappedCell));
     } else {
       widget.onMapTapEmpty?.call();
     }
@@ -536,8 +533,23 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     return inside;
   }
 
-  void _showHexOwnerSheet(TerritoryCell cell) {
+  Future<void> _showHexOwnerSheet(TerritoryCell rawCell) async {
     final profile = ref.read(userProfileProvider);
+    // A blocked owner is shown as "Blocked player" to this viewer only (#190). Waits for the block
+    // list's first load — normally long done, since the app root keeps it warm — so a tap right
+    // after a cold start can't show the name (#195 review). The wait is bounded so a slow network
+    // can't make the tap look ignored; if the list still isn't known, another player's name is
+    // withheld ("A player") rather than risk showing a blocked player's.
+    final viewerId = profile.userId;
+    final blocked = viewerId == null
+        ? const <String>{}
+        : await ref
+            .read(blockedUsersProvider.notifier)
+            .blockedIdsFor(viewerId)
+            .timeout(blockListPopupWait, onTimeout: () => null);
+    if (!mounted) return;
+    final ownerName = hexOwnerNameFor(blocked, viewerId, rawCell.ownerId, rawCell.ownerName);
+    final cell = rawCell.withOwnerName(ownerName);
     final isOwn = cell.ownerId == profile.userId;
     // Show owner's actual color only for own hexes; neutral for others. A hex
     // captured or step-claimed this session is in the store before its colour
@@ -555,9 +567,11 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         onViewProfile: () {
           Navigator.pop(ctx);
           Navigator.push(context, MaterialPageRoute(
+            // Raw name: the profile screen masks it itself, and un-masks it the moment the
+            // viewer unblocks there (#195 review).
             builder: (_) => UserProfileScreen(
               userId: cell.ownerId,
-              name: cell.ownerName,
+              name: rawCell.ownerName,
               avatarId: 0,
               color: cell.ownerColor,
               rank: 0,

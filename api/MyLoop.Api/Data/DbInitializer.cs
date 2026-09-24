@@ -301,7 +301,17 @@ public static class DbInitializer
             CREATE UNIQUE INDEX IF NOT EXISTS ""IX_NameModerationCases_UserId_NameSnapshot""
                 ON ""NameModerationCases"" (""UserId"", ""NameSnapshot"");
             CREATE INDEX IF NOT EXISTS ""IX_NameModerationCases_Status""
-                ON ""NameModerationCases"" (""Status"");";
+                ON ""NameModerationCases"" (""Status"");
+
+            CREATE TABLE IF NOT EXISTS ""UserBlocks"" (
+                ""BlockerId"" uuid NOT NULL,
+                ""BlockedId"" uuid NOT NULL,
+                ""CreatedAt"" timestamp with time zone NOT NULL,
+                CONSTRAINT ""PK_UserBlocks"" PRIMARY KEY (""BlockerId"", ""BlockedId""),
+                CONSTRAINT ""FK_UserBlocks_Users_BlockerId"" FOREIGN KEY (""BlockerId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE,
+                CONSTRAINT ""FK_UserBlocks_Users_BlockedId"" FOREIGN KEY (""BlockedId"") REFERENCES ""Users"" (""Id"") ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS ""IX_UserBlocks_BlockedId"" ON ""UserBlocks"" (""BlockedId"");";
 
     // Persisted, shared-across-all-users reverse-geocode cache (#121 / ML-ERR-024) — lets
     // /game-state's exploration stats return without ever awaiting Nominatim inline.

@@ -6,9 +6,10 @@ namespace MyLoop.Api.Interfaces;
 public interface IPushNotificationService
 {
     /// <summary>
-    /// Notifies a user that their hexes were stolen.
+    /// Notifies a user that their hexes were stolen. The thief's name is left out when the victim
+    /// has blocked them (DR-002b).
     /// </summary>
-    Task NotifyHexStolen(Guid victimUserId, string thiefDisplayName, int stolenCount);
+    Task NotifyHexStolen(Guid victimUserId, Guid thiefUserId, string thiefDisplayName, int stolenCount);
 
     /// <summary>
     /// Registers or updates a device token for a user.

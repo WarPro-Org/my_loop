@@ -324,6 +324,53 @@ public class ModerationUnitTests
         moderation.Verify(m => m.UnlockNameAsync(userId, ModeratorUid), Times.Once);
     }
 
+    // ---- Block endpoints -----------------------------------------------------------------
+
+    private static BlocksController BlocksControllerFor(BlockOutcome outcome, Guid? callerId)
+    {
+        var blocks = new Mock<IBlockService>();
+        blocks.Setup(b => b.BlockAsync(It.IsAny<Guid>(), It.IsAny<Guid>())).ReturnsAsync(outcome);
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.Setup(c => c.TryGetUserIdAsync()).ReturnsAsync(callerId);
+        return new BlocksController(blocks.Object, currentUser.Object);
+    }
+
+    [Theory]
+    [InlineData(BlockOutcome.Done, 204)]
+    [InlineData(BlockOutcome.SelfBlock, 400)]
+    [InlineData(BlockOutcome.NotFound, 404)]
+    [InlineData(BlockOutcome.LimitReached, 409)]
+    public async Task Block_outcomes_map_to_status_codes(BlockOutcome outcome, int status)
+    {
+        var result = await BlocksControllerFor(outcome, Guid.NewGuid()).Block(Guid.NewGuid());
+        Assert.Equal(status, Assert.IsAssignableFrom<IStatusCodeActionResult>(result).StatusCode);
+    }
+
+    [Fact]
+    public async Task Block_endpoints_require_a_resolved_caller()
+    {
+        var controller = BlocksControllerFor(BlockOutcome.Done, callerId: null);
+        Assert.IsType<UnauthorizedResult>(await controller.Block(Guid.NewGuid()));
+        Assert.IsType<UnauthorizedResult>(await controller.Unblock(Guid.NewGuid()));
+        Assert.IsType<UnauthorizedResult>((await controller.List()).Result);
+    }
+
+    [Fact]
+    public async Task Block_list_returns_the_callers_blocks()
+    {
+        var me = Guid.NewGuid();
+        var blocked = Guid.NewGuid();
+        var blocks = new Mock<IBlockService>();
+        blocks.Setup(b => b.ListBlockedAsync(me)).ReturnsAsync([blocked]);
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.Setup(c => c.TryGetUserIdAsync()).ReturnsAsync(me);
+
+        var result = await new BlocksController(blocks.Object, currentUser.Object).List();
+
+        var body = Assert.IsType<BlockListResponse>(Assert.IsType<OkObjectResult>(result.Result).Value);
+        Assert.Equal([blocked], body.BlockedUserIds);
+    }
+
     // ---- Rename lock (PATCH /api/users/{id}) ---------------------------------------------
     // The checks themselves run in UserService's locked transaction (ModerationFlowTests); the
     // controller only maps the outcome.

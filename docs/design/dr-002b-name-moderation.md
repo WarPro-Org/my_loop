@@ -399,7 +399,8 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
 
 `IPushNotificationService.NotifyHexStolen(Guid victimUserId, Guid thiefUserId, string thiefDisplayName, int stolenCount)`
 — new `thiefUserId` parameter. If `UserBlocks` has `(victim, thief)`, the body uses
-`"A player captured …"`. Single call site: `TerritoryService.cs:1309`.
+`"A player captured …"` (`GameConstants.BlockedActorLabel`, matched by the app's in-app theft alert —
+see §7.1). Single call site: `TerritoryService.cs:1309`.
 
 ---
 
@@ -539,6 +540,90 @@ dependency. Address held in `AppConstants.supportEmail` (**address needed from p
 The same address must be the App Store Connect Support URL/contact.
 
 ---
+
+### 7.1 Implementation notes (PR 3) — deviations from the above
+
+- **Support address is a build flag**, `--dart-define=SUPPORT_EMAIL=…` (decision 2026-09-22), like
+  `API_URL`: the address never lives in the repo. In a build without it, tapping the row shows a
+  "not configured" snackbar and logs a warning — **release/TestFlight builds must pass it**, and it
+  must match App Store Connect.
+- **Masking changes the name only, not the avatar.** Avatars are one of 12 fixed emoji, not
+  user-generated content, so there is nothing to moderate in them.
+- **Inbox masking moves to PR 4**, which adds `actorUserId` to inbox items — masking needs the id.
+  PR 3 masks the leaderboard, map hex popup and the player's profile screen.
+- **Leaderboard "is this me?" now compares user ids, not display names.** Names are not unique
+  (DR-002c), so another player with my name was highlighted as me and could not be tapped; masking
+  would also break a name comparison.
+- **Stale-fetch race fixed:** a slow block-list fetch at sign-in could overwrite (in state and on
+  disk) a block made while it was in flight. Fixed by the edit overlay described under the review
+  fixes below. Regression test fails without the fix.
+- **Review fixes (#195 agent review):**
+  - The stale-fetch guard discarded the whole server list whenever a block was made during a slow
+    load. The notifier now keeps this session's edits and applies them on top of every cached or
+    fetched list. A failed edit rolls back only its own id.
+  - In-app theft alerts are masked when they are created, and grouped by thief id, not name (so
+    two same-named thieves no longer merge). This part no longer waits for PR 4.
+  - The leaderboard and the map masks names at render time and pass the *raw* name to the profile
+    screen, which masks it itself. So after Unblock, the header shows the real name.
+  - Contact Support never fails silently: with no mail app it shows the address, and a build
+    without `SUPPORT_EMAIL` says so and logs a warning. The build-time guard belongs with #181's
+    fail-closed release config (follow-up once both merge).
+- **Review fixes, round 2 (#195 agent review):**
+  - The app root keeps `blockedUsersProvider` alive from app start, so the list starts loading the
+    moment an account signs in, not when the first theft event arrives. Theft alerts (written to
+    the persisted inbox) and the map hex popup also wait for the list's first load
+    (`BlockedUsersNotifier.blockedIdsFor`: the cached list, or the first fetch when there is no
+    cache) instead of reading the still-empty initial state. Chosen over storing the actor id on
+    the alert because that is PR 4's inbox change; awaiting costs one local file read.
+  - A failed block/unblock restores the id's previous edit, not "no edit", so an older server list
+    can't undo an earlier successful edit.
+  - A first load that failed (offline with no cache, or a 5xx) is retried on app resume and hub
+    reconnect (`resyncTriggersProvider`, the trigger the other hydrated slices use). Once a fetch has
+    succeeded, the triggers don't re-fetch.
+  - The block limit is exact: the count and insert run in an execution-strategy-wrapped transaction
+    behind a per-blocker advisory lock (two-key namespace `UBLK`, beside the reporter lock). A
+    target deleted between the existence check and the insert (FK violation 23503) is `404`, not
+    `500`.
+  - **One label per kind of surface.** A theft alert names a blocked thief **"A player"**, in push
+    and in-app alike (`GameConstants.BlockedActorLabel` / `blockedActorLabel`): the same event now
+    reads the same in both places, and a lock screen doesn't reveal a block. Where the name stands
+    alone — leaderboard row, map popup, profile — it stays **"Blocked player"** (`blockedPlayerLabel`,
+    §6), because the viewer needs to see why the name is hidden and find the player to unblock.
+- **Review fixes, round 3 (#195 agent review):**
+  - The block-limit race test inserted a block that was already seeded (duplicate key) and so never
+    exercised the lock. It now seeds `MaxBlocksPerUser + 2` users and races two unseeded targets.
+  - **Account switches can't leak a list.** In Riverpod 3 a rebuild keeps the Notifier instance and
+    `ref.mounted` stays true, so the previous account's in-flight load, fetch or edit used to write
+    into the next account's state, finish its first load and re-cache the old list after sign-out.
+    `build()` now bumps a generation; every async step captures it and drops its result once it
+    has moved on, and each load completes the completer it started with.
+  - **Overlapping edits to one id:** only the newest in-flight edit to an id changes what is shown.
+    An older edit that fails meanwhile doesn't roll back over it; a refusal rolls back to the last
+    edit the server accepted, else to the server list.
+  - **The dispose callback also bumps the generation.** Riverpod rebuilds lazily, so a
+    `blockedIdsFor(A)` waiter released on dispose could resume before `build()` ran for B and
+    return A's unfinished (often empty) list, which let `recordTheftAlerts` write an unmasked alert
+    after the switch. It now returns null and nothing is recorded.
+  - **The cache stores only what the server accepted**, `_base` plus confirmed edits, not the
+    displayed state. Otherwise a save made while another id's edit was in flight wrote that
+    pending edit to disk, and if the edit then failed, the disk and the screen disagreed. A failed
+    edit doesn't change the accepted set, so there is nothing to re-save when it rolls back.
+  - **Map hex popup waits at most `blockListPopupWait` (2 s)** for the first load, so a slow network
+    can't make a tap look ignored. If the list still isn't known, another player's name is shown as
+    "A player" (`blockedActorLabel`), never the raw name; the viewer's own hex shows their name.
+  - **Known gap, accepted until PR 4:** sign-out clears the block-list cache, so every sign-in
+    starts without one. If that first fetch fails (a 5xx, or offline) while theft events arrive,
+    `blockedIdsFor` returns the empty list and the in-app alert is saved to the inbox with the
+    thief's raw name. The retry on resume/reconnect fixes masking from then on, but not alerts
+    already written. PR 4 stores `actorUserId` on inbox items and masks at render time, which
+    closes this.
+- **Account deletion purges `UserBlocks` explicitly, both directions** (blocks the player made and
+  blocks against them), alongside PR 2's `NameReports` / `NameModerationCases` purge in
+  `UserService.DeleteUserData`; the FK cascades remain a second line.
+- **Block-list cache is cleared by `UserSessionTeardown.clearUserBoundState`**, the single
+  sign-out / account-deletion path on master, not by each screen.
+- **Found, out of scope:** the login screen's Terms/Privacy links point at the dev ngrok tunnel
+  (`login_screen.dart:154,160`) — dead links in a production build, and an App Store review risk.
 
 ## 8. Cross-stack contract table
 

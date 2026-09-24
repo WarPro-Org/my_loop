@@ -275,5 +275,7 @@ public class UserService : IUserService
         // Both directions: reports this player filed, and reports about them.
         await _db.NameReports.Where(r => r.ReporterId == userId || r.ReportedUserId == userId).ExecuteDeleteAsync();
         await _db.NameModerationCases.Where(c => c.UserId == userId).ExecuteDeleteAsync();
+        // Blocks (#190), both directions: players this user blocked, and blocks against them.
+        await _db.UserBlocks.Where(b => b.BlockerId == userId || b.BlockedId == userId).ExecuteDeleteAsync();
     }
 }
