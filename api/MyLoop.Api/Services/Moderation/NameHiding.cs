@@ -24,14 +24,16 @@ internal static class NameHiding
     }
 
     /// <summary>
-    /// Writes <paramref name="originalName"/> back, only while the placeholder is still showing —
-    /// a player who renamed after the hide keeps their new name. True if this call restored it.
+    /// Writes <paramref name="originalName"/> back, only while the placeholder from *this* hide is
+    /// still showing: a player who renamed keeps their new name, and restoring an older case can't
+    /// undo a newer hide of a different name (every hide writes the same instant to
+    /// User.NameHiddenAt and the case's HiddenAt). True if this call restored it.
     /// </summary>
-    public static async Task<bool> RestoreAsync(AppDbContext db, Guid userId, string originalName)
+    public static async Task<bool> RestoreAsync(AppDbContext db, Guid userId, string originalName, DateTime hiddenAt)
     {
         var placeholder = NameModeration.PlaceholderFor(userId);
         var rows = await db.Users
-            .Where(u => u.Id == userId && u.DisplayName == placeholder && u.NameHiddenAt != null)
+            .Where(u => u.Id == userId && u.DisplayName == placeholder && u.NameHiddenAt == hiddenAt)
             .ExecuteUpdateAsync(s => s
                 .SetProperty(u => u.DisplayName, originalName)
                 .SetProperty(u => u.NameHiddenAt, (DateTime?)null));

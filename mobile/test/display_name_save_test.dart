@@ -6,13 +6,13 @@
 /// waits for the API and returns the reason instead.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/shared/services/api_service.dart';
-import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/util/display_name.dart';
 
@@ -54,7 +54,6 @@ void main() {
   ProviderContainer containerWith(_FakeApi api) {
     final container = ProviderContainer(overrides: [
       apiServiceProvider.overrideWithValue(api),
-      territoryRealtimeProvider.overrideWithValue(TerritoryRealtimeService(baseUrl: 'http://test.local')),
     ]);
     addTearDown(container.dispose);
     container.read(userProfileProvider.notifier).setFromApi(
@@ -62,9 +61,6 @@ void main() {
           avatarId: 0,
           color: '#00D4AA',
           displayName: 'Robin',
-          hexCount: 0,
-          streak: 0,
-          distanceKm: 0,
         );
     return container;
   }
@@ -89,6 +85,42 @@ void main() {
     expect(container.read(userProfileProvider).displayName, 'Robin');
   });
 
+  test('a locked rename shows the message from the {code, message} body', () async {
+    final request = RequestOptions(path: '/api/users/u1');
+    final locked = DioException(
+      requestOptions: request,
+      type: DioExceptionType.badResponse,
+      response: Response(
+        requestOptions: request,
+        statusCode: 409,
+        data: {'code': 'name_locked', 'message': "Your name can't be changed right now."},
+      ),
+    );
+    final container = containerWith(_FakeApi(() async => throw locked));
+
+    final error = await container.read(userProfileProvider.notifier).updateDisplayName('Kai');
+
+    expect(error, "Your name can't be changed right now.");
+    expect(container.read(userProfileProvider).displayName, 'Robin');
+  });
+
+  test('extractApiError prefers "error", then "message", then a plain string body', () {
+    DioException withBody(Object? data) {
+      final request = RequestOptions(path: '/x');
+      return DioException(
+        requestOptions: request,
+        response: Response(requestOptions: request, statusCode: 400, data: data),
+      );
+    }
+
+    expect(ApiService.extractApiError(withBody({'error': 'e', 'message': 'm'})), 'e');
+    expect(ApiService.extractApiError(withBody({'code': 'c', 'message': 'm'})), 'm');
+    expect(ApiService.extractApiError(withBody({'code': 'c', 'message': ''})), isNull);
+    expect(ApiService.extractApiError(withBody({'message': 3})), isNull);
+    expect(ApiService.extractApiError(withBody('plain')), 'plain');
+    expect(ApiService.extractApiError(StateError('not dio')), isNull);
+  });
+
   test('a server error page is never shown as the reason', () async {
     final request = RequestOptions(path: '/api/users/u1');
     final gatewayError = DioException(
@@ -111,5 +143,21 @@ void main() {
 
     expect(error, displayNameOfflineError);
     expect(container.read(userProfileProvider).displayName, 'Robin');
+  });
+
+  test('a rename that finishes after sign-out does not overwrite the next account', () async {
+    final pending = Completer<void>();
+    final container = containerWith(_FakeApi(() => pending.future));
+    final notifier = container.read(userProfileProvider.notifier);
+
+    final rename = notifier.updateDisplayName('Kai');
+    notifier.clear();
+    notifier.setFromApi(userId: 'u2', avatarId: 1, color: '#FF5733', displayName: 'Bob');
+    pending.complete();
+    await rename;
+
+    final profile = container.read(userProfileProvider);
+    expect(profile.userId, 'u2');
+    expect(profile.displayName, 'Bob');
   });
 }

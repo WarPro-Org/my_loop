@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MyLoop.Api.Data;
 using MyLoop.Api.Entities;
 using MyLoop.Api.Models;
+using MyLoop.Api.Services.Moderation;
 
 namespace MyLoop.Api.Services;
 
@@ -49,22 +50,40 @@ public class UserService : IUserService
         return await _db.Users.FirstOrDefaultAsync(u => u.FirebaseUid == firebaseUid);
     }
 
-    public async Task<User?> UpdateProfile(Guid id, UpdateUserRequest request)
-    {
-        var user = await _db.Users.FindAsync(id);
-        if (user == null) return null;
-
-        if (request.DisplayName != null)
+    public Task<ProfileUpdateResult> UpdateProfile(Guid id, UpdateUserRequest request) =>
+        // EnableRetryOnFailure requires explicit transactions to run inside the execution strategy.
+        // The block is idempotent: it re-reads the user after Clear() and only assigns values.
+        _db.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
-            user.DisplayName = ValidationService.NormalizeDisplayName(request.DisplayName);
-            user.NameHiddenAt = null; // a chosen name replaces any moderation placeholder (#190)
-        }
-        if (request.Color != null) user.Color = request.Color;
-        if (request.AvatarId != null) user.AvatarId = request.AvatarId.Value;
+            _db.ChangeTracker.Clear();
+            await using var transaction = await _db.Database.BeginTransactionAsync();
 
-        await _db.SaveChangesAsync();
-        return user;
-    }
+            string? newName = null;
+            if (request.DisplayName != null)
+            {
+                // Same lock, taken first, as reports, confirm, restore and rescan: a hide or a
+                // moderator decision can then no longer commit between the check and the save.
+                await ModerationLocks.LockUserAsync(_db, id);
+                newName = ValidationService.NormalizeDisplayName(request.DisplayName);
+                switch (await RenameGate.CheckAsync(_db, id, newName))
+                {
+                    case RenameCheck.Locked: return new ProfileUpdateResult(ProfileUpdateStatus.NameLocked);
+                    case RenameCheck.RemovedName: return new ProfileUpdateResult(ProfileUpdateStatus.NameRemoved);
+                }
+            }
+
+            // Loaded after the lock, so it reflects any hide that committed before we took it.
+            var user = await _db.Users.FindAsync(id);
+            if (user == null) return new ProfileUpdateResult(ProfileUpdateStatus.NotFound);
+
+            if (newName != null) ApplyRename(user, newName);
+            if (request.Color != null) user.Color = request.Color;
+            if (request.AvatarId != null) user.AvatarId = request.AvatarId.Value;
+
+            await _db.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return new ProfileUpdateResult(ProfileUpdateStatus.Updated, user);
+        });
 
     public async Task<UserProfileResponse?> GetRichProfile(Guid id)
     {
@@ -124,6 +143,20 @@ public class UserService : IUserService
     // Private helpers
     // ──────────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// A chosen name replaces any moderation placeholder (#190). Both columns are always written:
+    /// EF skips a property whose value equals the one it loaded, and a rename must never leave a
+    /// stale NameHiddenAt, or the name it hid, in place.
+    /// </summary>
+    private void ApplyRename(User user, string newName)
+    {
+        user.DisplayName = newName;
+        user.NameHiddenAt = null;
+        var entry = _db.Entry(user);
+        entry.Property(u => u.DisplayName).IsModified = true;
+        entry.Property(u => u.NameHiddenAt).IsModified = true;
+    }
+
     private static User BuildNewUser(string firebaseUid, string authProvider, RegisterRequest request)
     {
         return new User
@@ -150,7 +183,20 @@ public class UserService : IUserService
         // before the day's first refresh would become the newest "snapshot" and hide the
         // real board from every reader until the refresh runs (#125).
         var snapshotDate = await LeaderboardService.LatestSnapshotDate(_db);
-        var totalUsers = await _db.Users.CountAsync();
+
+        // Rank the newcomer the way every reader computes rank (#167): count of strictly higher
+        // cell counts, plus one. They have zero cells, so that is however many players on this
+        // snapshot have captured anything — and all other zero-cell players get the same number,
+        // because they are genuinely tied.
+        //
+        // This used to be the total user count (#139 D7), which invented a rank twice over: it
+        // counted users with no row on this snapshot at all, so a newcomer could be told they were
+        // 1000th on a 51-row board, and it handed every zero-cell player a different rank. The
+        // value is short-lived — the next leaderboard refresh overwrites it — but it is what the
+        // profile tile shows a brand-new player, which is the one moment they have no other
+        // reference for whether the number is sane.
+        var rank = await _db.LeaderboardEntries
+            .CountAsync(l => l.Date == snapshotDate && l.CellCount > 0) + 1;
 
         _db.Set<LeaderboardEntry>().Add(new LeaderboardEntry
         {
@@ -159,7 +205,7 @@ public class UserService : IUserService
             Date = snapshotDate,
             CellCount = 0,
             AreaM2 = 0,
-            Rank = totalUsers,
+            Rank = rank,
         });
         await _db.SaveChangesAsync();
     }
@@ -224,5 +270,10 @@ public class UserService : IUserService
         await _db.DailyMissions.Where(m => m.UserId == userId).ExecuteDeleteAsync();
         await _db.UserAchievements.Where(a => a.UserId == userId).ExecuteDeleteAsync();
         await _db.DeviceTokens.Where(d => d.UserId == userId).ExecuteDeleteAsync();
+        // Name moderation (#190). These tables do cascade at the DB level, but are purged here too
+        // so this method stays the one complete list and never depends on the FK definition.
+        // Both directions: reports this player filed, and reports about them.
+        await _db.NameReports.Where(r => r.ReporterId == userId || r.ReportedUserId == userId).ExecuteDeleteAsync();
+        await _db.NameModerationCases.Where(c => c.UserId == userId).ExecuteDeleteAsync();
     }
 }

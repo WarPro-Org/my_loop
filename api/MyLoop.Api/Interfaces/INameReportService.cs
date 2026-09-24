@@ -7,8 +7,9 @@ public enum NameReportOutcome
 {
     /// <summary>Recorded (and possibly hid the name).</summary>
     Accepted,
-    /// <summary>Nothing recorded, deliberately indistinguishable from Accepted for the caller:
-    /// a repeat report, a name that is already hidden, or a moderator target (never revealed).</summary>
+    /// <summary>Deliberately indistinguishable from Accepted for the caller: a repeat report or a
+    /// name that is already hidden (nothing recorded), or a moderator target (recorded so it spends
+    /// the daily budget, but never opens a case or hides the name).</summary>
     Ignored,
     SelfReport,
     NotFound,

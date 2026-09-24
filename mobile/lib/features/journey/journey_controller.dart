@@ -77,6 +77,24 @@ class JourneyState {
     this.rejectionCount = 0,
   });
 
+  /// Copies the state, with one deliberate asymmetry: [error], [levelUpTo] and
+  /// [achievementUnlocked] are **one-shot**. They are assigned bare rather than
+  /// `x ?? this.x`, so any copy that does not re-supply them clears them, and a
+  /// later GPS tick drops them within a second or so.
+  ///
+  /// That is load-bearing, not an oversight. `journey_screen` surfaces all three
+  /// as snackbars via a listener (`JourneySnackbarPresenter.onJourneyChanged`)
+  /// guarded on `next.x != prev?.x`. If they
+  /// persisted, a second *identical* message — the same rejection reason twice,
+  /// the same achievement re-reported — would compare equal to the previous
+  /// value and be silently suppressed. Clearing between occurrences is what
+  /// makes the repeat visible.
+  ///
+  /// So do NOT "tidy" these three into `?? this.x` (#139 D5). The safety of the
+  /// current shape depends on consumers *listening* for transitions; a consumer
+  /// that instead reads these during `build` will miss them, and should use
+  /// [rejectionCount] — which is cumulative — rather than [error]. (The debug
+  /// mock-walk HUD reads [error] in build and knowingly accepts the flicker.)
   JourneyState copyWith({
     JourneyStatus? status,
     List<List<double>>? path,
@@ -137,10 +155,33 @@ class JourneyController extends Notifier<JourneyState> {
 
   static const int _loopCheckInterval = 5;
 
+  /// Bumped by [abandonForSignOut]. [startJourney] captures it on entry and
+  /// re-checks it after every await, so a start that was mid-await when the
+  /// account signed out aborts instead of wiring a write layer (queue + drain +
+  /// GPS) for an account that is no longer signed in.
+  int _sessionGeneration = 0;
+
+  /// Non-null while [abandonForSignOut] runs. [startJourney] refuses to start
+  /// while it is set; concurrent teardowns (e.g. a forced sign-out racing a
+  /// tapped one) share it instead of racing each other.
+  Future<void>? _sessionEnding;
+
+  /// Upper bound on teardown passes in [abandonForSignOut]. One pass normally
+  /// suffices; the extra pass catches a layer attached during the first pass's
+  /// awaits, and the bound keeps a misbehaving caller from spinning forever.
+  static const int _maxTeardownPasses = 3;
+
+  bool _isCurrentSession(int generation) =>
+      generation == _sessionGeneration && _sessionEnding == null;
+
   @override
   JourneyState build() => const JourneyState();
 
   Future<void> startJourney() async {
+    // Captured before the first await: a sign-out that begins during any of the
+    // awaits below bumps the generation, and each re-check then aborts (#110).
+    final generation = _sessionGeneration;
+    if (!_isCurrentSession(generation)) return;
     final locationService = ref.read(locationServiceProvider);
 
     // A journey is meaningless offline: hex capture is server-validated and the
@@ -148,19 +189,23 @@ class JourneyController extends Notifier<JourneyState> {
     // and tell them why (issue #35). Mid-journey drops are still tolerated by
     // the persisted step-claim queue, which drains on reconnect.
     final api = ref.read(apiServiceProvider);
-    if (!await api.isServerReachable()) {
+    final reachable = await api.isServerReachable();
+    if (!_isCurrentSession(generation)) return;
+    if (!reachable) {
       state = state.copyWith(error: AppConstants.offlineStartJourneyMessage);
       return;
     }
 
     try {
       final hasPermission = await locationService.requestPermission();
+      if (!_isCurrentSession(generation)) return;
       if (!hasPermission) {
         state = state.copyWith(error: 'Location permission denied. Please allow location access.');
         return;
       }
 
       final pos = await locationService.getCurrentPosition();
+      if (!_isCurrentSession(generation)) return;
       _startTime = DateTime.now();
       // New walk → new session id; every point and the loop claim carry it (#56).
       _walkSessionId = const Uuid().v4();
@@ -175,18 +220,22 @@ class JourneyController extends Notifier<JourneyState> {
         rejectionCount: 0,
       );
 
-      await _initWriteLayer();
+      await _initWriteLayer(generation);
+      if (!_isCurrentSession(generation)) return;
       _positionSub = locationService.startTracking().listen(_onPosition);
       _startElapsedTimer();
     } catch (e) {
+      if (!_isCurrentSession(generation)) return;
       state = state.copyWith(error: e.toString().replaceFirst('Exception: ', ''));
     }
   }
 
   List<List<double>> stopJourney() {
     _positionSub?.cancel();
+    _positionSub = null;
     _timer?.cancel();
-    _disposeWriteLayer();
+    _timer = null;
+    unawaited(_disposeWriteLayer());
     _resetTrackingState();
     final path = state.path;
     state = state.copyWith(
@@ -263,12 +312,18 @@ class JourneyController extends Notifier<JourneyState> {
   StreamSubscription<String>? _rejectionSub;
 
   /// Initialize the persistent queue and drain service for this walk.
-  Future<void> _initWriteLayer() async {
+  ///
+  /// [generation] is the [_sessionGeneration] the walk started under; if the
+  /// account signs out while the queue file is opening, the half-built layer is
+  /// dropped rather than attached to this controller.
+  Future<void> _initWriteLayer(int generation) async {
     final userId = ref.read(userProfileProvider).userId;
     if (userId == null) return;
 
-    _queue = StepClaimQueue();
-    await _queue!.init();
+    final queue = StepClaimQueue();
+    await queue.init(userId);
+    if (!_isCurrentSession(generation)) return;
+    _queue = queue;
 
     final api = ref.read(apiServiceProvider);
     _drainService = BatchDrainService(
@@ -353,14 +408,106 @@ class JourneyController extends Notifier<JourneyState> {
   /// Number of points pending in queue (for UI indicator).
   int get pendingQueueSize => _queue?.length ?? 0;
 
-  void _disposeWriteLayer() {
+  /// Drain services already detached from this controller (end of walk) whose
+  /// last batch may still be in flight, mapped to when they finish. Sign-out
+  /// cancels and awaits them too: a retired drain's ACK still rewrites the WAL.
+  final _retiringDrains = <BatchDrainService, Future<void>>{};
+
+  /// Stops the drain layer. The returned future completes once any in-flight
+  /// drain has finished; end-of-walk callers ignore it, sign-out awaits it with
+  /// [cancelInFlight] so a slow or offline request can't hold sign-out open.
+  Future<void> _disposeWriteLayer({bool cancelInFlight = false}) {
     _drainSub?.cancel();
     _rejectionSub?.cancel();
-    _drainService?.dispose();
+    final service = _drainService;
     _drainService = null;
     _drainSub = null;
     _rejectionSub = null;
     // Keep _queue alive — points persist on disk for next app launch
+    if (service == null) return Future<void>.value();
+    final done = service
+        .dispose(cancelInFlight: cancelInFlight)
+        // Block body on purpose: `remove` returns this very future, and
+        // whenComplete awaits a returned future — an arrow body self-deadlocks.
+        .whenComplete(() {
+      _retiringDrains.remove(service);
+    });
+    _retiringDrains[service] = done;
+    return done;
+  }
+
+  bool get _hasLiveWriteLayer =>
+      _positionSub != null ||
+      _timer != null ||
+      _queue != null ||
+      _drainService != null ||
+      _retiringDrains.isNotEmpty;
+
+  /// Tears down this account's live write layer on sign-out / account deletion
+  /// (#110) and wipes its queued GPS points. Safe to call with no walk active,
+  /// and concurrent calls share one teardown.
+  ///
+  /// This must act on the controller's OWN [StepClaimQueue] instance. Clearing
+  /// through a second instance leaves this one's in-memory points, GPS
+  /// subscription and drain timer alive: the next drain ACK or GPS point rewrites
+  /// the file, and — since the server takes the claim owner from the JWT — the
+  /// next drain after another account signs in claims these points as theirs.
+  ///
+  /// While it runs, [startJourney] refuses to start, and any start already
+  /// mid-await aborts on its generation check. Each pass tears down whatever is
+  /// live at that moment — not a snapshot from before the awaits — and passes
+  /// repeat until nothing is left. [userId] is the outgoing account; when no
+  /// walk opened a queue this session its leftover file (e.g. from an app kill
+  /// mid-walk) is cleared instead — no live instance exists then, so a fresh one
+  /// cannot race anything.
+  Future<void> abandonForSignOut(String? userId) =>
+      _sessionEnding ??= _abandon(userId).whenComplete(() => _sessionEnding = null);
+
+  Future<void> _abandon(String? userId) async {
+    _sessionGeneration++;
+    var clearedLiveQueue = false;
+    try {
+      for (var pass = 0; pass < _maxTeardownPasses && _hasLiveWriteLayer; pass++) {
+        clearedLiveQueue = await _teardownLiveLayer() || clearedLiveQueue;
+      }
+      if (!clearedLiveQueue && userId != null) {
+        final leftover = StepClaimQueue();
+        await leftover.init(userId);
+        await leftover.clear();
+      }
+    } finally {
+      _resetTrackingState();
+      _walkSessionId = null;
+      _startTime = null;
+      state = const JourneyState();
+    }
+  }
+
+  /// One teardown pass. Order: stop new points (GPS + timer) → cancel every
+  /// drain and await it (a batch that already got its ACK finishes its rewrite
+  /// before the clear) → clear memory + disk on the same queue instance.
+  /// Returns whether a live queue was cleared.
+  Future<bool> _teardownLiveLayer() async {
+    final positionSub = _positionSub;
+    _positionSub = null;
+    _timer?.cancel();
+    _timer = null;
+    final queue = _queue;
+    _queue = null;
+    // Detached synchronously so no new drain can start while we await below.
+    unawaited(_disposeWriteLayer(cancelInFlight: true));
+    final drains = [
+      for (final service in _retiringDrains.keys.toList())
+        service.dispose(cancelInFlight: true),
+      ..._retiringDrains.values,
+    ];
+    await positionSub?.cancel();
+    await Future.wait(drains);
+    if (queue == null) return false;
+    // StepClaimQueue.clear empties memory before touching disk, so even a
+    // failed disk write leaves nothing in memory for a later drain.
+    await queue.clear();
+    return true;
   }
 
   // ────────────────────────────────────────────────────────────────────────────

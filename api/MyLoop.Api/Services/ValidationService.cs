@@ -15,7 +15,6 @@ public partial class ValidationService : IValidationService
         "DisplayName contains invalid characters (Latin letters, numbers, spaces, hyphens, apostrophes only)";
     private const string DisplayNameNotAllowed = "This name isn't allowed";
     private static readonly Regex DisplayNameRegex = MyDisplayNameRegex();
-    private static readonly Regex HexColorRegex = MyHexColorRegex();
 
     /// <summary>
     /// Canonical stored form of a display name: trimmed, NFC-composed (so "e" + U+0301 and
@@ -62,16 +61,16 @@ public partial class ValidationService : IValidationService
         if (string.IsNullOrWhiteSpace(color))
             return "Color is required";
 
-        if (!HexColorRegex.IsMatch(color))
-            return "Color must be a valid hex color (e.g. #FF5733)";
+        if (!GameConstants.PlayerColors.Contains(color))
+            return "Color must be one of the player palette colors (e.g. #00D4AA)";
 
         return null;
     }
 
     public string? ValidateAvatarId(int avatarId)
     {
-        if (avatarId < 0 || avatarId > GameConstants.MaxAvatarId)
-            return $"AvatarId must be 0-{GameConstants.MaxAvatarId}";
+        if (avatarId < 0 || avatarId >= GameConstants.AvatarCount)
+            return $"AvatarId must be 0-{GameConstants.AvatarCount - 1}";
 
         return null;
     }
@@ -86,7 +85,4 @@ public partial class ValidationService : IValidationService
     /// </summary>
     [GeneratedRegex(@"^[A-Za-z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u01BF\u01C4-\u024F\u1E00-\u1EFF \-_']+$")]
     private static partial Regex MyDisplayNameRegex();
-
-    [GeneratedRegex(@"^#[0-9A-Fa-f]{6}$")]
-    private static partial Regex MyHexColorRegex();
 }

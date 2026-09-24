@@ -17,13 +17,17 @@ import 'package:myloop/shared/widgets/shimmer_loading.dart';
 import 'package:myloop/features/moderation/blocked_users.dart';
 
 /// Scoped leaderboard providers — one per tab.
+///
+/// None of them writes `myRank` into `profileSliceProvider`: the board is a
+/// snapshot that `LeaderboardRefreshWorker` rebuilds only every few minutes
+/// (#109), while the Home rank tile gets its LIVE rank from game-state hydration
+/// at sign-in, onboarding and after each walk (`hydrateAndSyncProfileRank`).
+/// Copying the snapshot rank here would roll the tile back to a pre-walk rank
+/// just for opening this screen.
 final cityLeaderboardProvider = FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) async {
   final api = ref.read(apiServiceProvider);
   final profile = ref.read(userProfileProvider);
   final response = await api.getLeaderboard(lat: 0, lng: 0, userId: profile.userId, scope: 'city');
-  if (response.myRank != null) {
-    ref.read(userProfileProvider.notifier).updateStats(rank: response.myRank);
-  }
   return response.top;
 });
 

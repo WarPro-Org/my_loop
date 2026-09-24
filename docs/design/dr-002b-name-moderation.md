@@ -56,10 +56,31 @@ Fold pipeline (input is already `ValidationService.NormalizeDisplayName` output)
 3. Leet map `0→o 1→i 3→e 4→a 5→s 7→t @→a $→s` (`@`/`$` cannot pass validation today; mapped anyway so the fold is safe to reuse)
 4. Tokens = split on `[ \-_']`; **joined** = tokens concatenated
 
-Matching:
-- **Severe** (`FrozenSet<string>` in `Constants/NameBlocklist.cs`): blocked if `joined.Contains(term)` for any term
-- **Reserved** (`admin, administrator, mod, moderator, official, support, staff, myloop, system, root`): blocked if **any token equals** a term, or `joined` equals a term (`my_loop`, `My Loop`)
-- **Exceptions** (`FrozenSet`, initially empty): a folded `joined` value in this set is never blocked — for real surnames that trip the severe tier
+Matching (Gate 2 text — **superseded**; the rules the code implements are in "Current matching
+rules" below):
+- ~~**Severe** (`FrozenSet<string>` in `Constants/NameBlocklist.cs`): blocked if `joined.Contains(term)` for any term~~
+- ~~**Reserved** (`admin, administrator, mod, moderator, official, support, staff, myloop, system`): blocked if **any token equals** a term, or `joined` equals a term (`my_loop`, `My Loop`)~~
+- ~~**Exceptions** (`FrozenSet`, initially empty): a folded `joined` value in this set is never blocked — for real surnames that trip the severe tier~~
+
+### Current matching rules (`NameModeration.IsBlocked`, after review round 3)
+
+Terms live in `Constants/NameBlocklist.g.cs` (generated). A name is blocked if any rule matches.
+"Word" = a token of the leetspeak fold; "letter" = a token of at most
+`GameConstants.MaxSpelledOutTokenLength` (1) characters.
+
+| # | Rule | Example refused | Example accepted |
+|---|---|---|---|
+| R1 | A **severe** term occurs inside one word, also read with the digits leetspeak leaves unmapped (2, 6, 8, 9) removed (words in `Exceptions` are skipped, in either reading) | Fuckface, N1gg3r, Fu2ck, Nig9ger | Scunthorpe United, Thomas Lutz |
+| R2 | A **whole-word** or **reserved** term equals one word, also with its digits removed | Ass, Big Ass, The Admin, Na2zi | Cassandra, Badminton |
+| R3 | Each maximal run of letters is joined and checked by R1 and R2 | s-h-i-t, A-s-s, K-K-K | Ana L, J K Lee |
+| R4 | A **whole-word** or **reserved** term equals a word from the digit-preserving fold with digits trimmed from either end (before or after leetspeak), or with an x wrapper (`x` at both ends, length ≥ 3) trimmed | Admin2, 4dmin2, Nazi1, Coon2, xXnaziXx | Max, Rex, Xander, Alex, Maddox |
+| R5 | `myloop` anywhere in the concatenated digit-preserving fold | MyLoopSupport, my_loop | — |
+| R6 | Two **adjacent** words, unless the pair is in `JoinExceptions`: **(a)** their concatenation equals a severe term; **(b)** exactly one is a letter and the concatenation equals a whole-word term; **(c)** exactly one is a letter and a severe term of ≥ `GameConstants.MinSpanningSevereTermLength` (5) chars is a prefix (letter first) or suffix (letter last) of the concatenation | Nig Ger, F uck, Fuc K, B itch, S hit, Shi T, Fa G, N iggerboy | Deb Allen, S Luther, P Ornstein, Chin K |
+
+Not caught (accepted): a **whole-word**-tier term split into two multi-letter words ("Na Zi",
+"Sh It"; R6b needs one side to be a single letter, or two real name parts would form terms), a letter + word whose
+concatenation contains a 4-letter severe term plus more letters ("S lutty"), and a term split
+across three or more non-letter words. The report path is the backstop.
 
 `ValidationService.ValidateDisplayName` adds, after the regex check:
 `if (NameModeration.IsBlocked(normalized)) return "This name isn't allowed";`
@@ -73,21 +94,25 @@ generates `Constants/NameBlocklist.g.cs` from pinned commits; terms are stored p
 LDNOOBW substring matching blocked 119 real names (Frances, Connell, Fischer, Regina…), and
 against an English word list it hit words like *therapist* (rapist) and *trimming* (rimming).
 Tiers are therefore derived, not hand-sorted:
-- **Severe substrings** = a hand-curated `CORE` (fuck, cunt, shit, hitler, … — each with 0
-  corpus hits) + LDNOOBW terms of ≥ 7 chars that occur inside no name and no English word.
+- **Severe substrings** = a hand-curated `CORE` (fuck, cunt, hitler, … — each with 0
+  corpus hits; `shit` was here until the review fixes below made it whole-word only) + LDNOOBW terms of ≥ 7 chars that occur inside no name and no English word.
   Shorter foreign terms hid inside names/words (Finnish *pipari*, Polish *jajko*).
 - **Whole words** = every other LDNOOBW term, minus ordinary words (English list + a reviewed
   `DROP_WHOLE_WORD` list for other languages), plus `KEEP_WHOLE_WORD` insults that are also
   English words (ass, cock, nazi…). Reserved staff words live in `NameModeration`.
 - **Dropped** = terms that *are* common names (dick, regina, anita) and identity terms (gay,
   lesbian, bisexual, trans, …) — self-description is never blocked; slurs are.
-- Result: 898 severe, 383 whole-word, 7 exceptions.
+- Result: 898 severe, 383 whole-word, 7 exceptions. (After review round 3: 898 severe,
+  384 whole-word — `kkk` added — 7 exceptions, 50 join exceptions. After round 4: 909 severe —
+  11 compounds added to `CORE`, see below — and 51 join exceptions.)
 
 **Review fixes (#193 agent review).** The first corpus was Anglo-heavy, and `shit`/`fuk` blocked
 Harshit, Rakshit, Kshitij, Ashita, Fukuda, Fukuoka…, which matters for the beta's
 Bangalore/Mumbai/Tokyo players:
-- `shit` and `fuk` are whole-word only. Compounds such as *bullshit* and *shithead* stay
-  substring matches.
+- `shit` and `fuk` are whole-word only, so compounds are caught only when listed. Round 4 added
+  common ones to `CORE` as severe substrings: *bullshit, horseshit, dipshit, shithead, shitface,
+  shithole, shitbag, dumbass, asshat, asswipe, douchebag*. *dickhead* is left out: the generator
+  flags "Dick Head" as a real first name + surname pair.
 - The generator adds a curated South and East Asian name list and **fails** if any severe term
   hits a corpus name not covered by an exception.
 - Exceptions apply **per word** (removed before matching), so "Scunthorpe United" passes.
@@ -96,6 +121,86 @@ Bangalore/Mumbai/Tokyo players:
 - `ſ ƒ ħ ŧ ƀ ƶ ǥ` fold to their Latin reading.
 - `scripts/moderation/fold_vectors.json` is asserted by both the generator and the xUnit suite,
   so the two folds cannot drift apart. (The old fold-stability test could not detect that drift.)
+
+**Review fixes, round 2 (#193) — deviations from the Matching rules above.**
+- **Severe terms match inside one word, not on `joined`.** Scanning the concatenation of all
+  words let a first name and surname form a term across the boundary: Thomas Lutz (s+lut →
+  *slut*), Margaret Ardern (*retard*), Philip Ornstein (*porn*), Louisa Lopez (*salope*), Mari
+  Conti (*maricon*). Crossing the generator's first-name and surname corpora found 2,291 such
+  pairs. Each word is now scanned on its own. The only joining left is for **spelled-out
+  letters** (*superseded in round 3: adjacent word pairs are also checked, rule R6*): each maximal run of tokens of at most `GameConstants.MaxSpelledOutTokenLength`
+  (= 1) characters is joined and checked against both tiers, so "s-h-i-t", "f u c k" and
+  "A-s-s" are still refused. The same rule replaces the whole-word check on `joined`, so
+  "Ana L" (an+al) is no longer refused. "my_loop" / "My Loop" are still refused by the brand
+  rule (`myloop` anywhere in the concatenation, reserved tier only).
+- **The limit is 1, not 2.** At 2, real two-letter name parts join into listed terms (Si Ki →
+  *siki*, Su Ka → *suka*, As Lu Ty → *slut*). Accepted cost (after round 3, rule R6): a
+  whole-word-tier term split into two multi-letter words ("Na Zi", "Sh It") is not caught; a
+  severe term split that way ("Fu Ck") is, by R6a. The report path is the backstop.
+- **Generator check.** (*Superseded in round 3 — the matcher now does join adjacent pairs, so
+  the generator also checks corpus pairs; see below.*) Because the matcher never joins two real
+  name parts, checking each corpus name on its own is sufficient; a first × surname pair check
+  is not needed. The generator instead fails if any corpus name is short enough to be joined as
+  a spelled-out letter, and an xUnit test asserts its `MAX_SPELLED_OUT_TOKEN_LENGTH` equals the
+  C# constant. The generated list did not change and is still byte-reproducible.
+- **Reserved words** also match with digits trimmed from both ends, before and after leetspeak
+  ("2Admin", "4dmin2", "M0derator1"), and inside an x wrapper at both ends ("xXAdminXx").
+  One-sided x (Max, Rex, Xander) is not a wrapper.
+- **`root` is no longer reserved** — Root is an ordinary surname (Joe Root). `system` and
+  `admin` cover system impersonation.
+
+**Review fixes, round 3 (#193).** Rules R4 and R6 in "Current matching rules" above.
+- **One space defeated the severe tier.** Per-word matching let "N igger", "F uck", "Fuc K",
+  "Nig Ger", "B itch", "S hit", "Shi T" and "Fa G" through. R6 checks each pair of adjacent
+  words, but never scans a first name + surname for a term inside their concatenation (that is
+  what refused Thomas Lutz): only an **exact** severe match joins two ordinary words (R6a).
+  Substring and whole-word matching across the space need one side to be a single letter —
+  evidence of deliberate splitting (R6b, R6c).
+- **Why 5 for spanning terms (R6c).** At 4, an initial next to a real surname forms a term:
+  S Luther, S Luttrell → *slut*; P Ornstead, P Orna → *porn*; J Izzy → *jizz*. At 5 the
+  corpora give no initial + name pair except ones that spell a term exactly, which R6a/R6b
+  already cover. Accepted cost: "S lutty"-style splits of 4-letter terms are not caught.
+  `GameConstants.MinSpanningSevereTermLength` mirrors the generator's
+  `MIN_SPANNING_SEVERE_TERM_LENGTH`; an xUnit test asserts they match.
+- **Generator pair check.** `join_collisions()` lists every pair R6 would refuse where both
+  halves are corpus names, or one is a single letter and the other a corpus name (73 pairs).
+  Generation **fails** unless each is reviewed into `JOIN_EXCEPTIONS` (emitted as
+  `NameBlocklist.JoinExceptions`, never joined: Deb Allen, De Conner, Ana L, Chin K, Wan K,
+  K Inkster, …) or `ACCEPTED_JOIN_REFUSALS` (still refused because the pair reads as the term
+  and is not a plausible name: B Itch, Va Gina, Wan Ker, White Power, As S, F Ag, T Wat, …), and
+  fails on a stale entry that no longer collides. A plain "fail on any collision" would have
+  forced `bitch`, `bastard`, `wanker`, `vagina` out of the severe tier, since "B"+"Itch",
+  "Bast"+"Ard", "Wan"+"Ker" and "Va"+"Gina" are all corpus pairs.
+- **Whole words ignored digit and x-wrapper trimming.** "Nazi1", "Fag1", "Coon2", "Anal2",
+  "Semen2", "xXnaziXx", "xXcoonXx" passed, because leetspeak turns a trailing `1` into `i`
+  before the whole-word check. R4 runs the reserved-word readings through the whole-word tier
+  too. No corpus name is x-wrapped, so the trim adds no real-name refusals.
+- **`kkk`** added to the whole-word tier via the generator's `KEEP_WHOLE_WORD` list.
+
+**Review fixes, round 4 (#193).**
+- **Unmapped digits split a term inside a word.** Leetspeak maps only 0/1/3/4/5/7, so "Fu2ck",
+  "F2uck", "Nig9ger" and "Na2zi" passed. R1 and R2 now also read each word and spelled-out run
+  with its remaining digits removed (skipping `Exceptions` in that reading too). No corpus name
+  contains a digit, so this adds no real-name refusals.
+- **Common compounds** (*bullshit*, *shithead*, …) added to `CORE`; see "Review fixes" above.
+- **"K Ike"** moved from `ACCEPTED_JOIN_REFUSALS` to `JOIN_EXCEPTIONS`: Ike is a common Igbo
+  surname and first name, so an initial + Ike is a plausible real name. Accepted cost: "K ike"
+  is not caught by R6b; "Kike" and "K-i-k-e" still are.
+
+**Accepted false positives (whole-word tier).** These whole-word terms are also real names, and
+are kept on purpose because the slur or sexual reading is the common one in an English-language
+leaderboard:
+
+| Term | Real names refused | Why kept |
+|---|---|---|
+| `coon` | Carrie Coon (surname) | Racial slur |
+| `semen` | Semen Petrenko (Ukrainian transliteration of Semyon), Semen Padang | Sexual term |
+| `fuk` | Lau Fuk Wing, Fuk-sang (Cantonese given name) | Common spelling of *fuck*; already narrowed from substring to whole word, so Fukuda/Fukuoka pass |
+
+Remedy for an affected player: the report/restore path's human review. The player contacts
+support (§7) and a moderator reviews the name, as for a reported name (§4.3). Adding the folded
+word to `EXCEPTIONS` in the generator would un-block it for every player, so that is a product
+decision per term, not the default remedy.
 
 ---
 
@@ -213,6 +318,8 @@ New `NameReportsController` and `BlocksController` (keeps `UsersController` thin
 `PATCH /api/users/{id}` with `displayName` while `NameLockedAt != null` → **`409`**
 `{ "code": "name_locked", "message": "Your name can't be changed right now." }`.
 A successful rename clears `NameHiddenAt` and broadcasts `PlayerNameChanged`.
+The moderation checks and the save run in one transaction under the player's `Users` row lock
+(§4.9).
 
 ### 4.3 Moderator endpoints (`[Authorize(Policy = "Moderator")]`, `ModerationController`)
 
@@ -239,7 +346,8 @@ Non-moderators get `403`; no endpoint reveals who the moderators are.
 strategy.ExecuteAsync(async () => {
   ChangeTracker.Clear();
   await using tx = BeginTransaction();
-  SELECT … FROM "Users" WHERE "Id" = @reported FOR UPDATE      -- serialises reports per target
+  SELECT pg_advisory_xact_lock(NREP, key(@reporter))         -- serialises one reporter's reports (§4.9)
+  SELECT … FROM "Users" WHERE "Id" = @reported FOR NO KEY UPDATE  -- serialises reports per target
   if reporter has ≥ 10 reports since UTC midnight → return Limited
   INSERT NameReport … ON CONFLICT (ReporterId, ReportedUserId, NameSnapshot) DO NOTHING
      → 0 rows ⇒ return Duplicate
@@ -258,7 +366,7 @@ if openedNow → alerts.Send(FirstReport)
 if hiddenNow → alerts.Send(AutoHidden); notifier.PlayerNameChanged(reported, placeholder)
 ```
 
-- The `FOR UPDATE` row lock means two concurrent third reports cannot both count 2 (missed hide)
+- The row lock means two concurrent third reports cannot both count 2 (missed hide)
   or both hide (double alert).
 - Retry after an ambiguous commit: the report insert hits `ON CONFLICT` → `Duplicate` → no
   duplicate alert. **Accepted:** in that rare case the alert for that transition is lost; the
@@ -298,7 +406,8 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
 ### 4.7 Implementation notes (PR 2) — deviations from the above
 
 - **Reporting a moderator returns `204`, not `400`.** A distinct answer would reveal who the
-  moderators are, contradicting §4.3. The report is simply not recorded.
+  moderators are, contradicting §4.3. The report is recorded (so it spends the daily budget, §4.9)
+  but opens no case and never hides the name.
 - **Threshold window.** Only reports with `CreatedAt >= case.OpenedAt` count. Without it, a name
   a moderator restored would be re-hidden by the very reports that were already judged plus one.
 - **Renaming back to a confirmed-removed name** is refused (`400 "This name isn't allowed"`),
@@ -309,11 +418,88 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
   in-memory queue drained by a `BackgroundService`, so a report never waits on SMTP. A dropped
   alert (queue full / restart) is recoverable: every alert is logged when raised and the case row
   is the source of truth.
-- **`PATCH /api/users/{id}` gets `IModerationService` via `[FromServices]`**, not the constructor,
-  so existing `UsersController` constructions (tests, open PRs) are unaffected.
+- **The rename checks live in `UserService.UpdateProfile`** (superseded the round-1
+  `[FromServices] IModerationService` + `CheckRenameAsync` call in the controller, §4.9), so the
+  `UsersController` constructor is unchanged.
 - **Rescan uses offset paging ordered by `Id`**, not keyset on `Guid` (translation of `Guid`
   comparison is not guaranteed). Hides never remove rows; a mid-scan registration can shift a page,
   which is harmless because that name passed the blocklist at registration.
+
+### 4.8 Review fixes (#194 agent review)
+
+- **Blocker, fixed:** a player could rename straight back to an auto-hidden name, after which no
+  path could hide it again. Now a rename to a name with an `AutoHidden` (or `Confirmed`) case is
+  refused, Confirm always attempts the hide, and reports may re-hide under an `AutoHidden` case.
+- The daily report limit is checked **before** the moderator-target test, so at the limit a
+  moderator answers 429 like everyone else and the endpoint can't reveal who moderates.
+- A rename always writes `NameHiddenAt = NULL`. EF used to skip the column when it was already null
+  at load time, so a hide committing mid-rename left the new name flagged as hidden.
+- Restore only applies while `User.NameHiddenAt == case.HiddenAt`, so restoring an older case can't
+  undo a newer hide of a different name.
+- Confirm, restore and rescan lock the `Users` row before the case row, the same order reports use.
+  This removes a report↔confirm deadlock, and a report can no longer insert the case between
+  rescan's read and its insert.
+- The rescan summary email is sent from `finally`, so names already hidden are reported even if
+  the scan fails part-way.
+
+### 4.9 Review fixes, round 2 (#194 agent review)
+
+- **The rename is one locked transaction.** `PATCH /api/users/{id}` with `displayName` makes one
+  call, `UserService.UpdateProfile`, which (inside `CreateExecutionStrategy`, after
+  `ChangeTracker.Clear()`) locks the player's `Users` row `FOR NO KEY UPDATE` — the same lock,
+  taken first, as reports, confirm, restore and rescan — then runs the rename gate (locked /
+  removed name), re-reads the user and saves, marking `DisplayName` and `NameHiddenAt` modified.
+  It returns `ProfileUpdateResult { Status: Updated | NotFound | NameLocked | NameRemoved, User? }`,
+  which the controller maps to `200` / `404` / `409 name_locked` / `400`. The wire contract is
+  unchanged. This closes two races: a confirm committing between the old unlocked check and the
+  save let a player re-adopt a `Confirmed` name; a hide committing while a profile save resent the
+  current name left the placeholder showing with `NameHiddenAt = NULL`, which restore could never
+  match. `IModerationService.CheckRenameAsync` is removed (it was only safe under the lock).
+- **Re-hiding under any status but `Restored`** (defence in depth). A report at or above the
+  threshold, or a confirm, hides a name that is showing under an `Open`, `AutoHidden` or
+  `Confirmed` case. A `Confirmed` case keeps its status (so it can't then be "restored") and a
+  repeat confirm never adds a second strike.
+- **Rename-back check ignores letter case and normalises snapshots.** The player's few
+  `AutoHidden`/`Confirmed` snapshots are loaded, each normalised with `NormalizeDisplayName`
+  (the stored text is used if it is ill-formed UTF-16) and compared to the request with
+  `OrdinalIgnoreCase`. "Rude Name" → "rude name" is refused, and so is a snapshot stored before
+  #189 (smart apostrophe, decomposed accents).
+- **A report of a moderator spends the reporter's budget.** It is inserted like any report, after
+  the daily-limit check, and then short-circuits: no case, no hide, no alert, `Ignored` → `204`.
+  Before, it inserted nothing, so at limit − 1 a report of a candidate followed by one of a fresh
+  player answered `429` (candidate counted, not a moderator) or `204` (a moderator). Such rows are
+  never counted later: a case window opened after the player leaves the allowlist starts after
+  them, and the queue counts only reports inside a window. **Accepted edge:** if a case for that
+  exact name was already open before the player became a moderator, reports filed while they
+  moderate fall inside its window and show in the queue; a moderator still decides, and reports
+  can't hide a moderator's name. A reporter who reported the name while its owner moderated can't
+  report the same name again after demotion (unique per reporter, target and name).
+- **`FOR NO KEY UPDATE` instead of `FOR UPDATE`** on the `Users` row (`ModerationLocks`). It still
+  conflicts with itself and with `UPDATE`, so it serialises every moderation write, but not with
+  the `FOR KEY SHARE` lock a `NameReports` foreign-key check takes on the reporter's row. A→B
+  racing B→A no longer deadlocks.
+- **One reporter's reports are serialised**, so concurrent reports against different targets
+  can't each count N − 1 and overshoot the daily limit. **Deviation from the suggested fix** (lock
+  the reporter's `Users` row as well, both rows in `Guid` order): leaderboard, decay,
+  hex-count reconciliation and territory code update many `Users` rows in no fixed order, so a
+  second row lock in reports could deadlock with them. Reports instead take a transaction-scoped
+  advisory lock on the reporter first — two-key form in its own namespace (`NREP`), which never
+  overlaps the one-key advisory locks `TerritoryService` and `LeaderboardService` use. Nothing that
+  holds a lock ever waits for it, so it can't join a deadlock cycle. Reporters whose 32-bit keys
+  collide are merely serialised with each other.
+- **Unlock is audited.** `UnlockNameAsync(userId, moderatorUid)` logs the moderator's UID
+  (structured), like confirm and restore.
+- **Options are validated at startup.** `Moderation:Email`, when enabled, needs a port in
+  1–65535 and a `From` and every `To` that parse as a mailbox with a domain. `Moderation` refuses
+  a blank moderator UID (it could never match and would silently leave that moderator out).
+- **Flutter shows the `name_locked` message.** `ApiService.extractApiError` also reads `message`
+  (after `error`), so a `409 { code, message }` body reaches the player instead of the generic
+  save error.
+- **Account deletion purges moderation rows explicitly.** `UserService.DeleteUserData` deletes
+  the player's `NameReports` (both directions) and `NameModerationCases` in its transaction, per
+  its "no reliance on cascades" contract; the DB cascades remain as a second line.
+
+---
 
 ## 5. SignalR changes (PR 4)
 
@@ -409,11 +595,15 @@ case-folding needed as long as every id originates from the API.
 
 | Risk | Status |
 |---|---|
-| Two concurrent third reports → double hide / double email, or both count 2 → missed hide | **Mitigated** — `FOR UPDATE` on the target row + conditional `UPDATE … WHERE DisplayName = @snapshot` |
+| Two concurrent third reports → double hide / double email, or both count 2 → missed hide | **Mitigated** — `FOR NO KEY UPDATE` on the target row + conditional `UPDATE … WHERE DisplayName = @snapshot` |
+| Rename racing a hide or a moderator decision (re-adopted confirmed name; placeholder with no hide flag) | **Mitigated** — rename checks and saves in one transaction under the same row lock (§4.9) |
+| Two players reporting each other at once deadlock | **Mitigated** — `FOR NO KEY UPDATE` doesn't block FK key-share checks (§4.9) |
+| Moderator identity probed via the report response or budget | **Mitigated** — moderator targets answer `204` and spend budget like any report (§4.9) |
+| Concurrent reports by one player overshoot the daily limit | **Mitigated** — per-reporter advisory lock (§4.9) |
 | Execution-strategy retry duplicates side effects | **Mitigated** — alerts/broadcast post-commit outside the retried block; inserts are `ON CONFLICT DO NOTHING` |
 | Lost alert after ambiguous commit | **Accepted** — case still visible in `GET /cases` |
 | Brigading (3 friends wipe a rival's name) | **Accepted by design** — victim renames immediately; no strike without a moderator |
-| Report spam by one account | **Mitigated** — unique per (reporter, target, name) + 10/day + existing global rate limiter |
+| Report spam by one account | **Mitigated** — unique per (reporter, target, name) + 10/day (serialised per reporter) + existing global rate limiter |
 | Restore clobbers a newer name the player chose | **Mitigated** — restore is conditional on the placeholder still being current |
 | Blocklist false positive on a real surname | **Mitigated** — exceptions set; generic error; report-review path unaffected |
 | Blocklist evasion via Cyrillic/Greek homoglyphs | **Mitigated by #189** (Latin-only) + accent fold |
@@ -427,7 +617,7 @@ case-folding needed as long as every id originates from the API.
 | Offline cold start shows blocked names unmasked | **Mitigated** — user-bound block-list cache |
 | Moderation DDL patch fails silently at startup | **Mitigated** — one transactional block, `Error` log |
 | Rescan request too long at scale | **Accepted for beta** (keyset paging); revisit if user count > ~50k |
-| Report stores reporter identity (PII) | **Mitigated** — cascade on account deletion; never included in alert emails. App Store privacy label: check whether "Other User Content" must be declared (UNVERIFIED) |
+| Report stores reporter identity (PII) | **Mitigated** — explicit purge (and cascade) on account deletion; never included in alert emails. App Store privacy label: check whether "Other User Content" must be declared (UNVERIFIED) |
 | Anti-cheat: block used to protect territory | **N/A by design** — block never affects gameplay |
 
 ---

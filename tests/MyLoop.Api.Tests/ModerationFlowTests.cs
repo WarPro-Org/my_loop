@@ -18,7 +18,7 @@ namespace MyLoop.Api.Tests;
 
 /// <summary>
 /// DR-002b / #190 — name reports, auto-hide and moderator decisions against real Postgres: the
-/// flow depends on a row lock (FOR UPDATE), ON CONFLICT upserts and conditional updates, none of
+/// flow depends on a row lock (FOR NO KEY UPDATE), ON CONFLICT upserts and conditional updates, none of
 /// which an in-memory provider reproduces.
 /// </summary>
 public class ModerationFlowTests : IAsyncLifetime
@@ -52,15 +52,15 @@ public class ModerationFlowTests : IAsyncLifetime
     private AppDbContext NewDb() =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_conn).Options);
 
-    private static IModeratorDirectory Moderators()
+    private static IModeratorDirectory Moderators(params string[] uids)
     {
         var monitor = new Mock<IOptionsMonitor<ModerationOptions>>();
-        monitor.Setup(m => m.CurrentValue).Returns(new ModerationOptions { ModeratorUids = [ModeratorUid] });
+        monitor.Setup(m => m.CurrentValue).Returns(new ModerationOptions { ModeratorUids = uids });
         return new ModeratorDirectory(monitor.Object);
     }
 
-    private NameReportService Reports(AppDbContext db) =>
-        new(db, Moderators(), _alerts, NullLogger<NameReportService>.Instance);
+    private NameReportService Reports(AppDbContext db, bool withModerator = true) =>
+        new(db, withModerator ? Moderators(ModeratorUid) : Moderators(), _alerts, NullLogger<NameReportService>.Instance);
 
     private ModerationService Moderation(AppDbContext db) =>
         new(db, _alerts, NullLogger<ModerationService>.Instance);
@@ -85,6 +85,57 @@ public class ModerationFlowTests : IAsyncLifetime
     {
         await using var db = NewDb();
         return await Reports(db).ReportAsync(reporter, target, reason);
+    }
+
+    private static UserService Users(AppDbContext db) =>
+        new(db, new ValidationService(), NullLogger<UserService>.Instance);
+
+    private async Task<ProfileUpdateStatus> Rename(Guid userId, string name)
+    {
+        await using var db = NewDb();
+        return (await Users(db).UpdateProfile(userId, new UpdateUserRequest { DisplayName = name })).Status;
+    }
+
+    /// <summary>Puts a hidden name back on show behind moderation's back ("hide undone somehow").</summary>
+    private async Task UndoHide(Guid userId, string name)
+    {
+        await using var db = NewDb();
+        await db.Users.Where(u => u.Id == userId).ExecuteUpdateAsync(s => s
+            .SetProperty(u => u.DisplayName, name)
+            .SetProperty(u => u.NameHiddenAt, (DateTime?)null));
+    }
+
+    /// <summary>
+    /// Runs a rename while another transaction holds the player's row lock — the position a report,
+    /// confirm or rescan is in part-way through. <paramref name="concurrentWork"/> runs in that
+    /// transaction once the rename is waiting behind it, then commits.
+    /// </summary>
+    private async Task<ProfileUpdateStatus> RenameAgainst(Guid userId, string name, Func<AppDbContext, Task> concurrentWork)
+    {
+        await using var other = NewDb();
+        await using var tx = await other.Database.BeginTransactionAsync();
+        await ModerationLocks.LockUserAsync(other, userId);
+
+        var rename = Rename(userId, name);
+        await WaitForALockWaiter();
+        await concurrentWork(other);
+        await tx.CommitAsync();
+        return await rename;
+    }
+
+    private async Task WaitForALockWaiter()
+    {
+        await using var db = NewDb();
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            var waiting = await db.Database
+                .SqlQueryRaw<int>(@"SELECT count(*)::int AS ""Value"" FROM pg_locks WHERE NOT granted")
+                .ToListAsync();
+            if (waiting[0] > 0) return;
+            await Task.Delay(20);
+        }
+        throw new TimeoutException("The rename never waited on the held row lock");
     }
 
     private async Task<User> LoadUser(Guid id)
@@ -167,6 +218,25 @@ public class ModerationFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Concurrent_reports_by_one_player_do_not_overshoot_the_daily_limit()
+    {
+        const int remaining = 2;
+        var limit = MyLoop.Api.Constants.GameConstants.MaxNameReportsPerReporterPerDay;
+        var reporter = await SeedUser("Reporter");
+        foreach (var target in await SeedUsers(limit - remaining))
+            await Report(reporter, target);
+
+        // Different targets lock different Users rows, so only the reporter lock serialises these.
+        var targets = await SeedUsers(6);
+        var outcomes = await Task.WhenAll(targets.Select(t => Report(reporter, t)));
+
+        Assert.Equal(remaining, outcomes.Count(o => o == NameReportOutcome.Accepted));
+        Assert.Equal(targets.Count - remaining, outcomes.Count(o => o == NameReportOutcome.DailyLimitReached));
+        await using var db = NewDb();
+        Assert.Equal(limit, await db.NameReports.CountAsync(r => r.ReporterId == reporter));
+    }
+
+    [Fact]
     public async Task Reporting_a_moderator_is_silently_ignored()
     {
         var moderator = await SeedUser("Staff Person", ModeratorUid);
@@ -175,7 +245,46 @@ public class ModerationFlowTests : IAsyncLifetime
 
         Assert.Null((await LoadUser(moderator)).NameHiddenAt);
         await using var db = NewDb();
-        Assert.False(await db.NameReports.AnyAsync(r => r.ReportedUserId == moderator));
+        Assert.False(await db.NameModerationCases.AnyAsync(c => c.UserId == moderator));
+        Assert.Empty(await Moderation(db).ListCasesAsync([ModerationCaseStatus.Open, ModerationCaseStatus.AutoHidden]));
+        // Recorded, so each one spent its reporter's daily budget like any other report.
+        Assert.Equal(GameConstantsThreshold, await db.NameReports.CountAsync(r => r.ReportedUserId == moderator));
+        Assert.Empty(_alerts.Raised);
+    }
+
+    [Fact]
+    public async Task Reporting_a_moderator_spends_the_daily_budget_like_any_report()
+    {
+        // The probe: at limit - 1, report a candidate, then a fresh player. If the candidate's report
+        // cost nothing, the second report is accepted and the candidate is exposed as a moderator.
+        var reporter = await SeedUser("Reporter");
+        foreach (var target in await SeedUsers(MyLoop.Api.Constants.GameConstants.MaxNameReportsPerReporterPerDay - 1))
+            Assert.Equal(NameReportOutcome.Accepted, await Report(reporter, target));
+        var moderator = await SeedUser("Staff Person", ModeratorUid);
+        var player = (await SeedUsers(1))[0];
+
+        Assert.Equal(NameReportOutcome.Ignored, await Report(reporter, moderator));
+        Assert.Equal(NameReportOutcome.DailyLimitReached, await Report(reporter, player));
+    }
+
+    [Fact]
+    public async Task Reports_filed_while_a_player_moderated_never_count_after_they_stop()
+    {
+        var formerModerator = await SeedUser("Staff Person", ModeratorUid);
+        foreach (var reporter in await SeedUsers(GameConstantsThreshold))
+            await Report(reporter, formerModerator);
+
+        // Removed from the allowlist: one new report opens a case, and the earlier reports are
+        // outside its window, so the name is not hidden and the queue shows one report.
+        var newReporter = (await SeedUsers(1))[0];
+        await using (var db = NewDb())
+            Assert.Equal(NameReportOutcome.Accepted,
+                await Reports(db, withModerator: false).ReportAsync(newReporter, formerModerator, NameReportReason.Other));
+
+        Assert.Equal("Staff Person", (await LoadUser(formerModerator)).DisplayName);
+        await using var check = NewDb();
+        var entry = Assert.Single(await Moderation(check).ListCasesAsync([ModerationCaseStatus.Open]));
+        Assert.Equal(1, entry.ReportCount);
     }
 
     [Fact]
@@ -184,7 +293,7 @@ public class ModerationFlowTests : IAsyncLifetime
         var target = await SeedUser("Rude Name");
         var reporters = await SeedUsers(6);
 
-        // Each report on its own context/connection, all at once — the FOR UPDATE lock must
+        // Each report on its own context/connection, all at once — the row lock must
         // serialise them so the threshold is neither missed nor crossed twice.
         await Task.WhenAll(reporters.Select(r => Report(r, target)));
 
@@ -197,6 +306,20 @@ public class ModerationFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Two_players_reporting_each_other_at_once_do_not_deadlock()
+    {
+        // Each report locks its target's row, and its NameReports insert takes a foreign-key
+        // KEY SHARE lock on the reporter's row. With FOR UPDATE those two conflict, so A→B racing
+        // B→A deadlocked (40P01); this context has no retrying strategy to hide that.
+        for (var round = 0; round < 5; round++)
+        {
+            var pair = await SeedUsers(2);
+            var outcomes = await Task.WhenAll(Report(pair[0], pair[1]), Report(pair[1], pair[0]));
+            Assert.All(outcomes, o => Assert.Equal(NameReportOutcome.Accepted, o));
+        }
+    }
+
+    [Fact]
     public async Task A_hidden_name_accepts_no_further_reports()
     {
         var target = await SeedUser("Rude Name");
@@ -204,6 +327,212 @@ public class ModerationFlowTests : IAsyncLifetime
         var late = (await SeedUsers(1))[0];
 
         Assert.Equal(NameReportOutcome.Ignored, await Report(late, target));
+    }
+
+    // ---- #194 review regressions ---------------------------------------------------------
+
+    [Fact]
+    public async Task Renaming_straight_back_to_an_auto_hidden_name_is_refused()
+    {
+        var target = await SeedUser("Rude Name");
+        await HideByReports(target);
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "Rude Name"));
+        Assert.Equal(NameModeration.PlaceholderFor(target), (await LoadUser(target)).DisplayName);
+        Assert.Equal(ProfileUpdateStatus.Updated, await Rename(target, "Nice Name"));
+    }
+
+    [Fact]
+    public async Task At_the_daily_limit_a_moderator_answers_like_everyone_else()
+    {
+        var reporter = await SeedUser("Reporter");
+        foreach (var target in await SeedUsers(MyLoop.Api.Constants.GameConstants.MaxNameReportsPerReporterPerDay))
+            await Report(reporter, target);
+        var moderator = await SeedUser("Staff Person", ModeratorUid);
+        var player = (await SeedUsers(1))[0];
+
+        Assert.Equal(NameReportOutcome.DailyLimitReached, await Report(reporter, player));
+        Assert.Equal(NameReportOutcome.DailyLimitReached, await Report(reporter, moderator));
+    }
+
+    [Fact]
+    public async Task Restoring_an_older_case_does_not_undo_a_newer_hide()
+    {
+        var target = await SeedUser("Bad One");
+        await HideByReports(target);
+        var olderCase = (await LoadCase(target)).Id;
+        Assert.Equal(ProfileUpdateStatus.Updated, await Rename(target, "Bad Two"));
+        await HideByReports(target);
+
+        await using (var db = NewDb())
+            await Moderation(db).RestoreAsync(olderCase, ModeratorUid);
+
+        var user = await LoadUser(target);
+        Assert.Equal(NameModeration.PlaceholderFor(target), user.DisplayName); // "Bad Two" stays hidden
+        Assert.NotNull(user.NameHiddenAt);
+    }
+
+    [Fact]
+    public async Task A_rename_saved_after_a_concurrent_hide_clears_the_hidden_flag()
+    {
+        var target = await SeedUser("Rude Name");
+        await using var renameContext = NewDb();
+        // The rename's context has already loaded the user (NameHiddenAt = null) when the hide commits.
+        Assert.NotNull(await renameContext.Users.FindAsync(target));
+        await HideByReports(target);
+
+        await Users(renameContext).UpdateProfile(target, new UpdateUserRequest { DisplayName = "Nice Name" });
+
+        var user = await LoadUser(target);
+        Assert.Equal("Nice Name", user.DisplayName);
+        Assert.Null(user.NameHiddenAt); // otherwise every later report of "Nice Name" would be ignored
+    }
+
+    // ---- #194 review round 2 -------------------------------------------------------------
+
+    [Fact]
+    public async Task A_confirm_committing_while_a_rename_is_checked_blocks_the_confirmed_name()
+    {
+        var target = await SeedUser("Bad Name");
+        await Report((await SeedUsers(1))[0], target); // case Open, name still showing
+        Assert.Equal(ProfileUpdateStatus.Updated, await Rename(target, "Other Name"));
+        var caseId = (await LoadCase(target)).Id;
+
+        // The player renames back to "Bad Name" while a moderator's confirm is part-way through.
+        // The rename used to check (case Open → allowed) before the confirm committed, then save
+        // "Bad Name" under a Confirmed case that nothing could hide again.
+        var outcome = await RenameAgainst(target, "Bad Name", other =>
+            other.NameModerationCases.Where(c => c.Id == caseId)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.Status, ModerationCaseStatus.Confirmed)));
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, outcome);
+        Assert.Equal("Other Name", (await LoadUser(target)).DisplayName);
+    }
+
+    [Fact]
+    public async Task Resaving_an_unchanged_name_while_a_hide_commits_keeps_it_hidden()
+    {
+        var target = await SeedUser("Rude Name");
+        var reporters = await SeedUsers(GameConstantsThreshold);
+        for (var i = 0; i < GameConstantsThreshold - 1; i++) await Report(reporters[i], target);
+
+        // A profile save resends the current name while the threshold report is part-way through.
+        // It used to write only NameHiddenAt = NULL (DisplayName looked unchanged to EF), leaving
+        // the placeholder showing with no hide flag, which no moderator could then restore.
+        var outcome = await RenameAgainst(target, "Rude Name", async other =>
+        {
+            var now = DateTime.UtcNow;
+            Assert.True(await NameHiding.HideAsync(other, target, "Rude Name", now));
+            await other.NameModerationCases.Where(c => c.UserId == target).ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Status, ModerationCaseStatus.AutoHidden)
+                .SetProperty(c => c.HiddenAt, now));
+        });
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, outcome);
+        var user = await LoadUser(target);
+        Assert.Equal(NameModeration.PlaceholderFor(target), user.DisplayName);
+        Assert.NotNull(user.NameHiddenAt);
+        await using (var db = NewDb())
+            Assert.Equal(ModerationDecisionOutcome.Done, await Moderation(db).RestoreAsync((await LoadCase(target)).Id, ModeratorUid));
+        Assert.Equal("Rude Name", (await LoadUser(target)).DisplayName); // restore still works
+    }
+
+    [Fact]
+    public async Task Resaving_an_unchanged_name_after_a_hide_is_refused()
+    {
+        var target = await SeedUser("Rude Name");
+        await using var renameContext = NewDb();
+        Assert.NotNull(await renameContext.Users.FindAsync(target)); // loaded before the hide
+        await HideByReports(target);
+
+        var result = await Users(renameContext).UpdateProfile(target, new UpdateUserRequest { DisplayName = "Rude Name" });
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, result.Status);
+        var user = await LoadUser(target);
+        Assert.Equal(NameModeration.PlaceholderFor(target), user.DisplayName);
+        Assert.NotNull(user.NameHiddenAt);
+    }
+
+    [Fact]
+    public async Task Renaming_back_to_a_hidden_name_in_another_letter_case_is_refused()
+    {
+        var target = await SeedUser("Rude Name");
+        await HideByReports(target);
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "rude name"));
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "RUDE NAME"));
+        Assert.Equal(NameModeration.PlaceholderFor(target), (await LoadUser(target)).DisplayName);
+    }
+
+    [Fact]
+    public async Task Renaming_back_to_a_hidden_name_stored_before_normalisation_is_refused()
+    {
+        // Stored before #189 with a smart apostrophe; a rename request is normalised to U+0027.
+        var target = await SeedUser("Bad’Name");
+        await HideByReports(target);
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "Bad'Name"));
+    }
+
+    [Fact]
+    public async Task Confirm_hides_a_name_showing_under_an_auto_hidden_case()
+    {
+        var target = await SeedUser("Rude Name");
+        await HideByReports(target);
+        await UndoHide(target, "Rude Name");
+
+        await using (var db = NewDb())
+            Assert.Equal(ModerationDecisionOutcome.Done, await Moderation(db).ConfirmAsync((await LoadCase(target)).Id, ModeratorUid));
+
+        var user = await LoadUser(target);
+        Assert.Equal(NameModeration.PlaceholderFor(target), user.DisplayName);
+        Assert.Equal(1, user.ConfirmedNameStrikes);
+        var reviewCase = await LoadCase(target);
+        Assert.Equal(ModerationCaseStatus.Confirmed, reviewCase.Status);
+        Assert.Equal(user.NameHiddenAt, reviewCase.HiddenAt);
+    }
+
+    [Fact]
+    public async Task A_report_rehides_a_name_showing_under_an_auto_hidden_case()
+    {
+        var target = await SeedUser("Rude Name");
+        await HideByReports(target);
+        await UndoHide(target, "Rude Name");
+
+        Assert.Equal(NameReportOutcome.Accepted, await Report((await SeedUsers(1))[0], target));
+
+        var user = await LoadUser(target);
+        Assert.Equal(NameModeration.PlaceholderFor(target), user.DisplayName);
+        Assert.NotNull(user.NameHiddenAt);
+        var reviewCase = await LoadCase(target);
+        Assert.Equal(ModerationCaseStatus.AutoHidden, reviewCase.Status);
+        Assert.Equal(user.NameHiddenAt, reviewCase.HiddenAt);
+        Assert.Equal(2, _alerts.Count(ModerationAlertKind.AutoHidden));
+    }
+
+    [Fact]
+    public async Task A_name_showing_under_a_confirmed_case_is_hidden_again_without_a_second_strike()
+    {
+        var target = await SeedUser("Rude Name");
+        await HideByReports(target);
+        var caseId = (await LoadCase(target)).Id;
+        await using (var db = NewDb())
+            await Moderation(db).ConfirmAsync(caseId, ModeratorUid);
+
+        // A repeat confirm re-applies the hide.
+        await UndoHide(target, "Rude Name");
+        await using (var db = NewDb())
+            Assert.Equal(ModerationDecisionOutcome.Done, await Moderation(db).ConfirmAsync(caseId, ModeratorUid));
+        Assert.Equal(NameModeration.PlaceholderFor(target), (await LoadUser(target)).DisplayName);
+
+        // So does a report, and the case keeps its Confirmed status (and so can't be "restored").
+        await UndoHide(target, "Rude Name");
+        Assert.Equal(NameReportOutcome.Accepted, await Report((await SeedUsers(1))[0], target));
+
+        var user = await LoadUser(target);
+        Assert.Equal(NameModeration.PlaceholderFor(target), user.DisplayName);
+        Assert.Equal(1, user.ConfirmedNameStrikes);
+        Assert.Equal(ModerationCaseStatus.Confirmed, (await LoadCase(target)).Status);
     }
 
     // ---- Moderator decisions -------------------------------------------------------------
@@ -235,9 +564,7 @@ public class ModerationFlowTests : IAsyncLifetime
     {
         var target = await SeedUser("Rude Name");
         await HideByReports(target);
-        await using (var db = NewDb())
-            await new UserService(db, new ValidationService(), NullLogger<UserService>.Instance)
-                .UpdateProfile(target, new UpdateUserRequest { DisplayName = "Nice Name" });
+        Assert.Equal(ProfileUpdateStatus.Updated, await Rename(target, "Nice Name"));
 
         await using (var db = NewDb())
             await Moderation(db).RestoreAsync((await LoadCase(target)).Id, ModeratorUid);
@@ -264,9 +591,7 @@ public class ModerationFlowTests : IAsyncLifetime
         Assert.Null(afterFirst.NameLockedAt);
 
         // Second offence: rename, get hidden again, confirmed again → locked.
-        await using (var db = NewDb())
-            await new UserService(db, new ValidationService(), NullLogger<UserService>.Instance)
-                .UpdateProfile(target, new UpdateUserRequest { DisplayName = "Second Bad" });
+        Assert.Equal(ProfileUpdateStatus.Updated, await Rename(target, "Second Bad"));
         await HideByReports(target);
         Guid secondCase;
         await using (var db = NewDb())
@@ -278,19 +603,14 @@ public class ModerationFlowTests : IAsyncLifetime
         Assert.Equal(2, afterSecond.ConfirmedNameStrikes);
         Assert.NotNull(afterSecond.NameLockedAt);
 
+        Assert.Equal(ProfileUpdateStatus.NameLocked, await Rename(target, "Anything"));
         await using (var db = NewDb())
-        {
-            Assert.Equal(RenameCheck.Locked, await Moderation(db).CheckRenameAsync(target, "Anything"));
-            Assert.True(await Moderation(db).UnlockNameAsync(target));
-        }
+            Assert.True(await Moderation(db).UnlockNameAsync(target, ModeratorUid));
         Assert.Null((await LoadUser(target)).NameLockedAt);
 
         // Unlocked, the player may rename — but not back to a name a moderator removed.
-        await using (var db = NewDb())
-        {
-            Assert.Equal(RenameCheck.RemovedName, await Moderation(db).CheckRenameAsync(target, "Second Bad"));
-            Assert.Equal(RenameCheck.Allowed, await Moderation(db).CheckRenameAsync(target, "Fresh Name"));
-        }
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "Second Bad"));
+        Assert.Equal(ProfileUpdateStatus.Updated, await Rename(target, "Fresh Name"));
     }
 
     [Fact]
@@ -405,10 +725,35 @@ public class ModerationFlowTests : IAsyncLifetime
         await Report(target, reporter);
 
         await using (var db = NewDb())
-            Assert.True(await new UserService(db, new ValidationService(), NullLogger<UserService>.Instance).DeleteAccount(target));
+            Assert.True(await Users(db).DeleteAccount(target));
 
         await using var check = NewDb();
         Assert.False(await check.NameReports.AnyAsync(r => r.ReporterId == target || r.ReportedUserId == target));
         Assert.False(await check.NameModerationCases.AnyAsync(c => c.UserId == target));
+    }
+
+    [Fact]
+    public async Task Deleting_an_account_purges_moderation_rows_without_relying_on_cascades()
+    {
+        await using (var db = NewDb())
+        {
+            // Without the foreign keys only UserService's explicit purge can remove these rows.
+            await db.Database.ExecuteSqlRawAsync(@"
+                ALTER TABLE ""NameReports"" DROP CONSTRAINT ""FK_NameReports_Users_ReporterId"";
+                ALTER TABLE ""NameReports"" DROP CONSTRAINT ""FK_NameReports_Users_ReportedUserId"";
+                ALTER TABLE ""NameModerationCases"" DROP CONSTRAINT ""FK_NameModerationCases_Users_UserId"";");
+        }
+        var target = await SeedUser("Rude Name");
+        var other = (await SeedUsers(1))[0];
+        await Report(other, target);
+        await Report(target, other);
+
+        await using (var db = NewDb())
+            Assert.True(await Users(db).DeleteAccount(target));
+
+        await using var check = NewDb();
+        Assert.False(await check.NameReports.AnyAsync(r => r.ReporterId == target || r.ReportedUserId == target));
+        Assert.False(await check.NameModerationCases.AnyAsync(c => c.UserId == target));
+        Assert.True(await check.NameModerationCases.AnyAsync(c => c.UserId == other)); // not theirs to delete
     }
 }

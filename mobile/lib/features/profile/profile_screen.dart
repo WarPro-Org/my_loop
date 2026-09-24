@@ -1,26 +1,21 @@
 /// Profile screen - displays player identity, stats, and settings.
 library;
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
-import 'package:myloop/shared/services/api_service.dart';
-import 'package:myloop/shared/services/auth_service.dart';
-import 'package:myloop/shared/services/game_state_cache.dart';
-import 'package:myloop/shared/services/profile_cache.dart';
-import 'package:myloop/shared/services/territory_cache.dart';
-import 'package:myloop/shared/services/territory_realtime_service.dart';
+import 'package:myloop/features/auth/session_end_ui.dart';
+import 'package:myloop/features/auth/user_session_teardown.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/color_picker_row.dart';
 import 'package:myloop/shared/widgets/hex_trophy.dart';
 import 'package:myloop/shared/util/display_name.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
-import 'package:myloop/shared/services/block_list_cache.dart';
 
 final _log = Logger('ProfileScreen');
 
@@ -31,6 +26,7 @@ class ProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider);
+    final hexCount = ref.watch(profileSliceProvider.select((s) => s.hexCount));
 
     return Scaffold(
       appBar: AppBar(
@@ -51,9 +47,9 @@ class ProfileScreen extends ConsumerWidget {
               const SizedBox(height: 6),
               // Tier label
               Text(
-                HexTier.fullLabel(profile.hexCount),
+                HexTier.fullLabel(hexCount),
                 style: TextStyle(
-                  color: HexTier.fromHexes(profile.hexCount).color,
+                  color: HexTier.fromHexes(hexCount).color,
                   fontWeight: FontWeight.w700,
                   fontSize: 14,
                 ),
@@ -100,12 +96,8 @@ class ProfileScreen extends ConsumerWidget {
                 label: 'Sign Out',
                 iconColor: AppColors.red,
                 onTap: () async {
-                  ref.read(userProfileProvider.notifier).clear();
-                  // The hub connection is app-lifecycle-scoped (#102) — logout
-                  // is the one place it must actually be torn down.
-                  await ref.read(territoryRealtimeProvider).disconnect();
-                  await ref.read(authServiceProvider).signOut();
-                  if (context.mounted) context.go('/login');
+                  await SessionEndUi.of(context)
+                      .signOut(ref.read(userSessionTeardownProvider));
                 },
               ),
               _SettingsTile(
@@ -135,23 +127,10 @@ class ProfileScreen extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
+              final ui = SessionEndUi.of(context);
+              final teardown = ref.read(userSessionTeardownProvider);
               Navigator.pop(ctx);
-              final profile = ref.read(userProfileProvider);
-              final api = ref.read(apiServiceProvider);
-              final uid = profile.userId;
-              if (uid == null) return;
-              await ProfileCache.clear();
-              await GameStateCache.clear();
-              await TerritoryCache.clear();
-              await BlockListCache.clear();
-              await ref.read(territoryRealtimeProvider).disconnect();
-              try {
-                await api.deleteAccount(uid);
-                await FirebaseAuth.instance.currentUser?.delete();
-              } catch (_) {
-                await FirebaseAuth.instance.signOut();
-              }
-              if (context.mounted) context.go('/login');
+              await ui.deleteAccount(teardown);
             },
             child: Text('Delete', style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w700)),
           ),
@@ -276,7 +255,9 @@ class _AvatarColorEditorState extends State<_AvatarColorEditor> {
   void initState() {
     super.initState();
     final profile = widget.ref.read(userProfileProvider);
-    _selectedAvatar = profile.avatarId;
+    // A legacy out-of-catalogue id would be refused by the API and fail the whole save,
+    // including a colour change (#188 review).
+    _selectedAvatar = catalogueAvatarId(profile.avatarId);
     final idx = playerColors.indexOf(profile.color);
     _selectedColor = idx >= 0 ? idx : 0;
   }

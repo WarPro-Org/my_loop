@@ -44,6 +44,18 @@ class AppConstants {
   static const int hexRefreshIntervalSeconds = 30;
   static const int maxCachedCells = 1000;
 
+  /// While a live SignalR hex delta arrived more recently than this, the
+  /// periodic viewport poll is redundant — the push is the freshness source
+  /// of truth and the poll only exists as a reconnect/staleness backstop
+  /// (issue #129).
+  static const int realtimeFreshnessSeconds = 60;
+
+  /// Upper bound on how long the viewport-poll back-off may keep skipping
+  /// (#129). Hex deltas carry no cooldown and can't reach regions this client
+  /// hasn't joined, so even a fresh feed can't keep the map correct forever;
+  /// this caps that lag at a few poll intervals.
+  static const int viewportPollMaxBackoffSeconds = 120;
+
   // --- Preview ---
   static const int maxPreviewPathPoints = 500;
 
@@ -60,6 +72,23 @@ class AppConstants {
   /// is nothing to start offline — see issue #35.
   static const String offlineStartJourneyMessage =
       'No internet connection. You need to be online to start a journey and capture hexes.';
+
+  // --- Ending a session (#110) ---
+  /// Shown when the server could not delete the account. The user stays signed
+  /// in, so they are never told the account is gone while the server keeps it
+  /// (App Store Guideline 5.1.1(v)).
+  static const String deleteAccountFailedMessage =
+      "Couldn't delete your account — try again.";
+
+  /// Shown when the Google/Firebase sign-out throws after the app's own
+  /// session state was already cleared.
+  static const String signOutFailedMessage =
+      "Couldn't finish signing out — try again.";
+
+  /// Screen-reader labels for the modal progress barrier shown while sign-out
+  /// or account deletion tears the session down.
+  static const String signingOutLabel = 'Signing out';
+  static const String deletingAccountLabel = 'Deleting account';
 
   // --- Offline messaging (issue #36) ---
   // Shown when a modal/screen cannot reach the backend, so the user sees an

@@ -163,8 +163,7 @@ public class UsersController : ControllerBase
     /// Update a user's avatar, color, or display name.
     /// </summary>
     [HttpPatch("{id:guid}")]
-    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request,
-        [FromServices] IModerationService moderation)
+    public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request)
     {
         if (await DenySelf(id) is { } deny) return deny;
 
@@ -173,13 +172,6 @@ public class UsersController : ControllerBase
         {
             var nameError = _validation.ValidateDisplayName(request.DisplayName);
             if (nameError != null) return BadRequest(nameError);
-            switch (await moderation.CheckRenameAsync(id, request.DisplayName))
-            {
-                case RenameCheck.Locked:
-                    return Conflict(new NameLockedError(NameLockedCode, NameLockedMessage));
-                case RenameCheck.RemovedName:
-                    return BadRequest(RemovedNameMessage);
-            }
         }
         if (request.Color != null)
         {
@@ -192,10 +184,16 @@ public class UsersController : ControllerBase
             if (avatarError != null) return BadRequest(avatarError);
         }
 
-        var user = await _userService.UpdateProfile(id, request);
-        if (user == null) return NotFound();
-        // Self-only (DenySelf above) → owner projection.
-        return Ok(UserSelfResponse.FromUser(user));
+        var result = await _userService.UpdateProfile(id, request);
+        return result.Status switch
+        {
+            ProfileUpdateStatus.NameLocked => Conflict(new NameLockedError(NameLockedCode, NameLockedMessage)),
+            ProfileUpdateStatus.NameRemoved => BadRequest(RemovedNameMessage),
+            ProfileUpdateStatus.Updated when result.User is { } user =>
+                // Self-only (DenySelf above) → owner projection.
+                Ok(UserSelfResponse.FromUser(user)),
+            _ => NotFound(),
+        };
     }
 
     /// <summary>
@@ -245,7 +243,9 @@ public class UsersController : ControllerBase
     /// per <see cref="GameConstants.HomeChangeCooldownDays"/> and audited (anti-cheat, #84).
     /// </summary>
     [HttpPost("{id:guid}/home")]
-    public async Task<IActionResult> SetHome([FromRoute] Guid id, [FromBody] SetHomeRequest request)
+    public async Task<IActionResult> SetHome(
+        [FromRoute] Guid id, [FromBody] SetHomeRequest request,
+        CancellationToken cancellationToken = default)
     {
         if (await DenySelf(id) is { } deny) return deny;
 
@@ -278,23 +278,17 @@ public class UsersController : ControllerBase
                 id, user.HomeLat, user.HomeLng, request.Lat, request.Lng);
         }
 
-        // Reverse geocode to get city/state/country
-        var location = await _geocoding.GetLocationInfo(request.Lat, request.Lng);
+        // Reverse geocode to get city/state/country. Bounded wait on the shared throttle: if
+        // background geocoding holds it too long this returns an empty location and the home is
+        // saved keeping its previous place name, rather than timing out onboarding on the client.
+        var location = await _geocoding.GetLocationInfo(request.Lat, request.Lng, cancellationToken);
+        if (location.IsEmpty)
+        {
+            _logger.LogWarning(
+                "Home for {UserId} saved without reverse geocoding; keeping previous place name", id);
+        }
 
-        user.HomeLat = request.Lat;
-        user.HomeLng = request.Lng;
-        user.HomeCity = location.City;
-        user.HomeState = location.State;
-        user.HomeCountry = location.Country;
-        user.HomeContinent = location.Continent;
-        user.HomeSetAt = DateTime.UtcNow;
-
-        // Also set City/Country for leaderboards if not already set
-        if (string.IsNullOrEmpty(user.City))
-            user.City = location.City;
-        if (string.IsNullOrEmpty(user.Country))
-            user.Country = location.Country;
-
+        HomeLocation.Apply(user, request.Lat, request.Lng, location, DateTime.UtcNow);
         await _db.SaveChangesAsync();
 
         return Ok(new
@@ -364,16 +358,22 @@ public class UsersController : ControllerBase
         var achievements = await _achievementService.GetAllForUser(id);
 
         // Exploration
-        var exploration = await _territoryService.GetExplorationStats(id, 0, 0);
+        var exploration = await _territoryService.GetExplorationStats(id);
 
         // Rank (city leaderboard) — count of users strictly ahead, not a full city roster load.
         // Ties share a rank (two users with the same HexCount both get the same number), matching
         // LeaderboardService.ResolveUserRank's convention.
+        // A user with no City ("Skip for now" on set-home, or a failed reverse geocode) is ranked
+        // on the GLOBAL board, mirroring LeaderboardService.BuildScopedQuery's city-scope
+        // fallback. Scoping them to "users with an empty city" would count nobody and report a
+        // bogus #1 after every walk.
         int rank = 0;
         try
         {
-            var higherCount = await _db.Users
-                .CountAsync(u => u.City == user.City && !string.IsNullOrEmpty(u.City) && u.HexCount > user.HexCount);
+            var rankPool = _db.Users.AsQueryable();
+            if (!string.IsNullOrEmpty(user.City))
+                rankPool = rankPool.Where(u => u.City == user.City);
+            var higherCount = await rankPool.CountAsync(u => u.HexCount > user.HexCount);
             rank = higherCount + 1;
         }
         catch (Exception ex)

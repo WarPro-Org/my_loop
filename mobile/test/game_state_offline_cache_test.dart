@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/game_state_cache.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -35,9 +37,22 @@ class _FakeApi extends ApiService {
   Future<Map<String, dynamic>?> getGameState(String userId) async => gameState;
 }
 
+/// [ApiService] whose game-state response is held until the test releases
+/// it, so a sign-out can land while the fetch is in flight.
+class _GatedApi extends ApiService {
+  _GatedApi() : super(baseUrl: 'http://localhost');
+
+  final _response = Completer<Map<String, dynamic>?>();
+
+  void respond(Map<String, dynamic>? gameState) => _response.complete(gameState);
+
+  @override
+  Future<Map<String, dynamic>?> getGameState(String userId) => _response.future;
+}
+
 /// Exposes a real [Ref] so the production [hydrateAllSlicesFromRef] runs against
 /// the test container's provider graph.
-final _hydrateHarness = Provider<Future<void> Function()>(
+final _hydrateHarness = Provider<Future<bool> Function()>(
   (ref) => () => hydrateAllSlicesFromRef(ref),
 );
 
@@ -62,6 +77,17 @@ Map<String, dynamic> _neighborhood(int id) => {
       'areaName': 'Downtown',
     };
 
+/// Captures every record the `Hydrate` logger emits for the rest of the test,
+/// so the offline fallback's observability (#139 D1) is pinned, not assumed.
+List<LogRecord> _captureHydrateLogs() {
+  final records = <LogRecord>[];
+  final sub = Logger.root.onRecord
+      .where((r) => r.loggerName == 'Hydrate')
+      .listen(records.add);
+  addTearDown(sub.cancel);
+  return records;
+}
+
 ProviderContainer _containerWith(ApiService api, String userId) {
   final container = ProviderContainer(
     overrides: [apiServiceProvider.overrideWithValue(api)],
@@ -72,9 +98,6 @@ ProviderContainer _containerWith(ApiService api, String userId) {
         avatarId: 0,
         color: '#000000',
         displayName: 'Player',
-        hexCount: 0,
-        streak: 0,
-        distanceKm: 0,
       );
   return container;
 }
@@ -175,8 +198,18 @@ void main() {
       // Now the device is offline: getGameState returns null.
       final container = _containerWith(_FakeApi(null), 'u1');
       addTearDown(container.dispose);
+      final logs = _captureHydrateLogs();
 
       await container.read(_hydrateHarness)();
+
+      // The Ref path used to fall back to the cache silently (#139 D1); it must
+      // leave exactly one INFO record saying the cache was actually applied.
+      expect(logs.map((r) => (r.level, r.message)), [
+        (
+          Level.INFO,
+          'Game state unavailable; restored home cards from offline cache',
+        ),
+      ]);
 
       // Without the offline-restore wiring these slices stay empty (the bug);
       // the fix repopulates them from the cache.
@@ -194,9 +227,14 @@ void main() {
         () async {
       final container = _containerWith(_FakeApi(null), 'u1');
       addTearDown(container.dispose);
+      final logs = _captureHydrateLogs();
 
       await container.read(_hydrateHarness)();
 
+      // Must not claim a restore that did not happen.
+      expect(logs.map((r) => (r.level, r.message)), [
+        (Level.INFO, 'Game state unavailable; no offline cache for home cards'),
+      ]);
       expect(container.read(missionsSliceProvider).missions, isEmpty);
       expect(container.read(explorationSliceProvider).neighborhoods, isEmpty);
     });
@@ -231,6 +269,74 @@ void main() {
       expect(cached, isNotNull);
       expect((cached!.missions.single as Map)['id'], 'm1');
       expect((cached.exploration.single as Map)['neighborhoodId'], 9);
+    });
+  });
+  group('sign-out while a resync is in flight', () {
+    final signedInData = {
+      'missions': [_mission('m1')],
+      'exploration': [_neighborhood(1)],
+    };
+
+    test('control: with the same user still signed in the response applies',
+        () async {
+      final api = _GatedApi();
+      final container = _containerWith(api, 'u1');
+      addTearDown(container.dispose);
+
+      final hydration = container.read(_hydrateHarness)();
+      api.respond(signedInData);
+
+      expect(await hydration, isTrue);
+      expect(container.read(missionsSliceProvider).missions, hasLength(1));
+    });
+
+    test('the late response neither re-fills slices nor re-saves the cache',
+        () async {
+      final api = _GatedApi();
+      final container = _containerWith(api, 'u1');
+      addTearDown(container.dispose);
+      final logs = _captureHydrateLogs();
+
+      final hydration = container.read(_hydrateHarness)();
+      // Sign-out as the drawer/settings tile does it: profile first, then the
+      // user-bound caches.
+      container.read(userProfileProvider.notifier).clear();
+      await GameStateCache.clear();
+
+      api.respond(signedInData);
+      final applied = await hydration;
+
+      expect(applied, isFalse,
+          reason: 'a dropped response must report false so callers such as '
+              'hydrateAndSyncProfileRank skip copying slice values');
+      expect(container.read(missionsSliceProvider).missions, isEmpty);
+      expect(container.read(explorationSliceProvider).neighborhoods, isEmpty);
+      expect(await GameStateCache.load('u1'), isNull,
+          reason: 'sign-out cleared the cache; a late response must not undo that');
+      expect(logs.map((r) => r.message), [
+        'Game state response dropped; the signed-in user changed while it was in flight',
+      ]);
+    });
+
+    test('a different user signing in meanwhile does not receive it', () async {
+      final api = _GatedApi();
+      final container = _containerWith(api, 'u1');
+      addTearDown(container.dispose);
+
+      final hydration = container.read(_hydrateHarness)();
+      container.read(userProfileProvider.notifier).setFromApi(
+            userId: 'u2',
+            avatarId: 0,
+            color: '#000000',
+            displayName: 'Other',
+          );
+
+      api.respond(signedInData);
+      final applied = await hydration;
+
+      expect(applied, isFalse);
+      expect(container.read(missionsSliceProvider).missions, isEmpty);
+      expect(await GameStateCache.load('u1'), isNull);
     });
   });
 }

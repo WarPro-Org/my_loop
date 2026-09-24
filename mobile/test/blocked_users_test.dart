@@ -107,7 +107,6 @@ void main() {
     container.listen(blockedUsersProvider, (_, _) {});
     container.read(userProfileProvider.notifier).setFromApi(
           userId: userId, avatarId: 0, color: '#00D4AA', displayName: 'Robin',
-          hexCount: 0, streak: 0, distanceKm: 0,
         );
     return container;
   }
