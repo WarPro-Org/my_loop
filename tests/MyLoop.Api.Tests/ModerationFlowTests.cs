@@ -396,6 +396,27 @@ public class ModerationFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Renaming_back_to_a_hidden_name_in_another_case_is_refused()
+    {
+        var target = await SeedUser("Rude Name");
+        await HideByReports(target);
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "rude name"));
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "RUDE NAME"));
+        Assert.Equal(NameModeration.PlaceholderFor(target), (await LoadUser(target)).DisplayName);
+    }
+
+    [Fact]
+    public async Task Renaming_back_to_a_hidden_name_stored_before_normalisation_is_refused()
+    {
+        // Stored before #189 with a smart apostrophe; a rename request is normalised to U+0027.
+        var target = await SeedUser("Bad’Name");
+        await HideByReports(target);
+
+        Assert.Equal(ProfileUpdateStatus.NameRemoved, await Rename(target, "Bad'Name"));
+    }
+
+    [Fact]
     public async Task Confirm_hides_a_name_showing_under_an_auto_hidden_case()
     {
         var target = await SeedUser("Rude Name");

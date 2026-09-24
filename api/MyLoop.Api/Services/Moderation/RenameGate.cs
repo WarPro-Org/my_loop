@@ -19,11 +19,33 @@ internal static class RenameGate
         if (locked) return RenameCheck.Locked;
 
         // AutoHidden as well as Confirmed: renaming straight back to a hidden name would put it on
-        // show again while its case can no longer re-hide it.
-        var removed = await db.NameModerationCases.AnyAsync(c =>
-            c.UserId == userId
-            && c.NameSnapshot == normalizedName
-            && (c.Status == ModerationCaseStatus.Confirmed || c.Status == ModerationCaseStatus.AutoHidden));
+        // show again while its case can no longer re-hide it. A player has only a handful of
+        // cases, so they are compared in memory, where the comparison can ignore case and
+        // normalise snapshots stored before #189 (#194 review).
+        var removedNames = await db.NameModerationCases
+            .Where(c => c.UserId == userId
+                && (c.Status == ModerationCaseStatus.Confirmed || c.Status == ModerationCaseStatus.AutoHidden))
+            .Select(c => c.NameSnapshot)
+            .ToListAsync();
+        var removed = removedNames.Any(snapshot =>
+            string.Equals(NormalizeSnapshot(snapshot), normalizedName, StringComparison.OrdinalIgnoreCase));
         return removed ? RenameCheck.RemovedName : RenameCheck.Allowed;
+    }
+
+    /// <summary>
+    /// Snapshots copy the stored name, which may predate #189's normalisation. Ill-formed UTF-16
+    /// can't be normalised (and can't be requested either, since validation rejects it), so it is
+    /// compared as stored.
+    /// </summary>
+    private static string NormalizeSnapshot(string snapshot)
+    {
+        try
+        {
+            return ValidationService.NormalizeDisplayName(snapshot);
+        }
+        catch (ArgumentException)
+        {
+            return snapshot;
+        }
     }
 }
