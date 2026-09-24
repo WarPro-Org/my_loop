@@ -73,10 +73,26 @@ public static class NameModeration
     }
 
     /// <summary>
+    /// Shortest x-wrapped word: an x at each end plus at least one letter between them, so a
+    /// bare "x" or "xx" is not read as an empty wrapped word.
+    /// </summary>
+    private const int MinXWrappedLength = 3;
+
+    /// <summary>Separates the two folded words of a <see cref="NameBlocklist.JoinExceptions"/> entry.</summary>
+    private const char JoinExceptionSeparator = ' ';
+
+    /// <summary>Severe terms long enough to match across a letter-and-word boundary ("N iggerboy").</summary>
+    private static readonly string[] SpanningSevereTerms = NameBlocklist.SevereSubstrings
+        .Where(term => term.Length >= GameConstants.MinSpanningSevereTermLength)
+        .ToArray();
+
+    /// <summary>
     /// True when the name matches the blocklist: a severe term anywhere inside one word, or a
-    /// whole-word/reserved term equal to one word. Letters spelled out one at a time
-    /// ("s-h-i-t", "a-s-s") are joined back into a word first. Words are never otherwise joined,
-    /// so a first name and surname cannot form a term across the boundary (Thomas Lutz).
+    /// whole-word/reserved term equal to one word (also with digits or an x wrapper trimmed).
+    /// Letters spelled out one at a time ("s-h-i-t") are joined into a word first, and each pair
+    /// of adjacent words is checked for one space splitting a term (<see cref="IsBlockedPair"/>).
+    /// Two ordinary words are refused only when together they spell a severe term exactly, so a
+    /// term found somewhere across a first name and surname is not enough (Thomas Lutz).
     /// </summary>
     public static bool IsBlocked(string normalizedName) =>
         IsReserved(normalizedName) || MatchesBlocklist(normalizedName);
@@ -88,17 +104,17 @@ public static class NameModeration
     /// </summary>
     private static bool IsReserved(string normalizedName)
     {
-        var words = Fold(normalizedName, mapLeetspeak: false).Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
+        var words = SplitWords(Fold(normalizedName, mapLeetspeak: false));
         if (string.Concat(words).Contains(ReservedBrand, StringComparison.Ordinal)) return true;
-        return words.SelectMany(ReservedCandidates).Any(ReservedWords.Contains);
+        return words.SelectMany(TrimmedReadings).Any(ReservedWords.Contains);
     }
 
     /// <summary>
-    /// Readings of one word to test against <see cref="ReservedWords"/>. Digits are trimmed both
-    /// before leetspeak ("Moderator1", where '1' would become 'i') and after it ("4dmin2", where
-    /// '4' is the 'a').
+    /// Readings of one word (folded without leetspeak) to test as a whole word. Digits are
+    /// trimmed both before leetspeak ("Moderator1", "Nazi1", where '1' would become 'i') and
+    /// after it ("4dmin2", where '4' is the 'a'), and a gamer-tag x wrapper is removed.
     /// </summary>
-    private static IEnumerable<string> ReservedCandidates(string word)
+    private static IEnumerable<string> TrimmedReadings(string word)
     {
         var trimmed = word.Trim(Digits);
         foreach (var reading in new[] { trimmed, MapLeetspeak(trimmed), MapLeetspeak(word).Trim(Digits) })
@@ -112,21 +128,59 @@ public static class NameModeration
     /// "xXAdminXx": x at BOTH ends. One-sided x is ordinary spelling (Max, Rex, Xander).
     /// </summary>
     private static bool IsXWrapped(string word) =>
-        word.Length > 2 && word[0] == XWrapper && word[^1] == XWrapper;
+        word.Length >= MinXWrappedLength && word[0] == XWrapper && word[^1] == XWrapper;
 
     private static string MapLeetspeak(string foldedWord) =>
         string.Concat(foldedWord.Select(c => LeetFolds.TryGetValue(c, out var plain) ? plain : c));
 
+    private static string[] SplitWords(string foldedName) =>
+        foldedName.Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
+
     private static bool MatchesBlocklist(string normalizedName)
     {
-        var words = Fold(normalizedName).Split(WordSeparators, StringSplitOptions.RemoveEmptyEntries);
+        var words = SplitWords(Fold(normalizedName));
         // Exception words (real names/places that contain a severe term) are skipped, so they
         // also pass inside longer names ("Scunthorpe United", "Harshit Kumar").
         var candidates = words
             .Where(w => !NameBlocklist.Exceptions.Contains(w))
             .Concat(SpelledOutRuns(words));
-        return candidates.Any(c => IsWholeWordMatch(c) || ContainsSevereTerm(c));
+        if (candidates.Any(c => IsWholeWordMatch(c) || ContainsSevereTerm(c))) return true;
+
+        // Leetspeak turns a trailing digit into a letter ("Nazi1" -> "nazii"), so whole words are
+        // also read from the digit-preserving fold with digits and x wrappers trimmed.
+        var trimmedReadings = SplitWords(Fold(normalizedName, mapLeetspeak: false))
+            .Where(w => !NameBlocklist.Exceptions.Contains(MapLeetspeak(w)))
+            .SelectMany(TrimmedReadings);
+        if (trimmedReadings.Any(IsWholeWordMatch)) return true;
+
+        return words.Zip(words.Skip(1)).Any(pair => IsBlockedPair(pair.First, pair.Second));
     }
+
+    /// <summary>
+    /// One space inside a term: two adjacent words whose concatenation equals a severe term
+    /// ("Nig Ger", "F uck", "Fuc K"). When exactly one of them is a single letter, also a
+    /// whole-word term ("S hit", "Fa G") or a long severe term that crosses the space ("N iggerboy").
+    /// Reviewed real-name pairs in <see cref="NameBlocklist.JoinExceptions"/> ("Deb Allen", "Ana L")
+    /// are never joined; scripts/moderation/build_name_blocklist.py fails on any unreviewed one.
+    /// </summary>
+    private static bool IsBlockedPair(string left, string right)
+    {
+        if (NameBlocklist.JoinExceptions.Contains(string.Concat(left, JoinExceptionSeparator, right))) return false;
+        var joined = left + right;
+        if (NameBlocklist.SevereSubstrings.Contains(joined)) return true;
+
+        var leftIsLetter = IsSpelledOutToken(left);
+        // Neither a letter: only the exact match above, or real first + last names would form
+        // terms (Thomas Lutz). Both letters: already joined as a spelled-out run.
+        if (leftIsLetter == IsSpelledOutToken(right)) return false;
+        if (NameBlocklist.WholeWords.Contains(joined)) return true;
+        return SpanningSevereTerms.Any(term => leftIsLetter
+            ? joined.StartsWith(term, StringComparison.Ordinal)
+            : joined.EndsWith(term, StringComparison.Ordinal));
+    }
+
+    private static bool IsSpelledOutToken(string word) =>
+        word.Length <= GameConstants.MaxSpelledOutTokenLength;
 
     /// <summary>
     /// Each maximal run of consecutive single-letter tokens, joined: "f u c k" becomes "fuck".
@@ -138,7 +192,7 @@ public static class NameModeration
         var run = new StringBuilder();
         foreach (var word in words)
         {
-            if (word.Length <= GameConstants.MaxSpelledOutTokenLength)
+            if (IsSpelledOutToken(word))
             {
                 run.Append(word);
                 continue;

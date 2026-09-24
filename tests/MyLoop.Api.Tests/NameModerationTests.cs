@@ -48,6 +48,26 @@ public class NameModerationTests
     [InlineData("my_loop")]
     [InlineData("MyLoop")]
     [InlineData("Official")]
+    [InlineData("N igger")]            // #193 review: one space splitting a severe term
+    [InlineData("F uck")]
+    [InlineData("Fuc K")]
+    [InlineData("Nig Ger")]            // two non-letter halves that spell a severe term exactly
+    [InlineData("B itch")]
+    [InlineData("N1g G3r")]
+    [InlineData("S hit")]              // letter + rest of a whole-word term
+    [InlineData("Shi T")]
+    [InlineData("Fa G")]
+    [InlineData("N iggerboy")]         // a long severe term crossing the letter/word space
+    [InlineData("Nazi1")]              // #193 review: whole-word tier with digits trimmed
+    [InlineData("Fag1")]
+    [InlineData("Coon2")]
+    [InlineData("Anal2")]
+    [InlineData("Semen2")]
+    [InlineData("2Nazi")]
+    [InlineData("xXnaziXx")]           // whole-word tier inside an x wrapper
+    [InlineData("xXcoonXx")]
+    [InlineData("KKK")]                // hand-added whole-word term
+    [InlineData("K-K-K")]
     public void Offensive_or_reserved_names_are_rejected(string name) =>
         Assert.Equal("This name isn't allowed", _validation.ValidateDisplayName(name));
 
@@ -94,7 +114,49 @@ public class NameModerationTests
     [InlineData("Ana L")]              // "an"+"al" is not a spelled-out run
     [InlineData("Jean-Luc_2")]
     [InlineData("Łukasz")]
+    [InlineData("J K Lee")]            // spelled-out run "jk" next to a surname
+    [InlineData("Harshit Kumar")]
+    [InlineData("S Lutz")]             // initial + surname: "slut" is too short to match across
+    [InlineData("S Luther")]           // the space (MinSpanningSevereTermLength)
+    [InlineData("P Ornstein")]
+    [InlineData("J Izzy")]
+    [InlineData("Deb Allen")]          // reviewed join exceptions (build_name_blocklist.py)
+    [InlineData("K Inkster")]
+    [InlineData("Chin K")]
+    [InlineData("Wan K")]
+    [InlineData("Alex")]               // x at one end only is not a wrapper, for whole words too
+    [InlineData("Xavier")]
+    [InlineData("Maddox")]
+    [InlineData("Max2")]
     public void Real_names_and_innocent_words_are_accepted(string name) =>
+        Assert.Null(_validation.ValidateDisplayName(name));
+
+    public static TheoryData<string> InitialAndSurnameNames()
+    {
+        // #193 review: the adjacent-word rules must not refuse an initial next to a real name, in
+        // either order. The generator checks the whole corpus; this pins a spread of it.
+        string[] surnames =
+        [
+            "Kumar", "Lutz", "Luther", "Lopez", "Ardern", "Ornstein", "Conti", "Sharma", "Patel",
+            "Nguyen", "Tanaka", "Fukuda", "Harshit", "Kshitij", "Root", "Hitchens", "Uckfield",
+            "Iggins", "Allen", "Inkster", "Ringler", "Lumpkin", "Ana", "Ashita", "Retford",
+            "Orner", "Hitomi", "Utley", "Unter", "Agata", "Uta", "Luttrell", "Orna",
+        ];
+        var data = new TheoryData<string>();
+        foreach (var surname in surnames)
+        {
+            foreach (var initial in "ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            {
+                data.Add($"{initial} {surname}");
+                data.Add($"{surname} {initial}");
+            }
+        }
+        return data;
+    }
+
+    [Theory]
+    [MemberData(nameof(InitialAndSurnameNames))]
+    public void Initial_and_surname_pairs_are_accepted(string name) =>
         Assert.Null(_validation.ValidateDisplayName(name));
 
     [Theory]
@@ -139,6 +201,27 @@ public class NameModerationTests
         var match = Regex.Match(script, @"(?m)^MAX_SPELLED_OUT_TOKEN_LENGTH = (\d+)$");
         Assert.True(match.Success);
         Assert.Equal(GameConstants.MaxSpelledOutTokenLength, int.Parse(match.Groups[1].Value));
+    }
+
+    [Fact]
+    public void Spanning_term_length_matches_the_generator()
+    {
+        // The generator checks initial + name pairs against the corpora at this length; a smaller
+        // C# value would refuse pairs it never checked (S Luther -> "slut").
+        var script = ReadRepoFile("scripts/moderation/build_name_blocklist.py");
+        var match = Regex.Match(script, @"(?m)^MIN_SPANNING_SEVERE_TERM_LENGTH = (\d+)$");
+        Assert.True(match.Success);
+        Assert.Equal(GameConstants.MinSpanningSevereTermLength, int.Parse(match.Groups[1].Value));
+    }
+
+    [Fact]
+    public void Join_exceptions_are_two_folded_words()
+    {
+        // The matcher looks pairs up as "left right"; any other shape could never match.
+        var malformed = NameBlocklist.JoinExceptions
+            .Where(pair => pair.Split(' ').Length != 2 || NameModeration.Fold(pair) != pair)
+            .ToList();
+        Assert.Empty(malformed);
     }
 
     [Fact]

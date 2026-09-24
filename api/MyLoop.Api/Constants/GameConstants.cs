@@ -142,6 +142,14 @@ public static class GameConstants
     public const int MaxSpelledOutTokenLength = 1;
 
     /// <summary>
+    /// Shortest severe term that is still matched when it crosses the space between a single
+    /// letter and the next word ("N iggerboy"). At 4, real initial + surname names form terms
+    /// (S Luther → "slut", P Ornstead → "porn"). Mirrors MIN_SPANNING_SEVERE_TERM_LENGTH in
+    /// scripts/moderation/build_name_blocklist.py, which checks the corpora at this length.
+    /// </summary>
+    public const int MinSpanningSevereTermLength = 5;
+
+    /// <summary>
     /// Number of avatars in the client catalogue — mirrors <c>avatarEmojis</c> in
     /// mobile/lib/shared/widgets/avatar_widget.dart; valid ids are 0..AvatarCount-1.
     /// Ids are positional and permanent: append only, never reorder or delete, and bump

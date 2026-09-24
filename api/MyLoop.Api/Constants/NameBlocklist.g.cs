@@ -13,7 +13,7 @@ namespace MyLoop.Api.Constants;
 /// <summary>Display-name blocklist tiers (DR-002b, #190). Matched by NameModeration.</summary>
 public static class NameBlocklist
 {
-    /// <summary>Blocked when found anywhere in the folded, separator-stripped name.</summary>
+    /// <summary>Blocked when found inside one folded word of the name (see NameModeration).</summary>
     public static readonly FrozenSet<string> SevereSubstrings = new[]
     {
         "2girlsicup", "aardappelsafgieten", "achterhetraamzitten", "acrotomophilia", "afberen",
@@ -179,7 +179,7 @@ public static class NameBlocklist
         "gotun", "gouine", "gowno", "gspot", "gueule", "haahka", "hajzl", "heil", "hentai",
         "hoerig", "homo", "horny", "hovno", "hufter", "huj", "idiota", "imbecil", "incest",
         "ingoio", "jaevla", "javlar", "jebac", "jebany", "juggs", "jutku", "jutsku", "kacke",
-        "kacken", "kaltak", "kanake", "kike", "kimme", "klojo", "kloten", "knulla", "kokot",
+        "kacken", "kaltak", "kanake", "kike", "kimme", "kkk", "klojo", "kloten", "knulla", "kokot",
         "kont", "kuk", "kukene", "kuker", "kuksas", "kulli", "kurafi", "kurva", "kurvak", "kurvat",
         "kurwy", "kusta", "kut", "kutas", "kyrpa", "kyrpia", "lofare", "loffa", "luder", "lul",
         "lummel", "lutka", "maciza", "malpt", "mamada", "mamrd", "marhak", "marhat", "merda",
@@ -210,5 +210,17 @@ public static class NameBlocklist
     public static readonly FrozenSet<string> Exceptions = new[]
     {
         "bastardo", "cazzola", "cumming", "penistone", "scunthorpe", "slutsky", "sporn",
+    }.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>Adjacent folded word pairs ("deb allen") never checked as a pair: real names.</summary>
+    public static readonly FrozenSet<string> JoinExceptions = new[]
+    {
+        "ana l", "b lumpkin", "bird lock", "bo emelen", "bran lette", "c agata", "c agna",
+        "chin k", "chu j", "coit o", "col hoes", "conn e", "de conner", "deb allen", "debi l",
+        "emmer der", "f icken", "fae n", "fu k", "graf tak", "hu j", "k inkster", "k utas", "ku k",
+        "ku t", "l ul", "lu l", "m erda", "m erde", "moon ade", "p ede", "p uta", "p ute",
+        "pall e", "panta va", "per kele", "pier dola", "ramon er", "ro thoer", "s let", "sik i",
+        "suk a", "sy f", "t ringler", "van gare", "vogel n", "wan k", "yarak lara", "yarak lari",
+        "yarak tan",
     }.ToFrozenSet(StringComparer.Ordinal);
 }

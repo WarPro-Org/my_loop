@@ -15,13 +15,21 @@ Tiering (why each list exists):
                       path handles those — and identity terms (IDENTITY), which are never blocked.
   exceptions        : folded names that must never be blocked even if a tier matches.
 
-Matching semantics the safety check relies on (NameModeration.MatchesBlocklist): terms are
-matched inside ONE word of the name, never across words, except that runs of tokens of at most
-MAX_SPELLED_OUT_TOKEN_LENGTH characters ("s-h-i-t") are joined back together. So checking each
-corpus name on its own is sufficient; a first-name x surname pair check is not needed, because
-the matcher never joins two real name parts. That only holds while no corpus name is short
-enough to be part of a spelled-out run, which main() asserts. (A pair check under the old
-join-every-word semantics found 2,291 blocked first+last pairs — Thomas Lutz -> "slut".)
+Matching semantics the safety checks rely on (NameModeration.MatchesBlocklist):
+  1. Terms are matched inside ONE word of the name, never on the whole name (under that old
+     rule 2,291 first+last corpus pairs were blocked — Thomas Lutz -> "slut").
+  2. Runs of tokens of at most MAX_SPELLED_OUT_TOKEN_LENGTH chars ("s-h-i-t") are joined.
+     main() asserts no corpus name is that short.
+  3. Two ADJACENT words are also checked as a pair, so one space cannot hide a term:
+       a. their concatenation equals a severe term ("Nig Ger", "F uck", "Fuc K");
+       b. one of them is a single letter and their concatenation equals a whole-word term
+          ("S hit", "Shi T", "Fa G");
+       c. one of them is a single letter and a severe term of at least
+          MIN_SPANNING_SEVERE_TERM_LENGTH chars starts (letter first) or ends (letter last)
+          their concatenation ("N iggerboy").
+     A pair in JOIN_EXCEPTIONS is never checked. join_collisions() finds every corpus-name pair
+     (or single letter + corpus name) these rules would refuse; generation fails unless each is
+     reviewed into JOIN_EXCEPTIONS (let through) or ACCEPTED_JOIN_REFUSALS (still refused).
 
 Sources are pinned to commits so a re-run is reproducible. Usage:
     python3 scripts/moderation/build_name_blocklist.py
@@ -61,13 +69,15 @@ CORE = [
     "putain", "cabron", "pendejo", "kurwa", "cazzo", "stronzo", "vaffanculo", "caralho",
     "klootzak",
 ]
-# English words that are insults/sexual terms, so the ordinary-word filter must keep them.
+# Whole-word terms added by hand: English words that are insults/sexual terms (the ordinary-word
+# filter would otherwise drop them), and hate terms LDNOOBW lacks (kkk).
 KEEP_WHOLE_WORD = [
     "shit", "fuk", "ass", "arse", "tit", "tits", "cum", "fag", "fags", "twat", "cock", "cocks", "anal", "anus",
     "boob", "boobs", "clit", "coon", "coons", "kike", "milf", "nazi", "nazis", "nude", "orgy",
     "poof", "poon", "quim", "sex", "smut", "spic", "wank", "horny", "pedo", "rape", "rapist",
     "homo", "dyke", "heil", "penis", "pussy", "chink", "gook", "tranny", "negro", "semen",
     "sperm", "orgasm", "nipple", "vulva", "clitoris", "rectum", "raping", "incest",
+    "kkk",
 ]
 # Non-English LDNOOBW entries that are ordinary words or fragments (fish, spider, ball, pier,
 # the SEGA brand...) — the English WORDS filter cannot see them, so they are dropped by hand.
@@ -118,6 +128,29 @@ EXTRA_NAMES = [
     "Nguyen", "Tran", "Pham", "Phuc", "Phuong", "Dang", "Bui",
 ]
 
+# Adjacent-word pairs (matching rule 3) that are, or could be, a real person's name: never
+# checked as a pair, so they pass. Folded, written "first second". Every entry must be a pair
+# join_collisions() reports; one that no longer collides fails generation as stale.
+JOIN_EXCEPTIONS = [
+    # severe tier: plausible names, and the term is obscure or non-English
+    "bird lock", "bo emelen", "bran lette", "col hoes", "deb allen", "de conner", "emmer der",
+    "graf tak", "moon ade", "panta va", "per kele", "pier dola", "ramon er", "ro thoer",
+    "van gare", "yarak lara", "yarak lari", "yarak tan", "b lumpkin", "k inkster", "t ringler",
+    # whole-word tier: a first name + surname initial, or an initial + name
+    "ana l", "chin k", "chu j", "coit o", "conn e", "debi l", "fae n", "fu k", "hu j", "ku k",
+    "ku t", "lu l", "l ul", "pall e", "sik i", "suk a", "sy f", "vogel n", "wan k",
+    "c agata", "c agna", "f icken", "k utas", "m erda", "m erde", "p ede", "p uta", "p ute",
+    "s let",
+]
+# Corpus pairs matching rule 3 still refuses on purpose: the pair reads as the term itself and
+# is not a plausible real name. An affected player's remedy is the report/restore review.
+ACCEPTED_JOIN_REFUSALS = [
+    "b itch", "bast ard", "beaner s", "black cock", "bull dyke", "conn ard", "dry hump",
+    "mari con", "nee keri", "rosy palm", "snow balling", "tongue ina", "va gina", "wan ker",
+    "white power",
+    "as s", "cock s", "f ag", "horn y", "k ike", "mil f", "rap e", "t wat",
+]
+
 EXPLICIT = {"ł": "l", "ø": "o", "đ": "d", "ß": "ss", "æ": "ae", "œ": "oe", "ı": "i", "ð": "d",
             "þ": "th", "ſ": "s", "ƒ": "f", "ħ": "h", "ŧ": "t", "ƀ": "b", "ƶ": "z", "ǥ": "g"}
 FOLD_VECTORS = pathlib.Path(__file__).resolve().parent / "fold_vectors.json"
@@ -130,6 +163,11 @@ MIN_WHOLE_WORD_LENGTH = 3
 # At 2, two-letter name parts would be joined (Si Ki -> "siki", Su Ka -> "suka",
 # As Lu Ty -> "slut"), and the joinable-names check in main() fails.
 MAX_SPELLED_OUT_TOKEN_LENGTH = 1
+# Mirrors GameConstants.MinSpanningSevereTermLength (matching rule 3c). At 4, an initial and a
+# surname form a term across the space (S Luther -> "slut", P Ornstead -> "porn", J Izzy ->
+# "jizz"). At 5 the corpora give no such pair except exact matches, which are reviewed above.
+MIN_SPANNING_SEVERE_TERM_LENGTH = 5
+LETTERS = "abcdefghijklmnopqrstuvwxyz"
 
 
 def fold(text: str) -> str:
@@ -155,6 +193,45 @@ def check_fold_vectors() -> None:
         actual = fold(raw)
         if actual != expected:
             raise SystemExit(f"fold({raw!r}) = {actual!r}, expected {expected!r}")
+
+
+def join_collisions(names: set[str], severe: set[str], whole: set[str]) -> set[str]:
+    """Corpus-name pairs ("first second") that matching rule 3 (module docstring) would refuse."""
+    hits = set()
+    for term in severe:  # 3a: two names, or a letter and a name, spell the term exactly
+        for i in range(1, len(term)):
+            left, right = term[:i], term[i:]
+            one_is_name = left in names or right in names
+            both_name_or_letter = all(p in names or len(p) == 1 for p in (left, right))
+            if one_is_name and both_name_or_letter:
+                hits.add(f"{left} {right}")
+    for term in whole:  # 3b: a letter and a name spell the term exactly
+        if term[1:] in names:
+            hits.add(f"{term[0]} {term[1:]}")
+        if term[:-1] in names:
+            hits.add(f"{term[:-1]} {term[-1]}")
+    spanning = [t for t in severe if len(t) >= MIN_SPANNING_SEVERE_TERM_LENGTH]
+    for name in names:  # 3c: a severe term crosses the space between a letter and a name
+        for letter in LETTERS:
+            if any((letter + name).startswith(t) for t in spanning):
+                hits.add(f"{letter} {name}")
+            if any((name + letter).endswith(t) for t in spanning):
+                hits.add(f"{name} {letter}")
+    return hits
+
+
+def check_join_collisions(names: set[str], severe: set[str], whole: set[str]) -> None:
+    exempt, refused = set(JOIN_EXCEPTIONS), set(ACCEPTED_JOIN_REFUSALS)
+    if exempt & refused:
+        raise SystemExit(f"pairs both exempted and refused: {sorted(exempt & refused)}")
+    hits = join_collisions(names, severe, whole)
+    unreviewed = sorted(hits - exempt - refused)
+    if unreviewed:
+        raise SystemExit("adjacent-word rules refuse these real-name pairs — add each to "
+                         f"JOIN_EXCEPTIONS or ACCEPTED_JOIN_REFUSALS: {unreviewed}")
+    stale = sorted((exempt | refused) - hits)
+    if stale:
+        raise SystemExit(f"reviewed pairs that no longer collide — remove them: {stale}")
 
 
 def main() -> None:
@@ -188,11 +265,14 @@ def main() -> None:
     joinable = sorted(n for n in names if len(n) <= MAX_SPELLED_OUT_TOKEN_LENGTH)
     if joinable:
         raise SystemExit(f"real names short enough to be joined as spelled-out letters: {joinable}")
-    render(sorted(severe), sorted(whole - severe), sorted(exceptions))
-    print(f"severe={len(severe)} whole={len(whole - severe)} exceptions={len(exceptions)}")
+    check_join_collisions(names, severe, whole - severe)
+    render(sorted(severe), sorted(whole - severe), sorted(exceptions), sorted(JOIN_EXCEPTIONS))
+    print(f"severe={len(severe)} whole={len(whole - severe)} exceptions={len(exceptions)} "
+          f"join_exceptions={len(JOIN_EXCEPTIONS)}")
 
 
-def render(severe: list[str], whole: list[str], exceptions: list[str]) -> None:
+def render(severe: list[str], whole: list[str], exceptions: list[str],
+           join_exceptions: list[str]) -> None:
     def block(items: list[str]) -> str:
         lines, line = [], "        "
         for item in items:
@@ -219,7 +299,7 @@ namespace MyLoop.Api.Constants;
 /// <summary>Display-name blocklist tiers (DR-002b, #190). Matched by NameModeration.</summary>
 public static class NameBlocklist
 {{
-    /// <summary>Blocked when found anywhere in the folded, separator-stripped name.</summary>
+    /// <summary>Blocked when found inside one folded word of the name (see NameModeration).</summary>
     public static readonly FrozenSet<string> SevereSubstrings = new[]
     {{
 {block(severe)}
@@ -235,6 +315,12 @@ public static class NameBlocklist
     public static readonly FrozenSet<string> Exceptions = new[]
     {{
 {block(exceptions)}
+    }}.ToFrozenSet(StringComparer.Ordinal);
+
+    /// <summary>Adjacent folded word pairs ("deb allen") never checked as a pair: real names.</summary>
+    public static readonly FrozenSet<string> JoinExceptions = new[]
+    {{
+{block(join_exceptions)}
     }}.ToFrozenSet(StringComparer.Ordinal);
 }}
 """, encoding="utf-8")
