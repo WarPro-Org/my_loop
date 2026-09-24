@@ -589,6 +589,26 @@ The same address must be the App Store Connect Support URL/contact.
     reads the same in both places, and a lock screen doesn't reveal a block. Where the name stands
     alone — leaderboard row, map popup, profile — it stays **"Blocked player"** (`blockedPlayerLabel`,
     §6), because the viewer needs to see why the name is hidden and find the player to unblock.
+- **Review fixes, round 3 (#195 agent review):**
+  - The block-limit race test inserted a block that was already seeded (duplicate key) and so never
+    exercised the lock. It now seeds `MaxBlocksPerUser + 2` users and races two unseeded targets.
+  - **Account switches can't leak a list.** In Riverpod 3 a rebuild keeps the Notifier instance and
+    `ref.mounted` stays true, so the previous account's in-flight load, fetch or edit used to write
+    into the next account's state, finish its first load and re-cache the old list after sign-out.
+    `build()` now bumps a generation; every async step captures it and drops its result once it
+    has moved on, and each load completes the completer it started with.
+  - **Overlapping edits to one id:** only the newest in-flight edit to an id changes what is shown.
+    An older edit that fails meanwhile doesn't roll back over it; a refusal rolls back to the last
+    edit the server accepted, else to the server list.
+  - **Map hex popup waits at most `blockListPopupWait` (2 s)** for the first load, so a slow network
+    can't make a tap look ignored. If the list still isn't known, another player's name is shown as
+    "A player" (`blockedActorLabel`), never the raw name; the viewer's own hex shows their name.
+  - **Known gap, accepted until PR 4:** sign-out clears the block-list cache, so every sign-in
+    starts without one. If that first fetch fails (a 5xx, or offline) while theft events arrive,
+    `blockedIdsFor` returns the empty list and the in-app alert is saved to the inbox with the
+    thief's raw name. The retry on resume/reconnect fixes masking from then on, but not alerts
+    already written. PR 4 stores `actorUserId` on inbox items and masks at render time, which
+    closes this.
 - **Account deletion purges `UserBlocks` explicitly, both directions** (blocks the player made and
   blocks against them), alongside PR 2's `NameReports` / `NameModerationCases` purge in
   `UserService.DeleteUserData`; the FK cascades remain a second line.

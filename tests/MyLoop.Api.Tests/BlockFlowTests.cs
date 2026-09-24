@@ -123,9 +123,14 @@ public class BlockFlowTests : IAsyncLifetime
     [Fact]
     public async Task A_block_racing_another_block_cannot_exceed_the_limit()
     {
-        var users = await SeedUsers(GameConstants.MaxBlocksPerUser + 1);
+        // users[0] is the blocker; targets holds Max+1 ids (indexes 0..Max). Indexes 0..Max-2 are
+        // already blocked (Max-1 rows), so the two racing blocks use targets that are not:
+        // index Max-1 (reaches the limit) and index Max (one over).
+        var users = await SeedUsers(GameConstants.MaxBlocksPerUser + 2);
         var blocker = users[0];
         var targets = users.Skip(1).ToList();
+        var reachesLimit = targets[GameConstants.MaxBlocksPerUser - 1];
+        var overLimit = targets[GameConstants.MaxBlocksPerUser];
         await using (var db = NewDb())
         {
             db.UserBlocks.AddRange(targets.Take(GameConstants.MaxBlocksPerUser - 1)
@@ -139,10 +144,10 @@ public class BlockFlowTests : IAsyncLifetime
         {
             await using var tx = await other.Database.BeginTransactionAsync();
             await ModerationLocks.LockBlockerAsync(other, blocker);
-            other.UserBlocks.Add(new UserBlock { BlockerId = blocker, BlockedId = targets[^2], CreatedAt = DateTime.UtcNow });
+            other.UserBlocks.Add(new UserBlock { BlockerId = blocker, BlockedId = reachesLimit, CreatedAt = DateTime.UtcNow });
             await other.SaveChangesAsync();
 
-            var racing = Block(blocker, targets[^1]);
+            var racing = Block(blocker, overLimit);
             await WaitForALockWaiter(); // without the lock it would count Max-1 and insert
             await tx.CommitAsync();
 
@@ -150,7 +155,10 @@ public class BlockFlowTests : IAsyncLifetime
         }
 
         await using var check = NewDb();
-        Assert.Equal(GameConstants.MaxBlocksPerUser, await check.UserBlocks.CountAsync(b => b.BlockerId == blocker));
+        var blocked = await check.UserBlocks.Where(b => b.BlockerId == blocker).Select(b => b.BlockedId).ToListAsync();
+        Assert.Equal(GameConstants.MaxBlocksPerUser, blocked.Count);
+        Assert.Contains(reachesLimit, blocked);
+        Assert.DoesNotContain(overLimit, blocked);
     }
 
     [Fact]

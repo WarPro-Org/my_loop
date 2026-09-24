@@ -537,13 +537,18 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
     final profile = ref.read(userProfileProvider);
     // A blocked owner is shown as "Blocked player" to this viewer only (#190). Waits for the block
     // list's first load — normally long done, since the app root keeps it warm — so a tap right
-    // after a cold start can't show the name (#195 review).
+    // after a cold start can't show the name (#195 review). The wait is bounded so a slow network
+    // can't make the tap look ignored; if the list still isn't known, another player's name is
+    // withheld ("A player") rather than risk showing a blocked player's.
     final viewerId = profile.userId;
     final blocked = viewerId == null
         ? const <String>{}
-        : await ref.read(blockedUsersProvider.notifier).blockedIdsFor(viewerId) ?? const <String>{};
+        : await ref
+            .read(blockedUsersProvider.notifier)
+            .blockedIdsFor(viewerId)
+            .timeout(blockListPopupWait, onTimeout: () => null);
     if (!mounted) return;
-    final ownerName = displayNameFor(blocked, rawCell.ownerId, rawCell.ownerName);
+    final ownerName = hexOwnerNameFor(blocked, viewerId, rawCell.ownerId, rawCell.ownerName);
     final cell = rawCell.withOwnerName(ownerName);
     final isOwn = cell.ownerId == profile.userId;
     // Show owner's actual color only for own hexes; neutral for others. A hex

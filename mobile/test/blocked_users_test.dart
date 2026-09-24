@@ -44,6 +44,13 @@ class _FakeApi extends ApiService {
   Completer<void>? writeGate;
   String? reportedReason;
   int listCalls = 0;
+  /// When true, each list fetch waits on its own completer in [heldLists], in call order.
+  bool holdLists = false;
+  final List<Completer<void>> heldLists = [];
+  /// When true, each block call waits on its own completer in [heldWrites]; completing one with
+  /// an error fails that call.
+  bool holdWrites = false;
+  final List<Completer<void>> heldWrites = [];
 
   @override
   Future<Set<String>> getBlockedUserIds() async {
@@ -51,11 +58,21 @@ class _FakeApi extends ApiService {
     if (listError != null) throw listError!;
     final snapshot = {...serverBlocks}; // what the server had when the request was made
     await listGate?.future;
+    if (holdLists) {
+      final held = Completer<void>();
+      heldLists.add(held);
+      await held.future;
+    }
     return snapshot;
   }
 
   @override
   Future<void> blockUser(String userId) async {
+    if (holdWrites) {
+      final held = Completer<void>();
+      heldWrites.add(held); // before any await, so the caller sees it synchronously
+      await held.future;
+    }
     await writeGate?.future;
     if (writeError != null) throw writeError!;
     if (failIds.contains(userId)) throw _status(409, 'refused');
@@ -302,6 +319,84 @@ void main() {
       expect(container.read(blockedUsersProvider), isEmpty);
     });
 
+    test('a failed edit does not undo a newer edit to the same player still in flight', () async {
+      final api = _FakeApi()..holdWrites = true;
+      final container = signedIn(api);
+      await settle();
+
+      final notifier = container.read(blockedUsersProvider.notifier);
+      final first = notifier.block('rival');
+      final second = notifier.block('rival');
+      expect(api.heldWrites, hasLength(2));
+
+      api.heldWrites[0].completeError(_status(409, 'refused'));
+      expect(await first, 'refused');
+      expect(container.read(blockedUsersProvider), {'rival'}); // the second block is still pending
+
+      api.heldWrites[1].complete();
+      expect(await second, isNull);
+      expect(container.read(blockedUsersProvider), {'rival'});
+      expect(await BlockListCache.load('me'), {'rival'});
+    });
+
+    test("a previous account's slow fetch never lands in the next account's list", () async {
+      // Riverpod 3 keeps the Notifier instance across a rebuild, so account A's in-flight fetch
+      // resumes on the notifier that now serves account B (#195 review).
+      final api = _FakeApi()
+        ..serverBlocks = {'blocked-by-a'}
+        ..holdLists = true;
+      final container = signedIn(api, userId: 'a');
+      await settle();
+      expect(api.heldLists, hasLength(1)); // A's fetch in flight
+
+      container.read(userProfileProvider.notifier).clear();
+      await settle();
+      api.serverBlocks = {'blocked-by-b'};
+      container.read(userProfileProvider.notifier).setFromApi(
+            userId: 'b', avatarId: 0, color: '#00D4AA', displayName: 'Kai',
+          );
+      await settle();
+      expect(api.heldLists, hasLength(2)); // B's fetch in flight
+
+      var bReleased = false;
+      final forB = container.read(blockedUsersProvider.notifier).blockedIdsFor('b')
+        ..then((_) => bReleased = true);
+
+      api.heldLists[0].complete(); // A's fetch lands after the switch
+      await settle();
+
+      expect(bReleased, isFalse, reason: "A's load must not finish B's first load");
+      expect(container.read(blockedUsersProvider), isEmpty);
+      expect(await BlockListCache.load('a'), isNull, reason: "A's list must not be re-cached after sign-out");
+
+      api.heldLists[1].complete();
+      expect(await forB, {'blocked-by-b'});
+      expect(container.read(blockedUsersProvider), {'blocked-by-b'});
+    });
+
+    test("a previous account's in-flight block is not applied to the next account", () async {
+      final api = _FakeApi()..holdWrites = true;
+      final container = signedIn(api, userId: 'a');
+      await settle();
+
+      final pending = container.read(blockedUsersProvider.notifier).block('rival');
+      container.read(userProfileProvider.notifier).clear();
+      await BlockListCache.clear(); // what sign-out's teardown does
+      await settle();
+      container.read(userProfileProvider.notifier).setFromApi(
+            userId: 'b', avatarId: 0, color: '#00D4AA', displayName: 'Kai',
+          );
+      await settle();
+
+      api.heldWrites.single.complete();
+      expect(await pending, isNull);
+      await settle();
+
+      expect(container.read(blockedUsersProvider), isEmpty);
+      expect(await BlockListCache.load('a'), isNull);
+      expect(await BlockListCache.load('b'), isEmpty); // B's own fetch result, untouched by A's edit
+    });
+
     test('signing out empties the list', () async {
       final container = signedIn(_FakeApi()..serverBlocks = {'rival'});
       await settle();
@@ -362,6 +457,13 @@ void main() {
     test('displayNameFor hides only blocked players', () {
       expect(displayNameFor({'rival'}, 'rival', 'Rude Name'), blockedPlayerLabel);
       expect(displayNameFor({'rival'}, 'friend', 'Kai'), 'Kai');
+    });
+
+    test('the hex popup withholds other names while the block list is unknown', () {
+      expect(hexOwnerNameFor({'rival'}, 'me', 'rival', 'Rude Name'), blockedPlayerLabel);
+      expect(hexOwnerNameFor({'rival'}, 'me', 'kai', 'Kai'), 'Kai');
+      expect(hexOwnerNameFor(null, 'me', 'rival', 'Rude Name'), blockedActorLabel);
+      expect(hexOwnerNameFor(null, 'me', 'me', 'Robin'), 'Robin');
     });
 
     test('a masked map cell keeps everything but the owner name', () {
