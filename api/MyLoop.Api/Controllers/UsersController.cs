@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using MyLoop.Api.Constants;
 using MyLoop.Api.Data;
+using MyLoop.Api.Interfaces;
 using MyLoop.Api.Models;
 using MyLoop.Api.Services;
 
@@ -16,6 +17,10 @@ namespace MyLoop.Api.Controllers;
 [Authorize]
 public class UsersController : ControllerBase
 {
+    private const string NameLockedCode = "name_locked";
+    private const string NameLockedMessage = "Your name can't be changed right now.";
+    private const string RemovedNameMessage = "This name isn't allowed";
+
     private readonly IUserService _userService;
     private readonly IValidationService _validation;
     private readonly IPushNotificationService _pushService;
@@ -179,10 +184,16 @@ public class UsersController : ControllerBase
             if (avatarError != null) return BadRequest(avatarError);
         }
 
-        var user = await _userService.UpdateProfile(id, request);
-        if (user == null) return NotFound();
-        // Self-only (DenySelf above) → owner projection.
-        return Ok(UserSelfResponse.FromUser(user));
+        var result = await _userService.UpdateProfile(id, request);
+        return result.Status switch
+        {
+            ProfileUpdateStatus.NameLocked => Conflict(new NameLockedError(NameLockedCode, NameLockedMessage)),
+            ProfileUpdateStatus.NameRemoved => BadRequest(RemovedNameMessage),
+            ProfileUpdateStatus.Updated when result.User is { } user =>
+                // Self-only (DenySelf above) → owner projection.
+                Ok(UserSelfResponse.FromUser(user)),
+            _ => NotFound(),
+        };
     }
 
     /// <summary>

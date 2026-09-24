@@ -170,6 +170,23 @@ public static class GameConstants
         "#A560E8", "#FFC800", "#FF6B81", "#2ED8A3",
     }.ToFrozenSet(StringComparer.Ordinal);
 
+    // --- Name moderation (DR-002b, #190) ---
+    /// <summary>Distinct reporters, since the case (re)opened, that auto-hide a name.</summary>
+    public const int NameReportHideThreshold = 3;
+    /// <summary>Reports one player may file per UTC day (anti-spam).</summary>
+    public const int MaxNameReportsPerReporterPerDay = 10;
+    /// <summary>Moderator-confirmed hides that lock renaming until a moderator unlocks it.</summary>
+    public const int NameStrikesToLock = 2;
+    /// <summary>Users loaded per page by the moderator rescan.</summary>
+    public const int NameRescanPageSize = 500;
+    /// <summary>Column size for stored name snapshots — above MaxDisplayNameLength so legacy names fit.</summary>
+    public const int MaxModeratedNameLength = 64;
+    /// <summary>Firebase UIDs are at most 128 characters.</summary>
+    public const int MaxFirebaseUidLength = 128;
+    /// <summary>Shown in place of a hidden name, followed by the first hex digits of the user id.</summary>
+    public const string HiddenNamePrefix = "Player#";
+    public const int HiddenNameIdDigits = 4;
+
     /// <summary>
     /// Minimum days between home-location changes. Home drives decay distance and the
     /// city/country leaderboard scope, so unrestricted re-homing lets a player game both

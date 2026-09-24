@@ -221,6 +221,15 @@ public static class NameModeration
         if (run.Length > 0) yield return run.ToString();
     }
 
+    /// <summary>
+    /// The name shown in place of a hidden one: "Player#" + the first hex digits of the user id.
+    /// Stable per user and derived from data that is already public in API responses. '#' can
+    /// never pass display-name validation, so no player can pick a placeholder-looking name.
+    /// </summary>
+    public static string PlaceholderFor(Guid userId) =>
+        GameConstants.HiddenNamePrefix
+        + userId.ToString("N")[..GameConstants.HiddenNameIdDigits].ToUpperInvariant();
+
     private static bool ContainsSevereTerm(string word) =>
         NameBlocklist.SevereSubstrings.Any(term => word.Contains(term, StringComparison.Ordinal));
 

@@ -3,6 +3,20 @@ using MyLoop.Api.Models;
 
 namespace MyLoop.Api.Interfaces;
 
+/// <summary>What a profile update did.</summary>
+public enum ProfileUpdateStatus
+{
+    Updated,
+    NotFound,
+    /// <summary>Confirmed strikes lock renaming until a moderator unlocks it (DR-002b §4.2).</summary>
+    NameLocked,
+    /// <summary>A moderator hid or removed this exact name from this player.</summary>
+    NameRemoved,
+}
+
+/// <summary>A profile update's outcome; <see cref="User"/> is set only when <see cref="Status"/> is Updated.</summary>
+public sealed record ProfileUpdateResult(ProfileUpdateStatus Status, User? User = null);
+
 /// <summary>
 /// User operations — registration, lookup, profile updates.
 /// </summary>
@@ -17,7 +31,11 @@ public interface IUserService
     Task<User> Register(RegisterRequest request, string firebaseUid, string authProvider);
     Task<User?> GetById(Guid id);
     Task<User?> GetByFirebaseUid(string firebaseUid);
-    Task<User?> UpdateProfile(Guid id, UpdateUserRequest request);
+    /// <summary>
+    /// Applies a validated profile update. A rename runs the moderation checks and the save in one
+    /// transaction under the player's row lock, so a hide or moderator decision can't slip between them.
+    /// </summary>
+    Task<ProfileUpdateResult> UpdateProfile(Guid id, UpdateUserRequest request);
     Task<UserProfileResponse?> GetRichProfile(Guid id);
     Task<bool> DeleteAccount(Guid userId);
 }

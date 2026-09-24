@@ -21,6 +21,12 @@ public static class InfrastructureDefaults
     public const int RateLimitWindowSeconds = 60;
     public const int RateLimitQueueLimit = 0;
 
+    // --- Moderation alerts (DR-002b) ---
+    /// <summary>Alerts buffered for background delivery; beyond this they are logged and dropped.</summary>
+    public const int ModerationAlertQueueCapacity = 256;
+    /// <summary>Per-operation SMTP timeout, well below MailKit's 2-minute default.</summary>
+    public const int ModerationSmtpTimeoutSeconds = 15;
+
     // --- External geocoding (Nominatim is best-effort) ---
     public const int GeocodingTimeoutSeconds = 5;
 

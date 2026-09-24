@@ -356,13 +356,19 @@ class ApiService {
     return extractApiError(error);
   }
 
-  /// Extracts the server's `{ "error": "..." }` message from a failed response,
-  /// or null if none is present (MEDIUM-5: surface real API errors to the user
+  /// Extracts the server's message from a failed response — a `{ "error": "..." }` body, a
+  /// `{ "code": "...", "message": "..." }` body (e.g. 409 `name_locked`, DR-002b §4.2) or a plain
+  /// string — or null if none is present (MEDIUM-5: surface real API errors to the user
   /// instead of a generic failure).
   static String? extractApiError(Object error) {
     if (error is DioException) {
       final data = error.response?.data;
-      if (data is Map && data['error'] is String) return data['error'] as String;
+      if (data is Map) {
+        for (final key in const ['error', 'message']) {
+          final value = data[key];
+          if (value is String && value.isNotEmpty) return value;
+        }
+      }
       if (data is String && data.isNotEmpty) return data;
     }
     return null;

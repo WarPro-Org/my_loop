@@ -130,6 +130,26 @@ public class DbRetryStrategyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task UpdateProfile_runs_its_transaction_under_a_retrying_strategy()
+    {
+        var userId = Guid.NewGuid();
+        await using (var seed = NewDb())
+        {
+            seed.Users.Add(new User { Id = userId, FirebaseUid = "uidR", DisplayName = "R", Color = "#444444" });
+            await seed.SaveChangesAsync();
+        }
+
+        await using var db = NewDb();
+        var userService = new UserService(db, new ValidationService(), NullLogger<UserService>.Instance);
+
+        var result = await userService.UpdateProfile(userId, new UpdateUserRequest { DisplayName = "Renamed" });
+
+        Assert.Equal(ProfileUpdateStatus.Updated, result.Status);
+        await using var check = NewDb();
+        Assert.Equal("Renamed", (await check.Users.SingleAsync(u => u.Id == userId)).DisplayName);
+    }
+
+    [Fact]
     public async Task RefreshLeaderboard_runs_its_transaction_under_a_retrying_strategy()
     {
         var userId = Guid.NewGuid();
