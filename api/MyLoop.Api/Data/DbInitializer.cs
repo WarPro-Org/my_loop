@@ -244,8 +244,6 @@ public static class DbInitializer
             ON ""Claims"" (""UserId"", ""CreatedAt"")");
     }
 
-    // Persisted, shared-across-all-users reverse-geocode cache (#121 / ML-ERR-024) — lets
-    // /game-state's exploration stats return without ever awaiting Nominatim inline.
     /// <summary>
     /// Name moderation schema (DR-002b, #190) for databases created before it. One transaction —
     /// Postgres DDL is transactional, so a failure leaves no half-applied schema. Additive only
@@ -305,6 +303,8 @@ public static class DbInitializer
             CREATE INDEX IF NOT EXISTS ""IX_NameModerationCases_Status""
                 ON ""NameModerationCases"" (""Status"");";
 
+    // Persisted, shared-across-all-users reverse-geocode cache (#121 / ML-ERR-024) — lets
+    // /game-state's exploration stats return without ever awaiting Nominatim inline.
     private static void ApplyNeighborhoodNamesSchema(AppDbContext db)
     {
         db.Database.ExecuteSqlRaw(@"

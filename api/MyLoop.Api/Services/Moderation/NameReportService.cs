@@ -35,6 +35,10 @@ public sealed class NameReportService(
             .Select(u => new { u.FirebaseUid })
             .SingleOrDefaultAsync();
         if (target is null) return NameReportOutcome.NotFound;
+        // The limit is checked before the moderator test: otherwise, at the limit, every target
+        // would answer 429 except a moderator (204), revealing who moderates (#194 review).
+        if (await CountReportsTodayAsync(reporterId, DateTime.UtcNow) >= GameConstants.MaxNameReportsPerReporterPerDay)
+            return NameReportOutcome.DailyLimitReached;
         // Answered exactly like an accepted report, so the endpoint never reveals who moderates.
         if (moderators.IsModerator(target.FirebaseUid)) return NameReportOutcome.Ignored;
 
@@ -74,8 +78,8 @@ public sealed class NameReportService(
         if (target.NameHiddenAt != null) return new ReportResult(NameReportOutcome.Ignored);
 
         var now = DateTime.UtcNow;
-        var reportsToday = await db.NameReports.CountAsync(r => r.ReporterId == reporterId && r.CreatedAt >= now.Date);
-        if (reportsToday >= GameConstants.MaxNameReportsPerReporterPerDay)
+        // Re-checked under the lock: the early check above is only there to keep moderators hidden.
+        if (await CountReportsTodayAsync(reporterId, now) >= GameConstants.MaxNameReportsPerReporterPerDay)
             return new ReportResult(NameReportOutcome.DailyLimitReached);
 
         var inserted = await db.Database.ExecuteSqlInterpolatedAsync($@"
@@ -96,7 +100,9 @@ public sealed class NameReportService(
             && r.CreatedAt >= reviewCase.OpenedAt);
 
         var hiddenNow = false;
-        if (reportCount >= GameConstants.NameReportHideThreshold && reviewCase.Status == ModerationCaseStatus.Open)
+        // AutoHidden too: if the name is showing again despite an open hide decision, hide it again.
+        if (reportCount >= GameConstants.NameReportHideThreshold
+            && reviewCase.Status is ModerationCaseStatus.Open or ModerationCaseStatus.AutoHidden)
         {
             hiddenNow = await NameHiding.HideAsync(db, reportedUserId, target.DisplayName, now);
             if (hiddenNow)
@@ -110,6 +116,9 @@ public sealed class NameReportService(
         await tx.CommitAsync();
         return new ReportResult(NameReportOutcome.Accepted, reviewCase.Id, target.DisplayName, reportCount, caseOpenedNow, hiddenNow);
     }
+
+    private Task<int> CountReportsTodayAsync(Guid reporterId, DateTime now) =>
+        db.NameReports.CountAsync(r => r.ReporterId == reporterId && r.CreatedAt >= now.Date);
 
     /// <summary>
     /// Creates the review case for this name, or reopens one a moderator restored. Returns 1 when

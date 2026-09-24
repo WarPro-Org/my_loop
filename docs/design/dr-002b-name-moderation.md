@@ -420,6 +420,23 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
   comparison is not guaranteed). Hides never remove rows; a mid-scan registration can shift a page,
   which is harmless because that name passed the blocklist at registration.
 
+### 4.8 Review fixes (#194 agent review)
+
+- **Blocker, fixed:** a player could rename straight back to an auto-hidden name, after which no
+  path could hide it again. Now a rename to a name with an `AutoHidden` (or `Confirmed`) case is
+  refused, Confirm always attempts the hide, and reports may re-hide under an `AutoHidden` case.
+- The daily report limit is checked **before** the moderator-target test, so at the limit a
+  moderator answers 429 like everyone else and the endpoint can't reveal who moderates.
+- A rename always writes `NameHiddenAt = NULL`. EF used to skip the column when it was already null
+  at load time, so a hide committing mid-rename left the new name flagged as hidden.
+- Restore only applies while `User.NameHiddenAt == case.HiddenAt`, so restoring an older case can't
+  undo a newer hide of a different name.
+- Confirm, restore and rescan lock the `Users` row before the case row, the same order reports use.
+  This removes a report↔confirm deadlock, and a report can no longer insert the case between
+  rescan's read and its insert.
+- The rescan summary email is sent from `finally`, so names already hidden are reported even if
+  the scan fails part-way.
+
 ---
 
 ## 5. SignalR changes (PR 4)

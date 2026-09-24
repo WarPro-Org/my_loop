@@ -206,6 +206,68 @@ public class ModerationFlowTests : IAsyncLifetime
         Assert.Equal(NameReportOutcome.Ignored, await Report(late, target));
     }
 
+    // ---- #194 review regressions ---------------------------------------------------------
+
+    [Fact]
+    public async Task Renaming_straight_back_to_an_auto_hidden_name_is_refused()
+    {
+        var target = await SeedUser("Rude Name");
+        await HideByReports(target);
+
+        await using var db = NewDb();
+        Assert.Equal(RenameCheck.RemovedName, await Moderation(db).CheckRenameAsync(target, "Rude Name"));
+        Assert.Equal(RenameCheck.Allowed, await Moderation(db).CheckRenameAsync(target, "Nice Name"));
+    }
+
+    [Fact]
+    public async Task At_the_daily_limit_a_moderator_answers_like_everyone_else()
+    {
+        var reporter = await SeedUser("Reporter");
+        foreach (var target in await SeedUsers(MyLoop.Api.Constants.GameConstants.MaxNameReportsPerReporterPerDay))
+            await Report(reporter, target);
+        var moderator = await SeedUser("Staff Person", ModeratorUid);
+        var player = (await SeedUsers(1))[0];
+
+        Assert.Equal(NameReportOutcome.DailyLimitReached, await Report(reporter, player));
+        Assert.Equal(NameReportOutcome.DailyLimitReached, await Report(reporter, moderator));
+    }
+
+    [Fact]
+    public async Task Restoring_an_older_case_does_not_undo_a_newer_hide()
+    {
+        var target = await SeedUser("Bad One");
+        await HideByReports(target);
+        var olderCase = (await LoadCase(target)).Id;
+        await using (var db = NewDb())
+            await new UserService(db, new ValidationService(), NullLogger<UserService>.Instance)
+                .UpdateProfile(target, new UpdateUserRequest { DisplayName = "Bad Two" });
+        await HideByReports(target);
+
+        await using (var db = NewDb())
+            await Moderation(db).RestoreAsync(olderCase, ModeratorUid);
+
+        var user = await LoadUser(target);
+        Assert.Equal(NameModeration.PlaceholderFor(target), user.DisplayName); // "Bad Two" stays hidden
+        Assert.NotNull(user.NameHiddenAt);
+    }
+
+    [Fact]
+    public async Task A_rename_saved_after_a_concurrent_hide_clears_the_hidden_flag()
+    {
+        var target = await SeedUser("Rude Name");
+        await using var renameContext = NewDb();
+        // The rename's context has already loaded the user (NameHiddenAt = null) when the hide commits.
+        Assert.NotNull(await renameContext.Users.FindAsync(target));
+        await HideByReports(target);
+
+        await new UserService(renameContext, new ValidationService(), NullLogger<UserService>.Instance)
+            .UpdateProfile(target, new UpdateUserRequest { DisplayName = "Nice Name" });
+
+        var user = await LoadUser(target);
+        Assert.Equal("Nice Name", user.DisplayName);
+        Assert.Null(user.NameHiddenAt); // otherwise every later report of "Nice Name" would be ignored
+    }
+
     // ---- Moderator decisions -------------------------------------------------------------
 
     [Fact]

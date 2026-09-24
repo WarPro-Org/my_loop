@@ -58,6 +58,9 @@ public class UserService : IUserService
         {
             user.DisplayName = ValidationService.NormalizeDisplayName(request.DisplayName);
             user.NameHiddenAt = null; // a chosen name replaces any moderation placeholder (#190)
+            // Written even when it was already null at load time: a hide committing between our
+            // read and this save would otherwise leave NameHiddenAt set on the new name (#194 review).
+            _db.Entry(user).Property(u => u.NameHiddenAt).IsModified = true;
         }
         if (request.Color != null) user.Color = request.Color;
         if (request.AvatarId != null) user.AvatarId = request.AvatarId.Value;
