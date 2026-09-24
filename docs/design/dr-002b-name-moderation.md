@@ -56,10 +56,31 @@ Fold pipeline (input is already `ValidationService.NormalizeDisplayName` output)
 3. Leet map `0→o 1→i 3→e 4→a 5→s 7→t @→a $→s` (`@`/`$` cannot pass validation today; mapped anyway so the fold is safe to reuse)
 4. Tokens = split on `[ \-_']`; **joined** = tokens concatenated
 
-Matching:
-- **Severe** (`FrozenSet<string>` in `Constants/NameBlocklist.cs`): blocked if `joined.Contains(term)` for any term
-- **Reserved** (`admin, administrator, mod, moderator, official, support, staff, myloop, system, root`): blocked if **any token equals** a term, or `joined` equals a term (`my_loop`, `My Loop`)
-- **Exceptions** (`FrozenSet`, initially empty): a folded `joined` value in this set is never blocked — for real surnames that trip the severe tier
+Matching (Gate 2 text — **superseded**; the rules the code implements are in "Current matching
+rules" below):
+- ~~**Severe** (`FrozenSet<string>` in `Constants/NameBlocklist.cs`): blocked if `joined.Contains(term)` for any term~~
+- ~~**Reserved** (`admin, administrator, mod, moderator, official, support, staff, myloop, system`): blocked if **any token equals** a term, or `joined` equals a term (`my_loop`, `My Loop`)~~
+- ~~**Exceptions** (`FrozenSet`, initially empty): a folded `joined` value in this set is never blocked — for real surnames that trip the severe tier~~
+
+### Current matching rules (`NameModeration.IsBlocked`, after review round 3)
+
+Terms live in `Constants/NameBlocklist.g.cs` (generated). A name is blocked if any rule matches.
+"Word" = a token of the leetspeak fold; "letter" = a token of at most
+`GameConstants.MaxSpelledOutTokenLength` (1) characters.
+
+| # | Rule | Example refused | Example accepted |
+|---|---|---|---|
+| R1 | A **severe** term occurs inside one word, also read with the digits leetspeak leaves unmapped (2, 6, 8, 9) removed (words in `Exceptions` are skipped, in either reading) | Fuckface, N1gg3r, Fu2ck, Nig9ger | Scunthorpe United, Thomas Lutz |
+| R2 | A **whole-word** or **reserved** term equals one word, also with its digits removed | Ass, Big Ass, The Admin, Na2zi | Cassandra, Badminton |
+| R3 | Each maximal run of letters is joined and checked by R1 and R2 | s-h-i-t, A-s-s, K-K-K | Ana L, J K Lee |
+| R4 | A **whole-word** or **reserved** term equals a word from the digit-preserving fold with digits trimmed from either end (before or after leetspeak), or with an x wrapper (`x` at both ends, length ≥ 3) trimmed | Admin2, 4dmin2, Nazi1, Coon2, xXnaziXx | Max, Rex, Xander, Alex, Maddox |
+| R5 | `myloop` anywhere in the concatenated digit-preserving fold | MyLoopSupport, my_loop | — |
+| R6 | Two **adjacent** words, unless the pair is in `JoinExceptions`: **(a)** their concatenation equals a severe term; **(b)** exactly one is a letter and the concatenation equals a whole-word term; **(c)** exactly one is a letter and a severe term of ≥ `GameConstants.MinSpanningSevereTermLength` (5) chars is a prefix (letter first) or suffix (letter last) of the concatenation | Nig Ger, F uck, Fuc K, B itch, S hit, Shi T, Fa G, N iggerboy | Deb Allen, S Luther, P Ornstein, Chin K |
+
+Not caught (accepted): a **whole-word**-tier term split into two multi-letter words ("Na Zi",
+"Sh It"; R6b needs one side to be a single letter, or two real name parts would form terms), a letter + word whose
+concatenation contains a 4-letter severe term plus more letters ("S lutty"), and a term split
+across three or more non-letter words. The report path is the backstop.
 
 `ValidationService.ValidateDisplayName` adds, after the regex check:
 `if (NameModeration.IsBlocked(normalized)) return "This name isn't allowed";`
@@ -73,16 +94,113 @@ generates `Constants/NameBlocklist.g.cs` from pinned commits; terms are stored p
 LDNOOBW substring matching blocked 119 real names (Frances, Connell, Fischer, Regina…), and
 against an English word list it hit words like *therapist* (rapist) and *trimming* (rimming).
 Tiers are therefore derived, not hand-sorted:
-- **Severe substrings** = a hand-curated `CORE` (fuck, cunt, shit, hitler, … — each with 0
-  corpus hits) + LDNOOBW terms of ≥ 7 chars that occur inside no name and no English word.
+- **Severe substrings** = a hand-curated `CORE` (fuck, cunt, hitler, … — each with 0
+  corpus hits; `shit` was here until the review fixes below made it whole-word only) + LDNOOBW terms of ≥ 7 chars that occur inside no name and no English word.
   Shorter foreign terms hid inside names/words (Finnish *pipari*, Polish *jajko*).
 - **Whole words** = every other LDNOOBW term, minus ordinary words (English list + a reviewed
   `DROP_WHOLE_WORD` list for other languages), plus `KEEP_WHOLE_WORD` insults that are also
   English words (ass, cock, nazi…). Reserved staff words live in `NameModeration`.
 - **Dropped** = terms that *are* common names (dick, regina, anita) and identity terms (gay,
   lesbian, bisexual, trans, …) — self-description is never blocked; slurs are.
-- Result: 900 severe, 381 whole-word, 0 corpus names blocked. A test asserts every generated
-  term is fold-stable under the C# `Fold`, so the script and the API cannot drift.
+- Result: 898 severe, 383 whole-word, 7 exceptions. (After review round 3: 898 severe,
+  384 whole-word — `kkk` added — 7 exceptions, 50 join exceptions. After round 4: 909 severe —
+  11 compounds added to `CORE`, see below — and 51 join exceptions.)
+
+**Review fixes (#193 agent review).** The first corpus was Anglo-heavy, and `shit`/`fuk` blocked
+Harshit, Rakshit, Kshitij, Ashita, Fukuda, Fukuoka…, which matters for the beta's
+Bangalore/Mumbai/Tokyo players:
+- `shit` and `fuk` are whole-word only, so compounds are caught only when listed. Round 4 added
+  common ones to `CORE` as severe substrings: *bullshit, horseshit, dipshit, shithead, shitface,
+  shithole, shitbag, dumbass, asshat, asswipe, douchebag*. *dickhead* is left out: the generator
+  flags "Dick Head" as a real first name + surname pair.
+- The generator adds a curated South and East Asian name list and **fails** if any severe term
+  hits a corpus name not covered by an exception.
+- Exceptions apply **per word** (removed before matching), so "Scunthorpe United" passes.
+- Reserved words also match with trailing digits ("Admin2", "Moderator1"), and the brand
+  `myloop` is reserved anywhere in a name ("MyLoopSupport").
+- `ſ ƒ ħ ŧ ƀ ƶ ǥ` fold to their Latin reading.
+- `scripts/moderation/fold_vectors.json` is asserted by both the generator and the xUnit suite,
+  so the two folds cannot drift apart. (The old fold-stability test could not detect that drift.)
+
+**Review fixes, round 2 (#193) — deviations from the Matching rules above.**
+- **Severe terms match inside one word, not on `joined`.** Scanning the concatenation of all
+  words let a first name and surname form a term across the boundary: Thomas Lutz (s+lut →
+  *slut*), Margaret Ardern (*retard*), Philip Ornstein (*porn*), Louisa Lopez (*salope*), Mari
+  Conti (*maricon*). Crossing the generator's first-name and surname corpora found 2,291 such
+  pairs. Each word is now scanned on its own. The only joining left is for **spelled-out
+  letters** (*superseded in round 3: adjacent word pairs are also checked, rule R6*): each maximal run of tokens of at most `GameConstants.MaxSpelledOutTokenLength`
+  (= 1) characters is joined and checked against both tiers, so "s-h-i-t", "f u c k" and
+  "A-s-s" are still refused. The same rule replaces the whole-word check on `joined`, so
+  "Ana L" (an+al) is no longer refused. "my_loop" / "My Loop" are still refused by the brand
+  rule (`myloop` anywhere in the concatenation, reserved tier only).
+- **The limit is 1, not 2.** At 2, real two-letter name parts join into listed terms (Si Ki →
+  *siki*, Su Ka → *suka*, As Lu Ty → *slut*). Accepted cost (after round 3, rule R6): a
+  whole-word-tier term split into two multi-letter words ("Na Zi", "Sh It") is not caught; a
+  severe term split that way ("Fu Ck") is, by R6a. The report path is the backstop.
+- **Generator check.** (*Superseded in round 3 — the matcher now does join adjacent pairs, so
+  the generator also checks corpus pairs; see below.*) Because the matcher never joins two real
+  name parts, checking each corpus name on its own is sufficient; a first × surname pair check
+  is not needed. The generator instead fails if any corpus name is short enough to be joined as
+  a spelled-out letter, and an xUnit test asserts its `MAX_SPELLED_OUT_TOKEN_LENGTH` equals the
+  C# constant. The generated list did not change and is still byte-reproducible.
+- **Reserved words** also match with digits trimmed from both ends, before and after leetspeak
+  ("2Admin", "4dmin2", "M0derator1"), and inside an x wrapper at both ends ("xXAdminXx").
+  One-sided x (Max, Rex, Xander) is not a wrapper.
+- **`root` is no longer reserved** — Root is an ordinary surname (Joe Root). `system` and
+  `admin` cover system impersonation.
+
+**Review fixes, round 3 (#193).** Rules R4 and R6 in "Current matching rules" above.
+- **One space defeated the severe tier.** Per-word matching let "N igger", "F uck", "Fuc K",
+  "Nig Ger", "B itch", "S hit", "Shi T" and "Fa G" through. R6 checks each pair of adjacent
+  words, but never scans a first name + surname for a term inside their concatenation (that is
+  what refused Thomas Lutz): only an **exact** severe match joins two ordinary words (R6a).
+  Substring and whole-word matching across the space need one side to be a single letter —
+  evidence of deliberate splitting (R6b, R6c).
+- **Why 5 for spanning terms (R6c).** At 4, an initial next to a real surname forms a term:
+  S Luther, S Luttrell → *slut*; P Ornstead, P Orna → *porn*; J Izzy → *jizz*. At 5 the
+  corpora give no initial + name pair except ones that spell a term exactly, which R6a/R6b
+  already cover. Accepted cost: "S lutty"-style splits of 4-letter terms are not caught.
+  `GameConstants.MinSpanningSevereTermLength` mirrors the generator's
+  `MIN_SPANNING_SEVERE_TERM_LENGTH`; an xUnit test asserts they match.
+- **Generator pair check.** `join_collisions()` lists every pair R6 would refuse where both
+  halves are corpus names, or one is a single letter and the other a corpus name (73 pairs).
+  Generation **fails** unless each is reviewed into `JOIN_EXCEPTIONS` (emitted as
+  `NameBlocklist.JoinExceptions`, never joined: Deb Allen, De Conner, Ana L, Chin K, Wan K,
+  K Inkster, …) or `ACCEPTED_JOIN_REFUSALS` (still refused because the pair reads as the term
+  and is not a plausible name: B Itch, Va Gina, Wan Ker, White Power, As S, F Ag, T Wat, …), and
+  fails on a stale entry that no longer collides. A plain "fail on any collision" would have
+  forced `bitch`, `bastard`, `wanker`, `vagina` out of the severe tier, since "B"+"Itch",
+  "Bast"+"Ard", "Wan"+"Ker" and "Va"+"Gina" are all corpus pairs.
+- **Whole words ignored digit and x-wrapper trimming.** "Nazi1", "Fag1", "Coon2", "Anal2",
+  "Semen2", "xXnaziXx", "xXcoonXx" passed, because leetspeak turns a trailing `1` into `i`
+  before the whole-word check. R4 runs the reserved-word readings through the whole-word tier
+  too. No corpus name is x-wrapped, so the trim adds no real-name refusals.
+- **`kkk`** added to the whole-word tier via the generator's `KEEP_WHOLE_WORD` list.
+
+**Review fixes, round 4 (#193).**
+- **Unmapped digits split a term inside a word.** Leetspeak maps only 0/1/3/4/5/7, so "Fu2ck",
+  "F2uck", "Nig9ger" and "Na2zi" passed. R1 and R2 now also read each word and spelled-out run
+  with its remaining digits removed (skipping `Exceptions` in that reading too). No corpus name
+  contains a digit, so this adds no real-name refusals.
+- **Common compounds** (*bullshit*, *shithead*, …) added to `CORE`; see "Review fixes" above.
+- **"K Ike"** moved from `ACCEPTED_JOIN_REFUSALS` to `JOIN_EXCEPTIONS`: Ike is a common Igbo
+  surname and first name, so an initial + Ike is a plausible real name. Accepted cost: "K ike"
+  is not caught by R6b; "Kike" and "K-i-k-e" still are.
+
+**Accepted false positives (whole-word tier).** These whole-word terms are also real names, and
+are kept on purpose because the slur or sexual reading is the common one in an English-language
+leaderboard:
+
+| Term | Real names refused | Why kept |
+|---|---|---|
+| `coon` | Carrie Coon (surname) | Racial slur |
+| `semen` | Semen Petrenko (Ukrainian transliteration of Semyon), Semen Padang | Sexual term |
+| `fuk` | Lau Fuk Wing, Fuk-sang (Cantonese given name) | Common spelling of *fuck*; already narrowed from substring to whole word, so Fukuda/Fukuoka pass |
+
+Remedy for an affected player: the report/restore path's human review. The player contacts
+support (§7) and a moderator reviews the name, as for a reported name (§4.3). Adding the folded
+word to `EXCEPTIONS` in the generator would un-block it for every player, so that is a product
+decision per term, not the default remedy.
 
 ---
 
@@ -301,6 +419,8 @@ Email bodies contain the name snapshot and case id, **never** the reporter's ide
 - **Rescan uses offset paging ordered by `Id`**, not keyset on `Guid` (translation of `Guid`
   comparison is not guaranteed). Hides never remove rows; a mid-scan registration can shift a page,
   which is harmless because that name passed the blocklist at registration.
+
+---
 
 ## 5. SignalR changes (PR 4)
 

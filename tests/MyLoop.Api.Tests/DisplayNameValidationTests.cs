@@ -38,6 +38,8 @@ public class DisplayNameValidationTests
     [InlineData("陈伟")]
     [InlineData("Ali×2")]           // × is in Latin-1 but not a letter
     [InlineData("Ann÷")]
+    [InlineData("Hi\u01C3\u01C3\u01C3")] // ǃ is a Unicode letter that reads as "!"
+    [InlineData("Adm\u01C0n")]          // ǀ reads as "|"
     [InlineData("Zé́́")] // stacked combining marks survive NFC
     [InlineData("Bob😀")]
     [InlineData("Bob.")]

@@ -41,7 +41,7 @@ public class LeaderboardService : ILeaderboardService
         };
     }
 
-    public async Task<int> RefreshLeaderboard()
+    public async Task<int> RefreshLeaderboard(CancellationToken ct = default)
     {
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
@@ -52,33 +52,33 @@ public class LeaderboardService : ILeaderboardService
         // same DbContext. Clearing makes each attempt re-read fresh state (prior attempts rolled
         // back), and the delete-then-reinsert of today's rows is itself idempotent.
         var strategy = _db.Database.CreateExecutionStrategy();
-        return await strategy.ExecuteAsync(async () =>
+        return await strategy.ExecuteAsync(async token =>
         {
             _db.ChangeTracker.Clear();
-            await using var transaction = await _db.Database.BeginTransactionAsync();
+            await using var transaction = await _db.Database.BeginTransactionAsync(token);
 
-            // Serialize concurrent refreshes (the hourly run and a claim-triggered run can
-            // overlap): the loser waits, then observes the winner's committed rows, keeping
+            // Serialize concurrent refreshes (LeaderboardRefreshWorker ticks on separate API
+            // instances, e.g. during a rolling deploy, can overlap): the loser waits, then observes the winner's committed rows, keeping
             // the finish counters once-per-day and preventing the delete/re-insert pair from
             // colliding on the (UserId, Date) unique index. Same advisory-lock pattern as
             // TerritoryService claims.
             await _db.Database.ExecuteSqlRawAsync(
-                "SELECT pg_advisory_xact_lock({0})", LeaderboardRefreshLockKey);
+                "SELECT pg_advisory_xact_lock({0})", [LeaderboardRefreshLockKey], token);
 
             // Users already ranked today were credited a "finish" by an earlier refresh —
             // captured before the delete below wipes today's rows (#83).
             var alreadyCountedToday = (await _db.LeaderboardEntries
                 .Where(l => l.Date == today)
                 .Select(l => l.UserId)
-                .ToListAsync()).ToHashSet();
+                .ToListAsync(token)).ToHashSet();
 
-            await _db.LeaderboardEntries.Where(l => l.Date == today).ExecuteDeleteAsync();
+            await _db.LeaderboardEntries.Where(l => l.Date == today).ExecuteDeleteAsync(token);
 
             var rankings = await _db.TerritoryCells
                 .GroupBy(t => t.OwnerId)
                 .Select(g => new { UserId = g.Key, CellCount = g.Count() })
                 .OrderByDescending(x => x.CellCount)
-                .ToListAsync();
+                .ToListAsync(token);
 
             var entries = rankings.Select((r, i) => new LeaderboardEntry
             {
@@ -91,16 +91,16 @@ public class LeaderboardService : ILeaderboardService
             }).ToList();
 
             _db.LeaderboardEntries.AddRange(entries);
-            await _db.SaveChangesAsync();
+            await _db.SaveChangesAsync(token);
 
-            await UpdateAchievementCounters(entries, alreadyCountedToday);
-            await PurgeOldEntries(today);
+            await UpdateAchievementCounters(entries, alreadyCountedToday, token);
+            await PurgeOldEntries(today, token);
 
-            await _db.SaveChangesAsync();
-            await transaction.CommitAsync();
+            await _db.SaveChangesAsync(token);
+            await transaction.CommitAsync(token);
 
             return rankings.Count;
-        });
+        }, ct);
     }
 
     // ──────────────────────────────────────────────────────────────────────────
@@ -224,32 +224,32 @@ public class LeaderboardService : ILeaderboardService
     /// it runs inside the refresh transaction, so a retry rolls back and re-runs cleanly.
     /// </summary>
     private async Task UpdateAchievementCounters(
-        List<LeaderboardEntry> entries, HashSet<Guid> alreadyCountedToday)
+        List<LeaderboardEntry> entries, HashSet<Guid> alreadyCountedToday, CancellationToken ct)
     {
         var newlyRanked = entries.Where(e => !alreadyCountedToday.Contains(e.UserId)).ToList();
 
         await IncrementFinishes(newlyRanked, 3,
-            s => s.SetProperty(u => u.TopThreeFinishes, u => u.TopThreeFinishes + 1));
+            s => s.SetProperty(u => u.TopThreeFinishes, u => u.TopThreeFinishes + 1), ct);
         await IncrementFinishes(newlyRanked, 10,
-            s => s.SetProperty(u => u.TopTenFinishes, u => u.TopTenFinishes + 1));
+            s => s.SetProperty(u => u.TopTenFinishes, u => u.TopTenFinishes + 1), ct);
         await IncrementFinishes(newlyRanked, 100,
-            s => s.SetProperty(u => u.TopHundredFinishes, u => u.TopHundredFinishes + 1));
+            s => s.SetProperty(u => u.TopHundredFinishes, u => u.TopHundredFinishes + 1), ct);
         await IncrementFinishes(newlyRanked, 1000,
-            s => s.SetProperty(u => u.TopThousandFinishes, u => u.TopThousandFinishes + 1));
+            s => s.SetProperty(u => u.TopThousandFinishes, u => u.TopThousandFinishes + 1), ct);
     }
 
     private async Task IncrementFinishes(
         List<LeaderboardEntry> newlyRanked, int maxRank,
-        Action<UpdateSettersBuilder<User>> increment)
+        Action<UpdateSettersBuilder<User>> increment, CancellationToken ct)
     {
         var userIds = newlyRanked.Where(e => e.Rank <= maxRank).Select(e => e.UserId).ToList();
         if (userIds.Count == 0) return;
-        await _db.Users.Where(u => userIds.Contains(u.Id)).ExecuteUpdateAsync(increment);
+        await _db.Users.Where(u => userIds.Contains(u.Id)).ExecuteUpdateAsync(increment, ct);
     }
 
-    private async Task PurgeOldEntries(DateOnly today)
+    private async Task PurgeOldEntries(DateOnly today, CancellationToken ct)
     {
         var cutoff = today.AddDays(-GameConstants.LeaderboardRetentionDays);
-        await _db.LeaderboardEntries.Where(l => l.Date < cutoff).ExecuteDeleteAsync();
+        await _db.LeaderboardEntries.Where(l => l.Date < cutoff).ExecuteDeleteAsync(ct);
     }
 }

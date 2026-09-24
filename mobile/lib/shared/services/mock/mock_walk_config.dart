@@ -26,18 +26,32 @@ class MockWalkConstants {
   /// Wall-clock interval between synthesized GPS fixes (~1 Hz, like a real device).
   static const Duration tickInterval = Duration(seconds: 1);
 
-  /// Default and bounds for walking speed. The upper bound is held well under the
-  /// server anti-cheat cap (8.33 m/s) so even with jitter no hop is rejected, while
-  /// still letting a tester speed a run up to a brisk jog to shorten it.
+  /// Default and bounds for walking speed. The upper bound is a brisk jog, so a
+  /// tester can shorten a desk run; [jitterSigmaMeters] is what keeps the measured
+  /// path under the server's 9.0 m/s sustained-average gate at this bound.
   static const double defaultSpeedMps = 1.4; // average human walk
   static const double minSpeedMps = 0.5;
-  static const double maxSpeedMps = 4.0; // brisk jog; << 8.33 m/s cap
+  static const double maxSpeedMps = 4.0; // brisk jog
 
-  /// Std-dev of per-fix positional jitter, in metres. Calibrated so consecutive
-  /// retained points (~5 m apart after the client noise filter) have a bearing
-  /// std-dev comfortably above the server's 2° smoothness floor — i.e. even a
-  /// "straight" route reads as a real human walk, not a spoofed line.
-  static const double jitterSigmaMeters = 4.0;
+  /// Stationary std-dev of the positional jitter, per axis, in metres.
+  ///
+  /// Calibrated against BOTH server gates, which pull in opposite directions:
+  /// too little jitter and a straight route falls under the 2° bearing-std-dev
+  /// smoothness floor; too much and the noise itself dominates displacement,
+  /// inflating the measured path until it trips the 9.0 m/s sustained-average
+  /// speed gate. Asserted in `mock_walk_engine_test.dart`.
+  static const double jitterSigmaMeters = 2.5;
+
+  /// Fix-to-fix correlation of the jitter (AR(1) coefficient per axis).
+  ///
+  /// Real GPS error drifts slowly; it does not re-roll every second. Independent
+  /// per-fix jitter made the 8 m client noise floor keep mostly the fixes noise
+  /// had pushed far, so the short 2–5 point batches the drain sends showed
+  /// phantom speed and ~30% of default walks had a batch rejected by the 9.0 m/s
+  /// per-batch average. At 0.9 consecutive fixes differ by only
+  /// σ·√(2·(1−ρ)) ≈ 1.1 m per axis while the spread over a walk stays σ, which
+  /// keeps every drain batch under the gate and bearing std-dev above 2°.
+  static const double jitterCorrelation = 0.9;
 
   /// Default and bounds for the generated closed loop radius, in metres. The minimum
   /// is held high enough that the loop perimeter, after the client noise-floor dedup
@@ -64,9 +78,9 @@ class MockWalkConstants {
   static const double reportedAccuracyMeters = 8.0;
 
   /// Walking speed used by the one-tap quick-launch scenarios. Held at the speed
-  /// upper bound — a brisk jog that shortens a desk run while staying well under
-  /// the server cap (8.33 m/s) even with jitter, because retained points sit a
-  /// fixed [reportedAccuracyMeters] (8 m) apart so the per-hop speed ≈ this value.
+  /// upper bound to keep a desk run short; the binding server constraint is the
+  /// 9.0 m/s sustained-average gate, not the per-hop cap, and clearing it at this
+  /// speed is what [jitterSigmaMeters] is calibrated for.
   static const double quickScenarioSpeedMps = maxSpeedMps;
 }
 
@@ -101,16 +115,22 @@ class MockWalkConfig {
   final double straightLengthMeters;
   final double straightBearingDegrees;
 
+  /// Waypoint routes only: when true and the tapped path does not already end
+  /// near its first waypoint, the engine appends the first waypoint as a final
+  /// anchor so the walk closes and can actually claim territory.
+  final bool autoCloseLoop;
+
   const MockWalkConfig({
     this.enabled = false,
     this.routeType = MockRouteType.loop,
-    this.startPoint = const LatLng(37.4220, -122.0841), // Googleplex; overridden on open
+    this.startPoint = const LatLng(37.4220, -122.0841), // Googleplex; real fallback of last resort
     this.waypoints = const [],
     this.speedMps = MockWalkConstants.defaultSpeedMps,
     this.jitterEnabled = true,
     this.loopRadiusMeters = MockWalkConstants.defaultLoopRadiusMeters,
     this.straightLengthMeters = MockWalkConstants.defaultStraightLengthMeters,
     this.straightBearingDegrees = MockWalkConstants.defaultStraightBearingDegrees,
+    this.autoCloseLoop = true,
   });
 
   MockWalkConfig copyWith({
@@ -123,6 +143,7 @@ class MockWalkConfig {
     double? loopRadiusMeters,
     double? straightLengthMeters,
     double? straightBearingDegrees,
+    bool? autoCloseLoop,
   }) {
     return MockWalkConfig(
       enabled: enabled ?? this.enabled,
@@ -137,7 +158,103 @@ class MockWalkConfig {
       straightLengthMeters: (straightLengthMeters ?? this.straightLengthMeters)
           .clamp(MockWalkConstants.minStraightLengthMeters, MockWalkConstants.maxStraightLengthMeters),
       straightBearingDegrees: straightBearingDegrees ?? this.straightBearingDegrees,
+      autoCloseLoop: autoCloseLoop ?? this.autoCloseLoop,
     );
+  }
+
+  // ── Persistence codec (saved routes, #160) ─────────────────────────────────
+  //
+  // Pure and tolerant by contract: [fromJson] returns null on ANY malformed
+  // input instead of throwing, numeric fields are re-clamped through [copyWith],
+  // an unknown route-type name falls back to [MockRouteType.loop], and `enabled`
+  // is NEVER restored from disk — a persisted blob must not be able to turn the
+  // simulator on by itself.
+
+  Map<String, dynamic> toJson() => {
+        'routeType': routeType.name,
+        'startPoint': [startPoint.latitude, startPoint.longitude],
+        'waypoints': [
+          for (final wp in waypoints) [wp.latitude, wp.longitude],
+        ],
+        'speedMps': speedMps,
+        'jitterEnabled': jitterEnabled,
+        'loopRadiusMeters': loopRadiusMeters,
+        'straightLengthMeters': straightLengthMeters,
+        'straightBearingDegrees': straightBearingDegrees,
+        'autoCloseLoop': autoCloseLoop,
+      };
+
+  static MockWalkConfig? fromJson(Object? json) {
+    if (json is! Map) return null;
+    try {
+      final start = _latLng(json['startPoint']);
+      if (start == null) return null;
+      final rawWaypoints = json['waypoints'];
+      final waypoints = <LatLng>[];
+      if (rawWaypoints is List) {
+        for (final wp in rawWaypoints) {
+          final point = _latLng(wp);
+          if (point == null) return null; // a corrupt waypoint corrupts the route
+          waypoints.add(point);
+        }
+      }
+      // Route through copyWith so every numeric field is re-clamped to the
+      // current bounds even if the persisted values predate a bounds change.
+      return const MockWalkConfig().copyWith(
+        routeType: MockRouteType.values.asNameMap()[json['routeType']] ?? MockRouteType.loop,
+        startPoint: start,
+        waypoints: waypoints,
+        speedMps: _finite(json['speedMps']),
+        jitterEnabled: json['jitterEnabled'] is bool ? json['jitterEnabled'] as bool : null,
+        loopRadiusMeters: _finite(json['loopRadiusMeters']),
+        straightLengthMeters: _finite(json['straightLengthMeters']),
+        straightBearingDegrees: _finite(json['straightBearingDegrees']),
+        autoCloseLoop: json['autoCloseLoop'] is bool ? json['autoCloseLoop'] as bool : null,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static double? _finite(Object? value) {
+    if (value is! num) return null;
+    final d = value.toDouble();
+    return d.isFinite ? d : null;
+  }
+
+  static LatLng? _latLng(Object? value) {
+    if (value is! List || value.length != 2) return null;
+    final lat = _finite(value[0]);
+    final lng = _finite(value[1]);
+    if (lat == null || lng == null) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return LatLng(lat, lng);
+  }
+}
+
+/// A tester-named route configuration persisted by the debug route store (#160).
+/// Same tolerance contract as [MockWalkConfig.fromJson]: malformed → null.
+class SavedMockRoute {
+  final String name;
+  final DateTime savedAt;
+  final MockWalkConfig config;
+
+  const SavedMockRoute({required this.name, required this.savedAt, required this.config});
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'savedAt': savedAt.toIso8601String(),
+        'config': config.toJson(),
+      };
+
+  static SavedMockRoute? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final name = json['name'];
+    if (name is! String || name.trim().isEmpty) return null;
+    final config = MockWalkConfig.fromJson(json['config']);
+    if (config == null) return null;
+    final savedAt = json['savedAt'] is String ? DateTime.tryParse(json['savedAt'] as String) : null;
+    return SavedMockRoute(name: name, savedAt: savedAt ?? DateTime.now(), config: config);
   }
 }
 

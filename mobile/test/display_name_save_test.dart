@@ -6,13 +6,13 @@
 /// waits for the API and returns the reason instead.
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/shared/services/api_service.dart';
-import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/util/display_name.dart';
 
@@ -54,7 +54,6 @@ void main() {
   ProviderContainer containerWith(_FakeApi api) {
     final container = ProviderContainer(overrides: [
       apiServiceProvider.overrideWithValue(api),
-      territoryRealtimeProvider.overrideWithValue(TerritoryRealtimeService(baseUrl: 'http://test.local')),
     ]);
     addTearDown(container.dispose);
     container.read(userProfileProvider.notifier).setFromApi(
@@ -62,9 +61,6 @@ void main() {
           avatarId: 0,
           color: '#00D4AA',
           displayName: 'Robin',
-          hexCount: 0,
-          streak: 0,
-          distanceKm: 0,
         );
     return container;
   }
@@ -89,6 +85,21 @@ void main() {
     expect(container.read(userProfileProvider).displayName, 'Robin');
   });
 
+  test('a server error page is never shown as the reason', () async {
+    final request = RequestOptions(path: '/api/users/u1');
+    final gatewayError = DioException(
+      requestOptions: request,
+      type: DioExceptionType.badResponse,
+      response: Response(requestOptions: request, statusCode: 502, data: '<html>Bad Gateway</html>'),
+    );
+    final container = containerWith(_FakeApi(() async => throw gatewayError));
+
+    final error = await container.read(userProfileProvider.notifier).updateDisplayName('Kai');
+
+    expect(error, displayNameSaveFailedError);
+    expect(container.read(userProfileProvider).displayName, 'Robin');
+  });
+
   test('a rename while offline keeps the old name and says why', () async {
     final container = containerWith(_FakeApi(() async => throw _unreachable()));
 
@@ -96,5 +107,21 @@ void main() {
 
     expect(error, displayNameOfflineError);
     expect(container.read(userProfileProvider).displayName, 'Robin');
+  });
+
+  test('a rename that finishes after sign-out does not overwrite the next account', () async {
+    final pending = Completer<void>();
+    final container = containerWith(_FakeApi(() => pending.future));
+    final notifier = container.read(userProfileProvider.notifier);
+
+    final rename = notifier.updateDisplayName('Kai');
+    notifier.clear();
+    notifier.setFromApi(userId: 'u2', avatarId: 1, color: '#FF5733', displayName: 'Bob');
+    pending.complete();
+    await rename;
+
+    final profile = container.read(userProfileProvider);
+    expect(profile.userId, 'u2');
+    expect(profile.displayName, 'Bob');
   });
 }

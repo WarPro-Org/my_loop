@@ -4,14 +4,15 @@ library;
 import 'package:myloop/shared/constants/app_constants.dart';
 
 /// Latin script only (#189): ASCII, Latin-1 letters (minus × U+00D7 and ÷ U+00F7),
-/// Latin Extended-A/B and Latin Extended Additional, plus digits, space, `-`, `_`, `'`
+/// Latin Extended-A/B (minus the punctuation-like click letters U+01C0–U+01C3) and Latin
+/// Extended Additional, plus digits, space, `-`, `_`, `'`
 /// and the iOS smart apostrophe `’` (U+2019), which the API folds to `'` before storing.
 ///
 /// Mirrors MyDisplayNameRegex in api/MyLoop.Api/Services/ValidationService.cs. The API also
 /// NFC-normalises, so it accepts decomposed input this pattern rejects — the client is only
 /// ever stricter, never looser, than the server.
 final displayNamePattern = RegExp(
-  r"^[A-Za-z0-9À-ÖØ-öø-ɏḀ-ỿ \-_'’]+$",
+  r"^[A-Za-z0-9À-ÖØ-öø-ƿǄ-ɏḀ-ỿ \-_'’]+$",
 );
 
 const displayNameEmptyError = 'Name cannot be empty';

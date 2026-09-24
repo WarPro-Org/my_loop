@@ -30,6 +30,28 @@ public static class InfrastructureDefaults
     // --- External geocoding (Nominatim is best-effort) ---
     public const int GeocodingTimeoutSeconds = 5;
 
+    /// <summary>
+    /// How long the geocoding client reuses a pooled connection before recycling it. The client is
+    /// held by a singleton, so without this it would pin DNS for the life of the process — this is
+    /// the rotation an <c>IHttpClientFactory</c> typed client would otherwise provide (#139 D2).
+    /// </summary>
+    public const int GeocodingConnectionLifetimeMinutes = 5;
+
+    /// <summary>
+    /// Minimum gap between two Nominatim requests from this process. The public usage policy is
+    /// "max 1 request per second"; the extra 100ms absorbs clock and scheduling jitter.
+    /// </summary>
+    public const int GeocodingMinRequestSpacingMilliseconds = 1100;
+
+    /// <summary>
+    /// How long a request-path lookup (SetHome during onboarding) waits for the process-wide
+    /// geocoding throttle before giving up and returning an uncached empty location. The throttle is
+    /// shared with fire-and-forget exploration geocoding, so without a bound onboarding could queue
+    /// behind N background lookups. Budget against the client's 10s receive timeout: this wait, plus
+    /// at most one spacing gap, plus <see cref="GeocodingTimeoutSeconds"/> for the HTTP call itself.
+    /// </summary>
+    public const int GeocodingThrottleMaxWaitSeconds = 2;
+
     // --- Serilog rolling-file sink ---
     public const string LogDirectoryName = "logs";
     public const string LogFileNamePattern = "myloop-.log";

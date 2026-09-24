@@ -60,7 +60,7 @@ public class GameStateRankTests : IAsyncLifetime
         var achievements = new Mock<IAchievementService>();
         achievements.Setup(a => a.GetAllForUser(It.IsAny<Guid>())).ReturnsAsync([]);
         var territory = new Mock<ITerritoryService>();
-        territory.Setup(t => t.GetExplorationStats(It.IsAny<Guid>(), It.IsAny<double>(), It.IsAny<double>()))
+        territory.Setup(t => t.GetExplorationStats(It.IsAny<Guid>()))
             .ReturnsAsync([]);
 
         return new UsersController(

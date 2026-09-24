@@ -185,6 +185,7 @@ Controllers (thin) → Services (business logic) → EF Core (data access)
 - `PushNotificationService` — FCM push to victims
 - `UserService` — Registration, profile CRUD, account deletion
 - `LeaderboardService` — Daily rank computation, scoped queries
+- `LeaderboardRefreshWorker` — Background job recomputing the leaderboard snapshot every 5 minutes
 - `GeoService` — Haversine distance, bearing calculations
 - `ValidationService` — Input sanitization
 
@@ -450,7 +451,8 @@ sequenceDiagram
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | GET | `/api/leaderboard?lat&lng&userId&scope` | Get ranked players (city/country/world) |
-| POST | `/api/leaderboard/refresh` | Recompute daily rankings |
+
+The daily rankings are recomputed server-side by `LeaderboardRefreshWorker` (a `BackgroundService`, every 5 minutes) — there is no client-triggered refresh endpoint (#109). The board is therefore a snapshot up to 5 minutes old; the player's own live city rank comes from `GET /api/users/{id}/game-state`.
 
 ### Missions (`/api/missions`)
 | Method | Endpoint | Purpose |
@@ -472,7 +474,7 @@ sequenceDiagram
 - SignalR real-time updates with region-based subscription
 - Anti-cheat (3-layer path validation)
 - Push notifications (FCM integration, theft alerts)
-- Leaderboard (city/country/world, daily refresh, achievement counters)
+- Leaderboard (city/country/world, 5-minute background refresh, achievement counters)
 - User profiles (public + own, tier badges, player titles)
 - Walk history (paginated)
 - Bot territory seeding (6 cities)

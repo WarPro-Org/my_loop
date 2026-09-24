@@ -11,6 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_rank_sync.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 
 class SetHomeScreen extends ConsumerStatefulWidget {
@@ -86,13 +87,22 @@ class _SetHomeScreenState extends ConsumerState<SetHomeScreen> {
 
       // Brief delay to show the resolved location, then navigate
       await Future.delayed(const Duration(milliseconds: 800));
-      if (mounted) context.go('/home');
+      await _finishOnboarding();
     } catch (e) {
       setState(() {
         _error = 'Failed to set home: $e';
         _submitting = false;
       });
     }
+  }
+
+  /// Hydrates the slices before the first Home visit and takes the live rank
+  /// from game-state, so a new player's Home rank tile shows their real rank
+  /// instead of the "#0" registration left it at. Runs after the home is set
+  /// (or skipped) because setting it assigns the city the rank is scoped to.
+  Future<void> _finishOnboarding() async {
+    await hydrateAndSyncProfileRank(ref, isMounted: () => mounted);
+    if (mounted) context.go('/home');
   }
 
   @override
@@ -203,10 +213,8 @@ class _SetHomeScreenState extends ConsumerState<SetHomeScreen> {
                 ),
                 const SizedBox(height: 12),
                 TextButton(
-                  onPressed: () {
-                    // Skip for now — user can set later in settings
-                    context.go('/home');
-                  },
+                  // Skip for now — user can set later in settings
+                  onPressed: _finishOnboarding,
                   child: Text(
                     'Skip for now',
                     style: TextStyle(color: AppColors.white.withValues(alpha: 0.4)),

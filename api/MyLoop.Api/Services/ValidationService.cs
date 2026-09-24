@@ -15,7 +15,6 @@ public partial class ValidationService : IValidationService
         "DisplayName contains invalid characters (Latin letters, numbers, spaces, hyphens, apostrophes only)";
     private const string DisplayNameNotAllowed = "This name isn't allowed";
     private static readonly Regex DisplayNameRegex = MyDisplayNameRegex();
-    private static readonly Regex HexColorRegex = MyHexColorRegex();
 
     /// <summary>
     /// Canonical stored form of a display name: trimmed, NFC-composed (so "e" + U+0301 and
@@ -62,30 +61,28 @@ public partial class ValidationService : IValidationService
         if (string.IsNullOrWhiteSpace(color))
             return "Color is required";
 
-        if (!HexColorRegex.IsMatch(color))
-            return "Color must be a valid hex color (e.g. #FF5733)";
+        if (!GameConstants.PlayerColors.Contains(color))
+            return "Color must be one of the player palette colors (e.g. #00D4AA)";
 
         return null;
     }
 
     public string? ValidateAvatarId(int avatarId)
     {
-        if (avatarId < 0 || avatarId > GameConstants.MaxAvatarId)
-            return $"AvatarId must be 0-{GameConstants.MaxAvatarId}";
+        if (avatarId < 0 || avatarId >= GameConstants.AvatarCount)
+            return $"AvatarId must be 0-{GameConstants.AvatarCount - 1}";
 
         return null;
     }
 
     /// <summary>
     /// Latin script only (#189): ASCII, Latin-1 letters (minus × U+00D7 and ÷ U+00F7),
-    /// Latin Extended-A/B and Latin Extended Additional — French, German, Nordic, Polish,
+    /// Latin Extended-A/B (minus the click letters U+01C0–U+01C3 ǀ ǁ ǂ ǃ, which read as | || ǂ !)
+    /// and Latin Extended Additional — French, German, Nordic, Polish,
     /// Czech, Romanian, Turkish, Vietnamese. Other scripts stay out so Cyrillic/Greek
     /// look-alikes ("Аdmin") cannot impersonate. Combining marks left after NFC are rejected.
     /// Mirrors displayNamePattern in mobile/lib/shared/util/display_name.dart.
     /// </summary>
-    [GeneratedRegex(@"^[A-Za-z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u024F\u1E00-\u1EFF \-_']+$")]
+    [GeneratedRegex(@"^[A-Za-z0-9\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u01BF\u01C4-\u024F\u1E00-\u1EFF \-_']+$")]
     private static partial Regex MyDisplayNameRegex();
-
-    [GeneratedRegex(@"^#[0-9A-Fa-f]{6}$")]
-    private static partial Regex MyHexColorRegex();
 }

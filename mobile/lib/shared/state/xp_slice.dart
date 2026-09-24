@@ -45,10 +45,15 @@ class XpSlice extends Notifier<XpState> {
     return const XpState();
   }
 
-  /// Full hydration from game-state endpoint.
+  /// Full hydration from game-state endpoint. A response without an `xp`
+  /// object resets to the defaults rather than keeping whatever was shown
+  /// before, which may not be this account's.
   void hydrate(Map<String, dynamic> data) {
     final xp = data['xp'] as Map<String, dynamic>?;
-    if (xp == null) return;
+    if (xp == null) {
+      state = const XpState();
+      return;
+    }
     state = XpState(
       totalXp: (xp['totalXp'] as num?)?.toInt() ?? 0,
       level: xp['level'] as int? ?? 1,
