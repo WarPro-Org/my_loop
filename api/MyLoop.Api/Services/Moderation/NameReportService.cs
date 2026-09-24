@@ -67,8 +67,7 @@ public sealed class NameReportService(
 
         // Serialises every report against this player: two concurrent "third" reports can then
         // neither both see a count of 2 (missed hide) nor both hide (double alert).
-        await db.Database.ExecuteSqlInterpolatedAsync(
-            $@"SELECT 1 FROM ""Users"" WHERE ""Id"" = {reportedUserId} FOR UPDATE");
+        await ModerationLocks.LockUserAsync(db, reportedUserId);
 
         var target = await db.Users.AsNoTracking()
             .Where(u => u.Id == reportedUserId)

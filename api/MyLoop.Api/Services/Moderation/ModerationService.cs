@@ -200,7 +200,7 @@ public sealed class ModerationService(
             await using var tx = await db.Database.BeginTransactionAsync();
             // Same lock order as reports (user row, then case), so a report can't insert this case
             // between our read and our insert, and the two can't deadlock.
-            await LockUserAsync(userId);
+            await ModerationLocks.LockUserAsync(db, userId);
             var existing = await db.NameModerationCases.AsNoTracking()
                 .SingleOrDefaultAsync(c => c.UserId == userId && c.NameSnapshot == name);
             if (existing?.Status is ModerationCaseStatus.Restored or ModerationCaseStatus.Confirmed)
@@ -254,14 +254,11 @@ public sealed class ModerationService(
             .Select(c => (Guid?)c.UserId)
             .SingleOrDefaultAsync();
         if (userId is null) return null;
-        await LockUserAsync(userId.Value);
+        await ModerationLocks.LockUserAsync(db, userId.Value);
         await db.Database.ExecuteSqlInterpolatedAsync(
             $@"SELECT 1 FROM ""NameModerationCases"" WHERE ""Id"" = {caseId} FOR UPDATE");
         return await db.NameModerationCases.AsNoTracking().SingleOrDefaultAsync(c => c.Id == caseId);
     }
-
-    private Task LockUserAsync(Guid userId) =>
-        db.Database.ExecuteSqlInterpolatedAsync($@"SELECT 1 FROM ""Users"" WHERE ""Id"" = {userId} FOR UPDATE");
 
     private Task ResolveAsync(Guid caseId, ModerationCaseStatus status, string moderatorUid, DateTime now, DateTime? hiddenAt) =>
         db.NameModerationCases.Where(c => c.Id == caseId).ExecuteUpdateAsync(s => s

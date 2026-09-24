@@ -18,7 +18,7 @@ namespace MyLoop.Api.Tests;
 
 /// <summary>
 /// DR-002b / #190 — name reports, auto-hide and moderator decisions against real Postgres: the
-/// flow depends on a row lock (FOR UPDATE), ON CONFLICT upserts and conditional updates, none of
+/// flow depends on a row lock (FOR NO KEY UPDATE), ON CONFLICT upserts and conditional updates, none of
 /// which an in-memory provider reproduces.
 /// </summary>
 public class ModerationFlowTests : IAsyncLifetime
@@ -184,7 +184,7 @@ public class ModerationFlowTests : IAsyncLifetime
         var target = await SeedUser("Rude Name");
         var reporters = await SeedUsers(6);
 
-        // Each report on its own context/connection, all at once — the FOR UPDATE lock must
+        // Each report on its own context/connection, all at once — the row lock must
         // serialise them so the threshold is neither missed nor crossed twice.
         await Task.WhenAll(reporters.Select(r => Report(r, target)));
 
@@ -194,6 +194,20 @@ public class ModerationFlowTests : IAsyncLifetime
         Assert.Equal(1, _alerts.Count(ModerationAlertKind.AutoHidden));
         await using var db = NewDb();
         Assert.Equal(1, await db.NameModerationCases.CountAsync(c => c.UserId == target));
+    }
+
+    [Fact]
+    public async Task Two_players_reporting_each_other_at_once_do_not_deadlock()
+    {
+        // Each report locks its target's row, and its NameReports insert takes a foreign-key
+        // KEY SHARE lock on the reporter's row. With FOR UPDATE those two conflict, so A→B racing
+        // B→A deadlocked (40P01); this context has no retrying strategy to hide that.
+        for (var round = 0; round < 5; round++)
+        {
+            var pair = await SeedUsers(2);
+            var outcomes = await Task.WhenAll(Report(pair[0], pair[1]), Report(pair[1], pair[0]));
+            Assert.All(outcomes, o => Assert.Equal(NameReportOutcome.Accepted, o));
+        }
     }
 
     [Fact]
