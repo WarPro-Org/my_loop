@@ -139,12 +139,7 @@ public static class NameModeration
     private static bool MatchesBlocklist(string normalizedName)
     {
         var words = SplitWords(Fold(normalizedName));
-        // Exception words (real names/places that contain a severe term) are skipped, so they
-        // also pass inside longer names ("Scunthorpe United", "Harshit Kumar").
-        var candidates = words
-            .Where(w => !NameBlocklist.Exceptions.Contains(w))
-            .Concat(SpelledOutRuns(words));
-        if (candidates.Any(c => IsWholeWordMatch(c) || ContainsSevereTerm(c))) return true;
+        if (WordCandidates(words).Any(c => IsWholeWordMatch(c) || ContainsSevereTerm(c))) return true;
 
         // Leetspeak turns a trailing digit into a letter ("Nazi1" -> "nazii"), so whole words are
         // also read from the digit-preserving fold with digits and x wrappers trimmed.
@@ -154,6 +149,26 @@ public static class NameModeration
         if (trimmedReadings.Any(IsWholeWordMatch)) return true;
 
         return words.Zip(words.Skip(1)).Any(pair => IsBlockedPair(pair.First, pair.Second));
+    }
+
+    /// <summary>
+    /// Words and spelled-out runs to match one at a time. Exception words (real names/places that
+    /// contain a severe term) are skipped, so they also pass inside longer names ("Scunthorpe
+    /// United", "Scunthorpe2"). Digits leetspeak leaves unmapped (2, 6, 8, 9) would otherwise
+    /// split a term inside a word ("Fu2ck", "Nig9ger", "Na2zi"), so each candidate is also read
+    /// with its digits removed.
+    /// </summary>
+    private static IEnumerable<string> WordCandidates(string[] words)
+    {
+        // Exceptions hold no digits, so this also skips the exception word itself.
+        var candidates = words
+            .Where(w => !NameBlocklist.Exceptions.Contains(WithoutDigits(w)))
+            .Concat(SpelledOutRuns(words))
+            .ToList();
+        var digitFreeReadings = candidates
+            .Select(WithoutDigits)
+            .Where(r => r.Length > 0 && !NameBlocklist.Exceptions.Contains(r));
+        return candidates.Concat(digitFreeReadings);
     }
 
     /// <summary>
@@ -178,6 +193,9 @@ public static class NameModeration
             ? joined.StartsWith(term, StringComparison.Ordinal)
             : joined.EndsWith(term, StringComparison.Ordinal));
     }
+
+    private static string WithoutDigits(string foldedWord) =>
+        string.Concat(foldedWord.Where(c => !char.IsAsciiDigit(c)));
 
     private static bool IsSpelledOutToken(string word) =>
         word.Length <= GameConstants.MaxSpelledOutTokenLength;

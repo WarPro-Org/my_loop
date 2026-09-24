@@ -68,6 +68,23 @@ public class NameModerationTests
     [InlineData("xXcoonXx")]
     [InlineData("KKK")]                // hand-added whole-word term
     [InlineData("K-K-K")]
+    [InlineData("Fu2ck")]              // #193 review round 4: a digit leetspeak leaves unmapped
+    [InlineData("F2uck")]              // (2, 6, 8, 9) splitting a term inside a word
+    [InlineData("Nig9ger")]
+    [InlineData("Na2zi")]              // whole-word tier read with the digit removed
+    [InlineData("F-2-u-c-k")]          // digit inside a spelled-out run
+    [InlineData("Bullshit")]           // common compounds of whole-word-only terms
+    [InlineData("Shithead")]
+    [InlineData("Shitface")]
+    [InlineData("Shithole")]
+    [InlineData("Horseshit")]
+    [InlineData("Dipshit")]
+    [InlineData("Shitbag")]
+    [InlineData("Dumbass")]
+    [InlineData("Asshat")]
+    [InlineData("Asswipe")]
+    [InlineData("Douchebag")]
+    [InlineData("Big Bullsh1t")]
     public void Offensive_or_reserved_names_are_rejected(string name) =>
         Assert.Equal("This name isn't allowed", _validation.ValidateDisplayName(name));
 
@@ -128,6 +145,10 @@ public class NameModerationTests
     [InlineData("Xavier")]
     [InlineData("Maddox")]
     [InlineData("Max2")]
+    [InlineData("K Ike")]              // initial + Ike (Igbo surname): reviewed join exception
+    [InlineData("Scunthorpe2")]        // exception word still skipped with its digit removed
+    [InlineData("Harshit 2")]
+    [InlineData("Jean-Luc 22")]
     public void Real_names_and_innocent_words_are_accepted(string name) =>
         Assert.Null(_validation.ValidateDisplayName(name));
 

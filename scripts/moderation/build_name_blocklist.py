@@ -68,6 +68,10 @@ CORE = [
     "arschloch", "hurensohn", "fotze", "schlampe", "wichser", "connard", "salope", "encule",
     "putain", "cabron", "pendejo", "kurwa", "cazzo", "stronzo", "vaffanculo", "caralho",
     "klootzak",
+    # Common English compounds of whole-word-only terms (shit, ass): each is corpus-safe, while
+    # the bare term is not (Harshit, Cassandra). Not dickhead: "Dick Head" is a real-name pair.
+    "bullshit", "horseshit", "dipshit", "shithead", "shitface", "shithole", "shitbag", "dumbass",
+    "asshat", "asswipe", "douchebag",
 ]
 # Whole-word terms added by hand: English words that are insults/sexual terms (the ordinary-word
 # filter would otherwise drop them), and hate terms LDNOOBW lacks (kkk).
@@ -139,8 +143,8 @@ JOIN_EXCEPTIONS = [
     # whole-word tier: a first name + surname initial, or an initial + name
     "ana l", "chin k", "chu j", "coit o", "conn e", "debi l", "fae n", "fu k", "hu j", "ku k",
     "ku t", "lu l", "l ul", "pall e", "sik i", "suk a", "sy f", "vogel n", "wan k",
-    "c agata", "c agna", "f icken", "k utas", "m erda", "m erde", "p ede", "p uta", "p ute",
-    "s let",
+    "c agata", "c agna", "f icken", "k ike", "k utas", "m erda", "m erde", "p ede", "p uta",
+    "p ute", "s let",
 ]
 # Corpus pairs matching rule 3 still refuses on purpose: the pair reads as the term itself and
 # is not a plausible real name. An affected player's remedy is the report/restore review.
@@ -148,7 +152,7 @@ ACCEPTED_JOIN_REFUSALS = [
     "b itch", "bast ard", "beaner s", "black cock", "bull dyke", "conn ard", "dry hump",
     "mari con", "nee keri", "rosy palm", "snow balling", "tongue ina", "va gina", "wan ker",
     "white power",
-    "as s", "cock s", "f ag", "horn y", "k ike", "mil f", "rap e", "t wat",
+    "as s", "cock s", "f ag", "horn y", "mil f", "rap e", "t wat",
 ]
 
 EXPLICIT = {"ł": "l", "ø": "o", "đ": "d", "ß": "ss", "æ": "ae", "œ": "oe", "ı": "i", "ð": "d",

@@ -70,14 +70,15 @@ Terms live in `Constants/NameBlocklist.g.cs` (generated). A name is blocked if a
 
 | # | Rule | Example refused | Example accepted |
 |---|---|---|---|
-| R1 | A **severe** term occurs inside one word (words in `Exceptions` are skipped) | Fuckface, N1gg3r | Scunthorpe United, Thomas Lutz |
-| R2 | A **whole-word** or **reserved** term equals one word | Ass, Big Ass, The Admin | Cassandra, Badminton |
+| R1 | A **severe** term occurs inside one word, also read with the digits leetspeak leaves unmapped (2, 6, 8, 9) removed (words in `Exceptions` are skipped, in either reading) | Fuckface, N1gg3r, Fu2ck, Nig9ger | Scunthorpe United, Thomas Lutz |
+| R2 | A **whole-word** or **reserved** term equals one word, also with its digits removed | Ass, Big Ass, The Admin, Na2zi | Cassandra, Badminton |
 | R3 | Each maximal run of letters is joined and checked by R1 and R2 | s-h-i-t, A-s-s, K-K-K | Ana L, J K Lee |
 | R4 | A **whole-word** or **reserved** term equals a word from the digit-preserving fold with digits trimmed from either end (before or after leetspeak), or with an x wrapper (`x` at both ends, length ≥ 3) trimmed | Admin2, 4dmin2, Nazi1, Coon2, xXnaziXx | Max, Rex, Xander, Alex, Maddox |
 | R5 | `myloop` anywhere in the concatenated digit-preserving fold | MyLoopSupport, my_loop | — |
 | R6 | Two **adjacent** words, unless the pair is in `JoinExceptions`: **(a)** their concatenation equals a severe term; **(b)** exactly one is a letter and the concatenation equals a whole-word term; **(c)** exactly one is a letter and a severe term of ≥ `GameConstants.MinSpanningSevereTermLength` (5) chars is a prefix (letter first) or suffix (letter last) of the concatenation | Nig Ger, F uck, Fuc K, B itch, S hit, Shi T, Fa G, N iggerboy | Deb Allen, S Luther, P Ornstein, Chin K |
 
-Not caught (accepted): a term split into two-letter chunks ("fu ck"), a letter + word whose
+Not caught (accepted): a **whole-word**-tier term split into two multi-letter words ("Na Zi",
+"Sh It"; R6b needs one side to be a single letter, or two real name parts would form terms), a letter + word whose
 concatenation contains a 4-letter severe term plus more letters ("S lutty"), and a term split
 across three or more non-letter words. The report path is the backstop.
 
@@ -102,13 +103,16 @@ Tiers are therefore derived, not hand-sorted:
 - **Dropped** = terms that *are* common names (dick, regina, anita) and identity terms (gay,
   lesbian, bisexual, trans, …) — self-description is never blocked; slurs are.
 - Result: 898 severe, 383 whole-word, 7 exceptions. (After review round 3: 898 severe,
-  384 whole-word — `kkk` added — 7 exceptions, 50 join exceptions.)
+  384 whole-word — `kkk` added — 7 exceptions, 50 join exceptions. After round 4: 909 severe —
+  11 compounds added to `CORE`, see below — and 51 join exceptions.)
 
 **Review fixes (#193 agent review).** The first corpus was Anglo-heavy, and `shit`/`fuk` blocked
 Harshit, Rakshit, Kshitij, Ashita, Fukuda, Fukuoka…, which matters for the beta's
 Bangalore/Mumbai/Tokyo players:
-- `shit` and `fuk` are whole-word only. Compounds such as *bullshit* and *shithead* stay
-  substring matches.
+- `shit` and `fuk` are whole-word only, so compounds are caught only when listed. Round 4 added
+  common ones to `CORE` as severe substrings: *bullshit, horseshit, dipshit, shithead, shitface,
+  shithole, shitbag, dumbass, asshat, asswipe, douchebag*. *dickhead* is left out: the generator
+  flags "Dick Head" as a real first name + surname pair.
 - The generator adds a curated South and East Asian name list and **fails** if any severe term
   hits a corpus name not covered by an exception.
 - Exceptions apply **per word** (removed before matching), so "Scunthorpe United" passes.
@@ -130,8 +134,9 @@ Bangalore/Mumbai/Tokyo players:
   "Ana L" (an+al) is no longer refused. "my_loop" / "My Loop" are still refused by the brand
   rule (`myloop` anywhere in the concatenation, reserved tier only).
 - **The limit is 1, not 2.** At 2, real two-letter name parts join into listed terms (Si Ki →
-  *siki*, Su Ka → *suka*, As Lu Ty → *slut*). Accepted cost: spellings that split a word into
-  two-letter chunks ("fu ck") are not caught; the report path is the backstop.
+  *siki*, Su Ka → *suka*, As Lu Ty → *slut*). Accepted cost (after round 3, rule R6): a
+  whole-word-tier term split into two multi-letter words ("Na Zi", "Sh It") is not caught; a
+  severe term split that way ("Fu Ck") is, by R6a. The report path is the backstop.
 - **Generator check.** (*Superseded in round 3 — the matcher now does join adjacent pairs, so
   the generator also checks corpus pairs; see below.*) Because the matcher never joins two real
   name parts, checking each corpus name on its own is sufficient; a first × surname pair check
@@ -171,6 +176,16 @@ Bangalore/Mumbai/Tokyo players:
   before the whole-word check. R4 runs the reserved-word readings through the whole-word tier
   too. No corpus name is x-wrapped, so the trim adds no real-name refusals.
 - **`kkk`** added to the whole-word tier via the generator's `KEEP_WHOLE_WORD` list.
+
+**Review fixes, round 4 (#193).**
+- **Unmapped digits split a term inside a word.** Leetspeak maps only 0/1/3/4/5/7, so "Fu2ck",
+  "F2uck", "Nig9ger" and "Na2zi" passed. R1 and R2 now also read each word and spelled-out run
+  with its remaining digits removed (skipping `Exceptions` in that reading too). No corpus name
+  contains a digit, so this adds no real-name refusals.
+- **Common compounds** (*bullshit*, *shithead*, …) added to `CORE`; see "Review fixes" above.
+- **"K Ike"** moved from `ACCEPTED_JOIN_REFUSALS` to `JOIN_EXCEPTIONS`: Ike is a common Igbo
+  surname and first name, so an initial + Ike is a plausible real name. Accepted cost: "K ike"
+  is not caught by R6b; "Kike" and "K-i-k-e" still are.
 
 **Accepted false positives (whole-word tier).** These whole-word terms are also real names, and
 are kept on purpose because the slur or sexual reading is the common one in an English-language
