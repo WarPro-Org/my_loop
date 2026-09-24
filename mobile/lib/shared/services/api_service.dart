@@ -299,24 +299,37 @@ class ApiService {
   }
 
   /// Batch step claim — sends N queued GPS points in a single transaction.
-  /// Returns the server response or null on network failure.
+  /// Returns the server response, or null on network failure or when
+  /// [cancelToken] is cancelled.
   Future<BatchResult?> claimBatchStep({
     required String userId,
     required String localDate,
     required String walkSessionId,
     required List<QueuedStepPoint> points,
+    CancelToken? cancelToken,
   }) async {
     try {
-      final response = await _dio.post('/api/claims/batch-step', data: {
-        'userId': userId,
-        'localDate': localDate,
-        // One walk = one Claim (#56): all of a walk's batches share this id.
-        'walkSessionId': walkSessionId,
-        'points': points.map((p) => p.toJson()).toList(),
-      });
+      final response = await _dio.post(
+        '/api/claims/batch-step',
+        data: {
+          'userId': userId,
+          'localDate': localDate,
+          // One walk = one Claim (#56): all of a walk's batches share this id.
+          'walkSessionId': walkSessionId,
+          'points': points.map((p) => p.toJson()).toList(),
+        },
+        cancelToken: cancelToken,
+      );
       final data = response.data as Map<String, dynamic>;
       return BatchResult.fromJson(data);
     } on DioException catch (e) {
+      // Cancelled by the drain on sign-out (#110): not a server verdict, so it
+      // must never be read as a permanent rejection that drops points. Returning
+      // null takes the drain's transient branch, which leaves the queue alone.
+      if (CancelToken.isCancel(e)) {
+        _log.fine('Batch step claim cancelled');
+        return null;
+      }
       // A 4xx is a PERMANENT rejection (bad coordinates, anti-cheat speed
       // violation, etc.) — retrying the identical batch will always fail, so
       // signal the caller to drop these points and surface the reason rather

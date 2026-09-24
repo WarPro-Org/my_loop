@@ -77,9 +77,9 @@ class NotificationNotifier extends Notifier<List<AppNotification>> {
 
   Future<void> _pendingWrite = Future<void>.value();
 
-  /// Completes once every write queued so far has hit disk. Tests await this
-  /// instead of guessing at a delay; nothing in the app needs it.
-  @visibleForTesting
+  /// Completes once every write queued so far has hit disk. The session
+  /// teardown awaits it before disposing this notifier (a queued write reads
+  /// `ref`); tests await it instead of guessing at a delay.
   Future<void> get pendingWrite => _pendingWrite;
 
   /// Queues a write behind any still in flight. Without the chain two mutations

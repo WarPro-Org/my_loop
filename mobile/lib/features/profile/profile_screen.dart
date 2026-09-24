@@ -1,17 +1,12 @@
 /// Profile screen - displays player identity, stats, and settings.
 library;
 
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:myloop/app/theme.dart';
-import 'package:myloop/shared/services/api_service.dart';
-import 'package:myloop/shared/services/auth_service.dart';
-import 'package:myloop/shared/services/game_state_cache.dart';
-import 'package:myloop/shared/services/profile_cache.dart';
-import 'package:myloop/shared/services/territory_cache.dart';
-import 'package:myloop/shared/services/territory_realtime_service.dart';
+import 'package:myloop/features/auth/session_end_ui.dart';
+import 'package:myloop/features/auth/user_session_teardown.dart';
 import 'package:myloop/shared/services/user_state.dart';
 import 'package:myloop/shared/state/profile_slice.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
@@ -89,13 +84,8 @@ class ProfileScreen extends ConsumerWidget {
                 label: 'Sign Out',
                 iconColor: AppColors.red,
                 onTap: () async {
-                  ref.read(userProfileProvider.notifier).clear();
-                  ref.invalidate(profileSliceProvider);
-                  // The hub connection is app-lifecycle-scoped (#102) — logout
-                  // is the one place it must actually be torn down.
-                  await ref.read(territoryRealtimeProvider).disconnect();
-                  await ref.read(authServiceProvider).signOut();
-                  if (context.mounted) context.go('/login');
+                  await SessionEndUi.of(context)
+                      .signOut(ref.read(userSessionTeardownProvider));
                 },
               ),
               _SettingsTile(
@@ -125,23 +115,10 @@ class ProfileScreen extends ConsumerWidget {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
+              final ui = SessionEndUi.of(context);
+              final teardown = ref.read(userSessionTeardownProvider);
               Navigator.pop(ctx);
-              final profile = ref.read(userProfileProvider);
-              final api = ref.read(apiServiceProvider);
-              final uid = profile.userId;
-              if (uid == null) return;
-              ref.invalidate(profileSliceProvider);
-              await ProfileCache.clear();
-              await GameStateCache.clear();
-              await TerritoryCache.clear();
-              await ref.read(territoryRealtimeProvider).disconnect();
-              try {
-                await api.deleteAccount(uid);
-                await FirebaseAuth.instance.currentUser?.delete();
-              } catch (_) {
-                await FirebaseAuth.instance.signOut();
-              }
-              if (context.mounted) context.go('/login');
+              await ui.deleteAccount(teardown);
             },
             child: Text('Delete', style: TextStyle(color: Colors.red.shade900, fontWeight: FontWeight.w700)),
           ),

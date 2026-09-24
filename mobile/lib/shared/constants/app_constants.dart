@@ -63,6 +63,23 @@ class AppConstants {
   static const String offlineStartJourneyMessage =
       'No internet connection. You need to be online to start a journey and capture hexes.';
 
+  // --- Ending a session (#110) ---
+  /// Shown when the server could not delete the account. The user stays signed
+  /// in, so they are never told the account is gone while the server keeps it
+  /// (App Store Guideline 5.1.1(v)).
+  static const String deleteAccountFailedMessage =
+      "Couldn't delete your account — try again.";
+
+  /// Shown when the Google/Firebase sign-out throws after the app's own
+  /// session state was already cleared.
+  static const String signOutFailedMessage =
+      "Couldn't finish signing out — try again.";
+
+  /// Screen-reader labels for the modal progress barrier shown while sign-out
+  /// or account deletion tears the session down.
+  static const String signingOutLabel = 'Signing out';
+  static const String deletingAccountLabel = 'Deleting account';
+
   // --- Offline messaging (issue #36) ---
   // Shown when a modal/screen cannot reach the backend, so the user sees an
   // explicit "you're offline" state instead of a misleading empty/zero one.

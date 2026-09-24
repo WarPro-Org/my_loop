@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/batch_drain_service.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
@@ -31,11 +34,44 @@ class _FakeApi extends ApiService {
     required String localDate,
     required String walkSessionId,
     required List<QueuedStepPoint> points,
+    CancelToken? cancelToken,
   }) async {
     calls++;
     return behaviour(points);
   }
 }
+
+/// Transport whose server never answers, so a request stays in flight until
+/// it is cancelled — an offline or very slow network.
+class _HangingAdapter implements HttpClientAdapter {
+  final reached = Completer<void>();
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    if (!reached.isCompleted) reached.complete();
+    return Completer<ResponseBody>().future;
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// The real [ApiService] over [adapter], so a cancel travels the production
+/// Dio path into claimBatchStep's `DioException` branch.
+ApiService _apiOver(_HangingAdapter adapter) {
+  final dio = Dio(BaseOptions(baseUrl: 'http://test.local'))..httpClientAdapter = adapter;
+  final api = ApiService(dio: dio);
+  // Drop ApiService's Firebase auth interceptor: no Firebase app in unit tests.
+  dio.interceptors.removeWhere((i) => i is InterceptorsWrapper);
+  return api;
+}
+
+/// Generous bound for work that must not wait on the network.
+const _prompt = Duration(seconds: 5);
 
 /// Builds a response that ACKs every submitted point (removes them from the queue).
 BatchResult _ackAll(List<QueuedStepPoint> batch) => BatchResult.fromJson({
@@ -66,7 +102,7 @@ void main() {
 
   Future<StepClaimQueue> queueWith(int count, {String session = 'walk-1'}) async {
     final q = StepClaimQueue();
-    await q.init();
+    await q.init('u1');
     for (var i = 0; i < count; i++) {
       await q.enqueue(_pt('p$i', session: session));
     }
@@ -170,5 +206,54 @@ void main() {
     expect(svc.isInBackoff, isTrue);
     expect(q.length, 10, reason: 'nothing acked, points preserved');
     svc.dispose();
+  });
+
+  // #110 round 2: sign-out cancels the in-flight request instead of waiting it out.
+  test('claimBatchStep returns null for a cancelled request, never a rejection', () async {
+    final adapter = _HangingAdapter();
+    final api = _apiOver(adapter);
+    final cancel = CancelToken();
+    final previousLevel = Logger.root.level;
+    Logger.root.level = Level.ALL;
+    addTearDown(() => Logger.root.level = previousLevel);
+    final apiLogs = <LogRecord>[];
+    final logSub = Logger.root.onRecord.where((r) => r.loggerName == 'API').listen(apiLogs.add);
+    addTearDown(logSub.cancel);
+
+    final pending = api.claimBatchStep(
+      userId: 'u1',
+      localDate: '2026-06-15',
+      walkSessionId: 'walk-1',
+      points: [_pt('p0')],
+      cancelToken: cancel,
+    );
+    await adapter.reached.future;
+    cancel.cancel();
+
+    expect(await pending.timeout(_prompt), isNull);
+    // It took the DioException cancel branch: no transient-failure or
+    // unexpected-error warning, just the fine-level cancel record.
+    expect(apiLogs.where((r) => r.level >= Level.WARNING), isEmpty);
+    expect(apiLogs.where((r) => r.level == Level.FINE), hasLength(1));
+  });
+
+  test('dispose(cancelInFlight) ends an unanswered batch promptly and leaves the queue untouched',
+      () async {
+    final q = await queueWith(5);
+    final ids = q.peek(5).map((p) => p.clientId).toList();
+    final adapter = _HangingAdapter();
+    final svc = BatchDrainService(queue: q, api: _apiOver(adapter), userId: 'u1');
+    final rejections = <String>[];
+    svc.onRejection.listen(rejections.add);
+
+    svc.notifyEnqueue(); // at threshold → drain starts and hangs on the network
+    await adapter.reached.future;
+    await svc.dispose(cancelInFlight: true).timeout(_prompt);
+
+    expect(q.peek(5).map((p) => p.clientId), ids, reason: 'memory untouched');
+    final reopened = StepClaimQueue();
+    await reopened.init('u1');
+    expect(reopened.peek(5).map((p) => p.clientId), ids, reason: 'disk == memory');
+    expect(rejections, isEmpty, reason: 'a cancel is not a server rejection');
   });
 }
