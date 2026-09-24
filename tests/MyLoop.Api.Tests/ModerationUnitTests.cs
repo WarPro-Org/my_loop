@@ -251,6 +251,23 @@ public class ModerationUnitTests
         Assert.Equal(status, Assert.IsAssignableFrom<IStatusCodeActionResult>(result).StatusCode);
     }
 
+    [Theory]
+    [InlineData(true, 204)]
+    [InlineData(false, 404)]
+    public async Task Unlock_passes_the_moderator_uid_for_the_audit_log(bool found, int status)
+    {
+        var userId = Guid.NewGuid();
+        var moderation = new Mock<IModerationService>();
+        moderation.Setup(m => m.UnlockNameAsync(userId, ModeratorUid)).ReturnsAsync(found);
+        var currentUser = new Mock<ICurrentUser>();
+        currentUser.Setup(c => c.FirebaseUid).Returns(ModeratorUid);
+
+        var result = await new ModerationController(moderation.Object, currentUser.Object).UnlockName(userId);
+
+        Assert.Equal(status, Assert.IsAssignableFrom<IStatusCodeActionResult>(result).StatusCode);
+        moderation.Verify(m => m.UnlockNameAsync(userId, ModeratorUid), Times.Once);
+    }
+
     // ---- Rename lock (PATCH /api/users/{id}) ---------------------------------------------
     // The checks themselves run in UserService's locked transaction (ModerationFlowTests); the
     // controller only maps the outcome.

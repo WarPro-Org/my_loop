@@ -35,7 +35,7 @@ public interface IModerationService
     Task<ModerationDecisionOutcome> RestoreAsync(Guid caseId, string moderatorUid);
 
     /// <summary>Lets a strike-locked player rename again. False when the user does not exist.</summary>
-    Task<bool> UnlockNameAsync(Guid userId);
+    Task<bool> UnlockNameAsync(Guid userId, string moderatorUid);
 
     /// <summary>Re-checks every visible name against the current blocklist and hides matches.</summary>
     Task<RescanResponse> RescanAsync(CancellationToken cancellationToken);

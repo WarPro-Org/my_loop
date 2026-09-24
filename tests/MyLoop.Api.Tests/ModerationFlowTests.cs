@@ -605,7 +605,7 @@ public class ModerationFlowTests : IAsyncLifetime
 
         Assert.Equal(ProfileUpdateStatus.NameLocked, await Rename(target, "Anything"));
         await using (var db = NewDb())
-            Assert.True(await Moderation(db).UnlockNameAsync(target));
+            Assert.True(await Moderation(db).UnlockNameAsync(target, ModeratorUid));
         Assert.Null((await LoadUser(target)).NameLockedAt);
 
         // Unlocked, the player may rename — but not back to a name a moderator removed.

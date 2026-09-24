@@ -112,12 +112,13 @@ public sealed class ModerationService(
             return ModerationDecisionOutcome.Done;
         });
 
-    public async Task<bool> UnlockNameAsync(Guid userId)
+    public async Task<bool> UnlockNameAsync(Guid userId, string moderatorUid)
     {
-        var exists = await db.Users.AnyAsync(u => u.Id == userId);
-        if (!exists) return false;
-        await db.Users.Where(u => u.Id == userId)
+        var rows = await db.Users.Where(u => u.Id == userId)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.NameLockedAt, (DateTime?)null));
+        if (rows == 0) return false;
+        // The audit trail, like confirm and restore: who let this player rename again.
+        logger.LogInformation("Moderator {ModeratorUid} unlocked renaming for user {UserId}", moderatorUid, userId);
         return true;
     }
 

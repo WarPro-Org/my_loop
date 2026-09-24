@@ -38,7 +38,7 @@ public class ModerationController(IModerationService moderation, ICurrentUser cu
 
     [HttpPost("users/{userId:guid}/unlock-name")]
     public async Task<IActionResult> UnlockName([FromRoute] Guid userId) =>
-        await moderation.UnlockNameAsync(userId) ? NoContent() : NotFound();
+        await moderation.UnlockNameAsync(userId, currentUser.FirebaseUid!) ? NoContent() : NotFound();
 
     /// <summary>Re-checks every visible name against the current blocklist; run after updating it.</summary>
     [HttpPost("rescan")]
