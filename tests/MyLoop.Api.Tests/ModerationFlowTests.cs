@@ -741,12 +741,23 @@ public class ModerationFlowTests : IAsyncLifetime
             await db.Database.ExecuteSqlRawAsync(@"
                 ALTER TABLE ""NameReports"" DROP CONSTRAINT ""FK_NameReports_Users_ReporterId"";
                 ALTER TABLE ""NameReports"" DROP CONSTRAINT ""FK_NameReports_Users_ReportedUserId"";
-                ALTER TABLE ""NameModerationCases"" DROP CONSTRAINT ""FK_NameModerationCases_Users_UserId"";");
+                ALTER TABLE ""NameModerationCases"" DROP CONSTRAINT ""FK_NameModerationCases_Users_UserId"";
+                ALTER TABLE ""UserBlocks"" DROP CONSTRAINT ""FK_UserBlocks_Users_BlockerId"";
+                ALTER TABLE ""UserBlocks"" DROP CONSTRAINT ""FK_UserBlocks_Users_BlockedId"";");
         }
         var target = await SeedUser("Rude Name");
-        var other = (await SeedUsers(1))[0];
+        var others = await SeedUsers(2);
+        var other = others[0];
+        var bystander = others[1];
         await Report(other, target);
         await Report(target, other);
+        await using (var db = NewDb())
+        {
+            var blocks = new BlockService(db);
+            Assert.Equal(BlockOutcome.Done, await blocks.BlockAsync(target, other));
+            Assert.Equal(BlockOutcome.Done, await blocks.BlockAsync(other, target));
+            Assert.Equal(BlockOutcome.Done, await blocks.BlockAsync(other, bystander));
+        }
 
         await using (var db = NewDb())
             Assert.True(await Users(db).DeleteAccount(target));
@@ -755,5 +766,7 @@ public class ModerationFlowTests : IAsyncLifetime
         Assert.False(await check.NameReports.AnyAsync(r => r.ReporterId == target || r.ReportedUserId == target));
         Assert.False(await check.NameModerationCases.AnyAsync(c => c.UserId == target));
         Assert.True(await check.NameModerationCases.AnyAsync(c => c.UserId == other)); // not theirs to delete
+        Assert.False(await check.UserBlocks.AnyAsync(b => b.BlockerId == target || b.BlockedId == target));
+        Assert.True(await check.UserBlocks.AnyAsync(b => b.BlockerId == other && b.BlockedId == bystander));
     }
 }

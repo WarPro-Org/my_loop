@@ -566,6 +566,11 @@ The same address must be the App Store Connect Support URL/contact.
   - Contact Support never fails silently: with no mail app it shows the address, and a build
     without `SUPPORT_EMAIL` says so and logs a warning. The build-time guard belongs with #181's
     fail-closed release config (follow-up once both merge).
+- **Account deletion purges `UserBlocks` explicitly, both directions** (blocks the player made and
+  blocks against them), alongside PR 2's `NameReports` / `NameModerationCases` purge in
+  `UserService.DeleteUserData`; the FK cascades remain a second line.
+- **Block-list cache is cleared by `UserSessionTeardown.clearUserBoundState`**, the single
+  sign-out / account-deletion path on master, not by each screen.
 - **Found, out of scope:** the login screen's Terms/Privacy links point at the dev ngrok tunnel
   (`login_screen.dart:154,160`) — dead links in a production build, and an App Store review risk.
 

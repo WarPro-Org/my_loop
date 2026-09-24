@@ -34,6 +34,7 @@ import 'package:myloop/features/journey/journey_controller.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/auth_service.dart';
 import 'package:myloop/shared/services/batch_drain_service.dart';
+import 'package:myloop/shared/services/block_list_cache.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/step_claim_queue.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
@@ -621,5 +622,26 @@ void main() {
     expect(api.deletedAccounts, [_userA]);
     expect(auth.signOutCalls, 1);
     expect(container.read(userProfileProvider).userId, isNull);
+  });
+
+  // ── #190: the block list is user-bound local state too ──
+
+  test('sign-out clears the cached block list so the next account cannot inherit it', () async {
+    signIn(_userA);
+    await BlockListCache.save(_userA, {'blocked-1'});
+    expect(await BlockListCache.load(_userA), {'blocked-1'});
+
+    await session().signOut();
+
+    expect(await BlockListCache.load(_userA), isNull);
+  });
+
+  test('deleting the account clears the cached block list', () async {
+    signIn(_userA);
+    await BlockListCache.save(_userA, {'blocked-1'});
+
+    expect(await session().deleteAccount(), isTrue);
+
+    expect(await BlockListCache.load(_userA), isNull);
   });
 }
