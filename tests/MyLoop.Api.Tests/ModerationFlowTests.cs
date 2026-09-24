@@ -52,15 +52,15 @@ public class ModerationFlowTests : IAsyncLifetime
     private AppDbContext NewDb() =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseNpgsql(_conn).Options);
 
-    private static IModeratorDirectory Moderators()
+    private static IModeratorDirectory Moderators(params string[] uids)
     {
         var monitor = new Mock<IOptionsMonitor<ModerationOptions>>();
-        monitor.Setup(m => m.CurrentValue).Returns(new ModerationOptions { ModeratorUids = [ModeratorUid] });
+        monitor.Setup(m => m.CurrentValue).Returns(new ModerationOptions { ModeratorUids = uids });
         return new ModeratorDirectory(monitor.Object);
     }
 
-    private NameReportService Reports(AppDbContext db) =>
-        new(db, Moderators(), _alerts, NullLogger<NameReportService>.Instance);
+    private NameReportService Reports(AppDbContext db, bool withModerator = true) =>
+        new(db, withModerator ? Moderators(ModeratorUid) : Moderators(), _alerts, NullLogger<NameReportService>.Instance);
 
     private ModerationService Moderation(AppDbContext db) =>
         new(db, _alerts, NullLogger<ModerationService>.Instance);
@@ -226,7 +226,46 @@ public class ModerationFlowTests : IAsyncLifetime
 
         Assert.Null((await LoadUser(moderator)).NameHiddenAt);
         await using var db = NewDb();
-        Assert.False(await db.NameReports.AnyAsync(r => r.ReportedUserId == moderator));
+        Assert.False(await db.NameModerationCases.AnyAsync(c => c.UserId == moderator));
+        Assert.Empty(await Moderation(db).ListCasesAsync([ModerationCaseStatus.Open, ModerationCaseStatus.AutoHidden]));
+        // Recorded, so each one spent its reporter's daily budget like any other report.
+        Assert.Equal(GameConstantsThreshold, await db.NameReports.CountAsync(r => r.ReportedUserId == moderator));
+        Assert.Empty(_alerts.Raised);
+    }
+
+    [Fact]
+    public async Task Reporting_a_moderator_spends_the_daily_budget_like_any_report()
+    {
+        // The probe: at limit - 1, report a candidate, then a fresh player. If the candidate's report
+        // cost nothing, the second report is accepted and the candidate is exposed as a moderator.
+        var reporter = await SeedUser("Reporter");
+        foreach (var target in await SeedUsers(MyLoop.Api.Constants.GameConstants.MaxNameReportsPerReporterPerDay - 1))
+            Assert.Equal(NameReportOutcome.Accepted, await Report(reporter, target));
+        var moderator = await SeedUser("Staff Person", ModeratorUid);
+        var player = (await SeedUsers(1))[0];
+
+        Assert.Equal(NameReportOutcome.Ignored, await Report(reporter, moderator));
+        Assert.Equal(NameReportOutcome.DailyLimitReached, await Report(reporter, player));
+    }
+
+    [Fact]
+    public async Task Reports_filed_while_a_player_moderated_never_count_after_they_stop()
+    {
+        var formerModerator = await SeedUser("Staff Person", ModeratorUid);
+        foreach (var reporter in await SeedUsers(GameConstantsThreshold))
+            await Report(reporter, formerModerator);
+
+        // Removed from the allowlist: one new report opens a case, and the earlier reports are
+        // outside its window, so the name is not hidden and the queue shows one report.
+        var newReporter = (await SeedUsers(1))[0];
+        await using (var db = NewDb())
+            Assert.Equal(NameReportOutcome.Accepted,
+                await Reports(db, withModerator: false).ReportAsync(newReporter, formerModerator, NameReportReason.Other));
+
+        Assert.Equal("Staff Person", (await LoadUser(formerModerator)).DisplayName);
+        await using var check = NewDb();
+        var entry = Assert.Single(await Moderation(check).ListCasesAsync([ModerationCaseStatus.Open]));
+        Assert.Equal(1, entry.ReportCount);
     }
 
     [Fact]
@@ -396,7 +435,7 @@ public class ModerationFlowTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Renaming_back_to_a_hidden_name_in_another_case_is_refused()
+    public async Task Renaming_back_to_a_hidden_name_in_another_letter_case_is_refused()
     {
         var target = await SeedUser("Rude Name");
         await HideByReports(target);

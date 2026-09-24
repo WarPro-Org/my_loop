@@ -35,18 +35,13 @@ public sealed class NameReportService(
             .Select(u => new { u.FirebaseUid })
             .SingleOrDefaultAsync();
         if (target is null) return NameReportOutcome.NotFound;
-        // The limit is checked before the moderator test: otherwise, at the limit, every target
-        // would answer 429 except a moderator (204), revealing who moderates (#194 review).
-        if (await CountReportsTodayAsync(reporterId, DateTime.UtcNow) >= GameConstants.MaxNameReportsPerReporterPerDay)
-            return NameReportOutcome.DailyLimitReached;
-        // Answered exactly like an accepted report, so the endpoint never reveals who moderates.
-        if (moderators.IsModerator(target.FirebaseUid)) return NameReportOutcome.Ignored;
+        var targetIsModerator = moderators.IsModerator(target.FirebaseUid);
 
         // EnableRetryOnFailure requires explicit transactions to run inside the execution strategy.
         // The block is idempotent: a retry after an ambiguous commit re-hits ON CONFLICT and
         // returns Ignored, so side effects below can never run twice.
         var result = await db.Database.CreateExecutionStrategy()
-            .ExecuteAsync(() => RecordReportAsync(reporterId, reportedUserId, reason));
+            .ExecuteAsync(() => RecordReportAsync(reporterId, reportedUserId, reason, targetIsModerator));
 
         // Post-commit, outside the retried block (database-retry-resilience).
         if (result.CaseOpenedNow)
@@ -60,7 +55,8 @@ public sealed class NameReportService(
         return result.Outcome;
     }
 
-    private async Task<ReportResult> RecordReportAsync(Guid reporterId, Guid reportedUserId, NameReportReason reason)
+    private async Task<ReportResult> RecordReportAsync(
+        Guid reporterId, Guid reportedUserId, NameReportReason reason, bool targetIsModerator)
     {
         db.ChangeTracker.Clear();
         await using var tx = await db.Database.BeginTransactionAsync();
@@ -77,7 +73,6 @@ public sealed class NameReportService(
         if (target.NameHiddenAt != null) return new ReportResult(NameReportOutcome.Ignored);
 
         var now = DateTime.UtcNow;
-        // Re-checked under the lock: the early check above is only there to keep moderators hidden.
         if (await CountReportsTodayAsync(reporterId, now) >= GameConstants.MaxNameReportsPerReporterPerDay)
             return new ReportResult(NameReportOutcome.DailyLimitReached);
 
@@ -86,6 +81,15 @@ public sealed class NameReportService(
             VALUES ({Guid.NewGuid()}, {reporterId}, {reportedUserId}, {target.DisplayName}, {(short)reason}, {now})
             ON CONFLICT (""ReporterId"", ""ReportedUserId"", ""NameSnapshot"") DO NOTHING");
         if (inserted == 0) return new ReportResult(NameReportOutcome.Ignored);
+
+        if (targetIsModerator)
+        {
+            // Recorded like any report, so it spends the reporter's daily budget: a 204 that cost
+            // nothing would reveal who moderates. It never opens a case or hides the name, and it
+            // predates any case window opened later, so it never counts toward one (DR-002b §4.9).
+            await tx.CommitAsync();
+            return new ReportResult(NameReportOutcome.Ignored);
+        }
 
         var caseOpenedNow = await OpenCaseAsync(reportedUserId, target.DisplayName, now) == 1;
         var reviewCase = await db.NameModerationCases.AsNoTracking()
