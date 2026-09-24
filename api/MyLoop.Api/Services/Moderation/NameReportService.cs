@@ -61,6 +61,9 @@ public sealed class NameReportService(
         db.ChangeTracker.Clear();
         await using var tx = await db.Database.BeginTransactionAsync();
 
+        // Serialises this reporter's reports, so concurrent reports against different players
+        // can't each count N-1 and overshoot the daily limit. Taken first (see LockReporterAsync).
+        await ModerationLocks.LockReporterAsync(db, reporterId);
         // Serialises every report against this player: two concurrent "third" reports can then
         // neither both see a count of 2 (missed hide) nor both hide (double alert).
         await ModerationLocks.LockUserAsync(db, reportedUserId);

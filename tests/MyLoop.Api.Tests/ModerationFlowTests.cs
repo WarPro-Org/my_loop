@@ -218,6 +218,25 @@ public class ModerationFlowTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Concurrent_reports_by_one_player_do_not_overshoot_the_daily_limit()
+    {
+        const int remaining = 2;
+        var limit = MyLoop.Api.Constants.GameConstants.MaxNameReportsPerReporterPerDay;
+        var reporter = await SeedUser("Reporter");
+        foreach (var target in await SeedUsers(limit - remaining))
+            await Report(reporter, target);
+
+        // Different targets lock different Users rows, so only the reporter lock serialises these.
+        var targets = await SeedUsers(6);
+        var outcomes = await Task.WhenAll(targets.Select(t => Report(reporter, t)));
+
+        Assert.Equal(remaining, outcomes.Count(o => o == NameReportOutcome.Accepted));
+        Assert.Equal(targets.Count - remaining, outcomes.Count(o => o == NameReportOutcome.DailyLimitReached));
+        await using var db = NewDb();
+        Assert.Equal(limit, await db.NameReports.CountAsync(r => r.ReporterId == reporter));
+    }
+
+    [Fact]
     public async Task Reporting_a_moderator_is_silently_ignored()
     {
         var moderator = await SeedUser("Staff Person", ModeratorUid);
