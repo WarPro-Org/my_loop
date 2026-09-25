@@ -67,6 +67,8 @@ this document wins (notably: trail cells no longer capture territory; home locat
 ## Anti-cheat
 
 13. Walking and running count. Anything faster (cycling, driving) doesn't.
+    - In 0.1 this is a speed limit only, around 20–25 km/h. We accept that slow cycling can slip through, because single-player cheating mostly fools the cheater.
+    - The version that adds rivals also uses the phone's motion sensor (walking / running / cycling / driving) to catch cycling at running speed.
 14. Speed checks also cover gaps, so drive-and-walk tricks don't work.
 15. The app tells the user when part of a walk was rejected ("This section was too fast to count"), but never reveals the exact speed limit.
 
