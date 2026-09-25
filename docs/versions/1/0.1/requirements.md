@@ -99,6 +99,9 @@ this document wins (notably: trail cells no longer capture territory; home locat
 
 25. Areas are real places (suburbs, cities) with their real names.
 26. Each area's boundary is saved once and frozen. A hex belongs to an area if its centre is inside the boundary.
+    - Every hex belongs to exactly one area: the smallest named place it's in (usually a suburb).
+    - Where the map data has no suburb, the hex falls back to the next level up (town or city).
+    - Cities are the sum of their suburbs, so every hex is counted once and totals always add up.
 27. Every area has one fixed total hex count — everyone sees the same number, forever. A boundary is never changed silently.
 28. A user's count in an area is always calculated from their walk records, never from a running counter that can drift.
 29. Passport: every user has a permanent record of the areas they've explored and how much of each (e.g. "312 of 1,240 hexes").
