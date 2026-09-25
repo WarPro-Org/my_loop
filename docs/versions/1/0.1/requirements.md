@@ -87,7 +87,9 @@ In 0.1 no land is ever lost and strength is not shown. Walk history is recorded 
 
 ## Accounts
 
-21. People can try a walk as a guest. A guest is a real user in the database, kept permanently once they link Apple or Google. Unlinked guests are cleaned up after a while.
+21. People can try a walk as a guest. A guest is a real user in the database, kept permanently once they link Apple or Google.
+    - Unlinked guests are deleted after a period of inactivity (a setting).
+    - If the Apple or Google account a guest links already belongs to a MyLoop user, the two are merged: the guest's walks, explored hexes and land move into the existing account, and the guest account is deleted.
 22. Guests can walk, explore and capture, but their land stays private and can't take anyone else's until they sign in.
 
 ## Profile
