@@ -47,7 +47,11 @@ this document wins (notably: trail cells no longer capture territory; home locat
     - a short gap at walking or running speed is joined up quietly;
     - a long or too-fast gap restarts the loop and the app tells you;
     - hexes you already explored stay explored.
-11. Safety alarm: if the app gets killed, the phone buzzes "tap to resume" within about 2 minutes. It's the only alert that buzzes during a walk.
+11. Safety alarm (best effort): if tracking stops, the phone buzzes "tap to resume" within about 2 minutes. It's the only alert that buzzes during a walk.
+    - iPhone: a scheduled local notification that the app keeps pushing back while tracking is alive.
+    - Android: a persistent tracking notification plus the alarm where the phone allows it.
+    - Backup: if a walk that was sending points to the server goes quiet, the server sends a push notification.
+    - At the start of a walk, the app checks whether this phone can support the alarm. If it can't, the app tells the user up front and shows how to fix it (e.g. turn off battery optimisation for MyLoop).
 12. Weak GPS shows as a message on screen or in the tracking notification, with no buzz.
 
 ## Starting and ending a walk
