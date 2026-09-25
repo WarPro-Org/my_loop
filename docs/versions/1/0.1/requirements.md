@@ -72,7 +72,9 @@ this document wins (notably: trail cells no longer capture territory; home locat
 14. Speed checks also cover gaps, so drive-and-walk tricks don't work.
 15. The app tells the user when part of a walk was rejected ("This section was too fast to count"), but never reveals the exact speed limit.
 
-## Land strength (numbers decided when we design rivals)
+## Land strength (designed with rivals)
+
+In 0.1 no land is ever lost and strength is not shown. Walk history is recorded from day one (#19), so the rules below can be added later without rework. The details are discussed when rivals are designed.
 
 16. Walking a hex makes it stronger, up to a limit.
 17. Strength fades after a grace period if you stop walking there.
