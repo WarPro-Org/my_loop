@@ -22,7 +22,7 @@ this document wins (notably: trail cells no longer capture territory; home locat
   feature needs is listed under it.
 - Each requirement keeps its permanent ID in brackets, e.g. `[#30]`. IDs are not reading order; new requirements get
   the next free number. The coverage table at the end lists every ID and the feature that owns it.
-- "Depends on" says which features must exist first.
+- Features are numbered in build order (see **Build order**). "Depends on" says which features must exist first.
 
 ## Scope of 0.1
 
@@ -30,6 +30,28 @@ this document wins (notably: trail cells no longer capture territory; home locat
 - **0.1 (this document) is single-player only.** In 0.1 every user's land and exploration is visible only to that user.
 - Later 0.x versions (up to 0.9) add rivals and everything else 1.0 needs.
 - 1.0 must include rivals.
+
+## Build order
+
+Features are numbered in the order they should be built. Each one only depends on features above it.
+
+| Order | Feature | Why here |
+|-------|---------|----------|
+| F1 | Configurable game settings | Every rule below reads its numbers from here. |
+| F2 | Walk session: start, pause, stop | Nothing can be recorded until a walk exists. |
+| F3 | GPS recording and offline sync | The raw path every later feature works on. |
+| F4 | Tracking gaps and safety alarm | Makes the recorded path trustworthy when tracking breaks. |
+| F5 | Anti-cheat speed checks | Removes invalid sections before anything is captured or explored. |
+| F6 | Loop detection and capture rule | The core of the game — built on a clean, validated path. |
+| F7 | Exploration | Uses the same validated path; feeds the passport. |
+| F8 | Live preview and result screen | Shows the results of F5–F7 to the user. |
+| F9 | Walk history and storage | Stores full walks and results; re-opens the result screen. |
+| F10 | Areas and passport | Counts explored hexes from stored walk results. |
+| F11 | Profile | Displays totals from F9 and the passport from F10. |
+| F12 | Accounts: guests, sign-in, deletion | Merge and delete must cover everything above. |
+| F13 | Moving existing beta users to 0.1 | Run once the new rules are live, just before testers get 0.1. |
+| F14 | Onboarding | Independent and small; can be done any time, listed last. |
+| F15 | Land strength | No 0.1 work beyond F9 — designed with rivals. |
 
 ---
 
@@ -97,7 +119,20 @@ Depends on: F1, F2.
 
 Depends on: F2, F3.
 
-## F5 — Loop detection and capture rule (server)
+## F5 — Anti-cheat speed checks
+
+- **[#13]** Walking and running count. Anything faster (cycling, driving) doesn't.
+  - In 0.1 this is a speed limit only, around 20–25 km/h. We accept that slow cycling can slip through, because
+    single-player cheating mostly fools the cheater.
+  - The version that adds rivals also uses the phone's motion sensor (walking / running / cycling / driving) to catch
+    cycling at running speed.
+- **[#14]** Speed checks also cover gaps, so drive-and-walk tricks don't work.
+- **[#15]** Only the section that was too fast is rejected, not the whole walk. The app tells the user ("This section was
+  too fast to count") but never reveals the exact speed limit.
+
+Depends on: F1, F3.
+
+## F6 — Loop detection and capture rule (server)
 
 - **[#6]** Closing a loop captures territory. This is the real prize, and it has to be accurate.
 - **[#2]** A hex is captured if its **centre** is inside the loop. In practice, hexes more than about half inside usually
@@ -112,31 +147,18 @@ Depends on: F2, F3.
 - **[#7]** (rule part) Accuracy means the rule is applied 100% correctly, and the path is as good as the phone's GPS
   allows. "100% correct" is proven by a set of reference walks with known correct results; the capture rule must
   reproduce them exactly, every time.
-- In 0.1, capturing never loses land: land already owned stays owned (see F13).
+- In 0.1, capturing never loses land: land already owned stays owned (see F15).
 
 Depends on: F1, F3.
 
-## F6 — Exploration
+## F7 — Exploration
 
 - **[#5]** Walking anywhere reveals the map. A hex becomes "explored" when the path passes through it — including the
   stretch between two recorded points, not only the hex a point landed in. Explored land is yours to see, not owned,
   and nobody can steal it.
   - Sections rejected as too fast, and long gaps that aren't joined up, explore nothing.
 
-Depends on: F3, F4, F7.
-
-## F7 — Anti-cheat speed checks
-
-- **[#13]** Walking and running count. Anything faster (cycling, driving) doesn't.
-  - In 0.1 this is a speed limit only, around 20–25 km/h. We accept that slow cycling can slip through, because
-    single-player cheating mostly fools the cheater.
-  - The version that adds rivals also uses the phone's motion sensor (walking / running / cycling / driving) to catch
-    cycling at running speed.
-- **[#14]** Speed checks also cover gaps, so drive-and-walk tricks don't work.
-- **[#15]** Only the section that was too fast is rejected, not the whole walk. The app tells the user ("This section was
-  too fast to count") but never reveals the exact speed limit.
-
-Depends on: F1, F3.
+Depends on: F3, F4, F5.
 
 ## F8 — Live preview and result screen
 
@@ -149,7 +171,7 @@ Depends on: F1, F3.
   - the result screen shows the path over the captured hexes.
 - **[#36]** The result screen shows how close an unfinished loop came to closing ("You were 150 m from closing this
   loop"), with the gap drawn on the map.
-- The result screen also shows what was explored, and any section rejected as too fast (see F7).
+- The result screen also shows what was explored, and any section rejected as too fast (see F5).
 
 Depends on: F5, F6, F7.
 
@@ -162,7 +184,7 @@ Depends on: F5, F6, F7.
 - **[#39]** Opening a past walk from walk history shows the same result screen as when it ended: the path, what was
   captured, what was explored, and any "you were X m from closing" hint.
 
-Depends on: F5, F6, F8.
+Depends on: F6, F7, F8.
 
 ## F10 — Areas and passport
 
@@ -183,7 +205,7 @@ Depends on: F5, F6, F8.
 - Open for design: the boundary data source (e.g. OpenStreetMap, imported once rather than looked up live), its licence,
   and the attribution shown in the app.
 
-Depends on: F6, F9.
+Depends on: F7, F9.
 
 ## F11 — Profile
 
@@ -207,7 +229,24 @@ Depends on: F9, F10.
 
 Depends on: F9, F10.
 
-## F13 — Land strength (recorded now, designed with rivals)
+## F13 — Moving existing beta users to 0.1
+
+- **[#23]** No home location. `HomeLocation.cs` and everything that uses it are removed end to end, including stored home
+  coordinates.
+- **[#41]** Fresh start for existing beta testers: accounts, display names and avatars stay; captured land, explored hexes
+  and saved home locations are deleted. Testers see a one-time message: "MyLoop has been rebuilt — your map starts
+  fresh."
+
+Depends on: F6, F7 (new rules live before the reset).
+
+## F14 — Onboarding
+
+- **[#24]** Three short intro cards ("Walk a loop", "Everything inside becomes yours", "Others can take it back"); everyone
+  sees them once per account.
+
+Depends on: nothing.
+
+## F15 — Land strength (recorded now, designed with rivals)
 
 In 0.1 no land is ever lost and strength is not shown. F9 records full walk history, so these rules can be added later
 without rework. The details and numbers are decided when rivals are designed.
@@ -218,46 +257,29 @@ without rework. The details and numbers are decided when rivals are designed.
 
 No 0.1 work beyond F9.
 
-## F14 — Onboarding
-
-- **[#24]** Three short intro cards ("Walk a loop", "Everything inside becomes yours", "Others can take it back"); everyone
-  sees them once per account.
-
-Depends on: nothing.
-
-## F15 — Moving existing beta users to 0.1
-
-- **[#23]** No home location. `HomeLocation.cs` and everything that uses it are removed end to end, including stored home
-  coordinates.
-- **[#41]** Fresh start for existing beta testers: accounts, display names and avatars stay; captured land, explored hexes
-  and saved home locations are deleted. Testers see a one-time message: "MyLoop has been rebuilt — your map starts
-  fresh."
-
-Depends on: F5, F6 (new rules live before the reset).
-
 ---
 
 ## Open — to be decided later
 
 - Exact values of every F1 setting — tuned from real test walks.
 - Area boundary data source, licence and attribution (F10) — design stage.
-- Rival rules (how land is taken, how strength defends it, F13) — designed in a later 0.x version, before 1.0.
+- Rival rules (how land is taken, how strength defends it, F15) — designed in a later 0.x version, before 1.0.
 
 ## Coverage — every requirement and its feature
 
 | ID | Feature | ID | Feature | ID | Feature |
 |----|---------|----|---------|----|---------|
-| #1 | Scope | #15 | F7 | #29 | F10 |
-| #2 | F5 | #16 | F13 | #30 | F2 |
-| #3 | F5 | #17 | F13 | #31 | F2 |
-| #4 | F5 | #18 | F13 | #32 | F2 |
-| #5 | F6 | #19 | F9 | #33 | F2 |
-| #6 | F5 | #20 | F1 | #34 | F2 |
-| #7 | F3 + F5 | #21 | F12 | #35 | F2 |
+| #1 | Scope | #15 | F5 | #29 | F10 |
+| #2 | F6 | #16 | F15 | #30 | F2 |
+| #3 | F6 | #17 | F15 | #31 | F2 |
+| #4 | F6 | #18 | F15 | #32 | F2 |
+| #5 | F7 | #19 | F9 | #33 | F2 |
+| #6 | F6 | #20 | F1 | #34 | F2 |
+| #7 | F3 + F6 | #21 | F12 | #35 | F2 |
 | #8 | F8 | #22 | F12 | #36 | F8 |
-| #9 | F3 | #23 | F15 | #37 | F11 |
+| #9 | F3 | #23 | F13 | #37 | F11 |
 | #10 | F4 | #24 | F14 | #38 | F11 |
 | #11 | F4 | #25 | F10 | #39 | F9 |
 | #12 | F3 | #26 | F10 | #40 | F12 |
-| #13 | F7 | #27 | F10 | #41 | F15 |
-| #14 | F7 | #28 | F10 | #42 | F2 |
+| #13 | F5 | #27 | F10 | #41 | F13 |
+| #14 | F5 | #28 | F10 | #42 | F2 |
