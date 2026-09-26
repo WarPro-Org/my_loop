@@ -16,7 +16,6 @@ import 'package:myloop/shared/models/territory_cell.dart';
 class HexConstants {
   static const double hexRadiusMeters = 29.0; // circumradius at H3 res 11
   static const double hexAreaM2 = 2150.0;
-  static const double minLoopAreaForClaim = 5000.0; // matches server GameRules:Loop:MinAreaSquareMeters (not sent to the app; see FR1 design doc)
 }
 
 /// Animated hex territory layer with:

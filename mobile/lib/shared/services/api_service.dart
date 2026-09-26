@@ -141,6 +141,8 @@ class PreviewResult {
 /// localhost). Each public method maps 1:1 to a backend API endpoint and
 /// returns strongly-typed model objects.
 class ApiService {
+  static const _rulesPath = '/api/rules';
+
   final Dio _dio;
 
   /// [dio] is injectable for tests (e.g. to drive a probe failure); production
@@ -173,6 +175,23 @@ class ApiService {
         handler.next(options);
       },
     ));
+  }
+
+  /// FR1: the game rules and their fingerprint (ETag) when they differ from [knownTag], or null
+  /// when the app already has them (304 Not Modified).
+  Future<({Map<String, dynamic> json, String? tag})?> getRules(String? knownTag) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      _rulesPath,
+      options: Options(
+        headers: {if (knownTag != null) HttpHeaders.ifNoneMatchHeader: '"$knownTag"'},
+        validateStatus: (status) =>
+            status == HttpStatus.ok || status == HttpStatus.notModified,
+      ),
+    );
+    final body = response.data;
+    if (response.statusCode == HttpStatus.notModified || body == null) return null;
+    final etag = response.headers.value(HttpHeaders.etagHeader);
+    return (json: body, tag: etag?.replaceAll('"', ''));
   }
 
   /// Returns true if the backend is reachable right now.

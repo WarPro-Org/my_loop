@@ -15,13 +15,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
-import 'package:myloop/features/journey/loop_detector.dart';
+import 'package:myloop/shared/rules/game_rules.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/mock/mock_walk_engine.dart';
 
 // Client-side thresholds: imported from the real symbols so they can't silently drift.
-final double _closureThresholdMeters = LoopDetector.closureThresholdMeters;
-final int _minLoopPoints = LoopDetector.minLoopPoints;
+final double _closureThresholdMeters = defaultGameRules.loopClosureDistanceMeters;
+final int _minLoopPoints = defaultGameRules.minLoopPoints;
 
 // Server-side (C#) thresholds the mock must satisfy. These live in GameRules:AntiCheat (appsettings.json)
 // and can't be imported into Dart, so they're duplicated here on purpose — a server

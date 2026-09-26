@@ -6,6 +6,8 @@ library;
 
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/rules/game_rules.dart';
+import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
@@ -177,11 +179,22 @@ class JourneyController extends Notifier<JourneyState> {
   @override
   JourneyState build() => const JourneyState();
 
+  /// Rules this walk started with, so the app's live estimate uses one set of numbers for the
+  /// whole walk even if an update arrives mid-walk (login/resume refresh). The server does not
+  /// pin rules per walk yet: recording which rules version decided a walk comes with walk
+  /// storage (FR9, #19).
+  GameRules _walkRules = defaultGameRules;
+
   Future<void> startJourney() async {
     // Captured before the first await: a sign-out that begins during any of the
     // awaits below bumps the generation, and each re-check then aborts (#110).
     final generation = _sessionGeneration;
     if (!_isCurrentSession(generation)) return;
+    // Right after launch the saved rules may still be loading; a walk pinned to the built-in
+    // copy would use older rules for its whole length.
+    await ref.read(gameRulesProvider.notifier).ready;
+    if (!_isCurrentSession(generation)) return;
+    _walkRules = ref.read(gameRulesProvider);
     final locationService = ref.read(locationServiceProvider);
 
     // A journey is meaningless offline: hex capture is server-validated and the
@@ -255,7 +268,7 @@ class JourneyController extends Notifier<JourneyState> {
   // ────────────────────────────────────────────────────────────────────────────
 
   void _onPosition(Position pos) {
-    if (pos.accuracy > AppConstants.maxAccuracyMeters) {
+    if (pos.accuracy > _walkRules.gpsAccuracyThresholdMeters) {
       state = state.copyWith(currentPosition: pos);
       return;
     }
@@ -523,7 +536,7 @@ class JourneyController extends Notifier<JourneyState> {
     // the displayed count: the server returns the authoritative, area-validated
     // and de-duplicated loopCount, which avoids the over-count this used to
     // show live (issue #21). state.loopCount is set only from the preview.
-    final estimate = LoopDetector.countLoops(path);
+    final estimate = LoopDetector.countLoops(path, _walkRules);
     if (estimate != _lastLoopCount) {
       _lastLoopCount = estimate;
       if (estimate > 0) {
