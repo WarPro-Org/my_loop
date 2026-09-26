@@ -161,4 +161,4 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 5. **Login trigger:** the real login hydration path starts a rules refresh.
 6. **D1:** the walk-start wait, with a test that a walk started during a running refresh uses the refreshed rules,
    and one that a refresh slower than the limit doesn't block the walk.
-7. **Prove "red when"** for the cells marked *to prove*.
+7. ~~**Prove "red when"** for the cells marked *to prove*.~~ Done in #205 (`1121dac`); no cell is left unproven.
