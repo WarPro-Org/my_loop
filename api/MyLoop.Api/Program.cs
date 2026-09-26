@@ -1,11 +1,13 @@
 using MyLoop.Api.Configuration;
 using MyLoop.Api.Data;
+using MyLoop.Modules.Rules;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Host.AddMyLoopSerilog();
 
 builder.Services
+    .AddMyLoopRules(builder.Configuration)
     .AddMyLoopDatabase(builder.Configuration)
     .AddMyLoopServices()
     .AddMyLoopPushNotifications(builder.Configuration)
