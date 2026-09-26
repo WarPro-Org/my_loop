@@ -379,7 +379,7 @@ void main() {
     // in the elapsed capturedAt time, PLUS a GPS-uncertainty margin. Mirrored here so
     // the assertion matches what the backend actually rejects (not a bare d/dt).
     const maxSpeedMps = 8.33; // GameRules:AntiCheat:MaxSpeedMetersPerSecond
-    const gpsDriftMarginMeters = 30.0; // PathValidationService.gpsDriftMarginMeters
+    const gpsDriftMarginMeters = 30.0; // GameRules:AntiCheat:GpsDriftMarginMeters (appsettings.json)
 
     for (final scenario in MockWalkScenarios.all) {
       group(scenario.label, () {

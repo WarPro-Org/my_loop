@@ -17,7 +17,8 @@ public class ServicesUseRulesTests
     private const double SamplingIntervalSeconds = 5;
     private const double MetersPerDegreeLat = 111_320;
 
-    private static IRuleSettings Rules(double closureDistanceMeters = 50, double gpsDriftMarginMeters = 30) =>
+    private static IRuleSettings Rules(
+        double closureDistanceMeters = 50, double gpsDriftMarginMeters = 30, double minAreaSquareMeters = 5000) =>
         new RuleSettings(Options.Create(new GameRules
         {
             Version = 1,
@@ -26,7 +27,7 @@ public class ServicesUseRulesTests
                 ClosureDistanceMeters = closureDistanceMeters,
                 MinPoints = 20,
                 SkipNeighbors = 10,
-                MinAreaSquareMeters = 5000,
+                MinAreaSquareMeters = minAreaSquareMeters,
             },
             Gps = new GpsRules { AccuracyThresholdMeters = 50 },
             AntiCheat = new AntiCheatRules
@@ -74,6 +75,24 @@ public class ServicesUseRulesTests
 
         Assert.True(new HexGridService(new GeoService(), Rules(closureDistanceMeters: 50)).HasClosedLoop(path));
         Assert.False(new HexGridService(new GeoService(), Rules(closureDistanceMeters: 30)).HasClosedLoop(path));
+    }
+
+    [Fact]
+    public void Claimed_loops_use_the_closure_distance_from_the_rules()
+    {
+        var path = AlmostClosedCircle();
+
+        Assert.Equal(1, new HexGridService(new GeoService(), Rules(closureDistanceMeters: 50)).ComputeCapturedTerritory(path).LoopCount);
+        Assert.Equal(0, new HexGridService(new GeoService(), Rules(closureDistanceMeters: 30)).ComputeCapturedTerritory(path).LoopCount);
+    }
+
+    [Fact]
+    public void Claimed_loops_use_the_minimum_area_from_the_rules()
+    {
+        var path = AlmostClosedCircle();   // encloses about 70,000 m²
+
+        Assert.Equal(1, new HexGridService(new GeoService(), Rules(minAreaSquareMeters: 5_000)).ComputeCapturedTerritory(path).LoopCount);
+        Assert.Equal(0, new HexGridService(new GeoService(), Rules(minAreaSquareMeters: 100_000)).ComputeCapturedTerritory(path).LoopCount);
     }
 
     [Fact]

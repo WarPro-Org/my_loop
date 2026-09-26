@@ -44,7 +44,8 @@ public class PathValidationService : IPathValidationService
         for (int i = 1; i < path.Length; i++)
         {
             var distanceMeters = HaversineDistance(path[i - 1], path[i]);
-            // The hop limit is max speed × sampling interval plus room for GPS drift (GameRules:AntiCheat).
+            // MaxDistanceBetweenPointsMeters is its own setting (GameRules:AntiCheat), sized to cover one
+            // sampling interval at max speed plus GPS drift; changing those two doesn't move it.
             if (distanceMeters > _antiCheat.MaxDistanceBetweenPointsMeters)
             {
                 violations++;
