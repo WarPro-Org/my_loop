@@ -11,7 +11,7 @@ namespace MyLoop.Api.Tests;
 /// </summary>
 public class HexGridServiceAreaAndCellLookupTests
 {
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
 
     // Circumradius (center-to-vertex) of a regular hexagon whose area is the game's average
     // res-11 cell area: A = (3√3 / 2)·r²  ⇒  r = √(2A / (3√3)) ≈ 28.8 m for 2,150 m².

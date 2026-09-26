@@ -53,7 +53,7 @@ public class HexGridBboxValidationTests
     // Generous for a ≤ ~100-sample computation, tiny next to "never returns".
     private static readonly TimeSpan CompletionBound = TimeSpan.FromSeconds(5);
 
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
 
     /// <summary>
     /// Runs the call on the thread pool and fails if it has not returned within the bound —

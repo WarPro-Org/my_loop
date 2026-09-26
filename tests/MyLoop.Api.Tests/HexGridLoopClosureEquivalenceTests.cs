@@ -13,20 +13,20 @@ namespace MyLoop.Api.Tests;
 /// </summary>
 public class HexGridLoopClosureEquivalenceTests
 {
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
     private static readonly GeoService Geo = new();
 
     // ── Brute-force reference implementations (the pre-#116 semantics) ──────────
 
     private static bool BruteHasClosedLoop(double[][] path)
     {
-        if (path.Length < GameConstants.MinLoopPoints) return false;
-        for (var i = GameConstants.LoopSkipNeighbors; i < path.Length; i++)
+        if (path.Length < TestRules.Loop.MinPoints) return false;
+        for (var i = TestRules.Loop.SkipNeighbors; i < path.Length; i++)
         {
-            for (var j = 0; j <= i - GameConstants.MinLoopPoints; j++)
+            for (var j = 0; j <= i - TestRules.Loop.MinPoints; j++)
             {
                 if (Geo.HaversineMeters(path[i][0], path[i][1], path[j][0], path[j][1])
-                    <= GameConstants.LoopClosureDistanceMeters)
+                    <= TestRules.Loop.ClosureDistanceMeters)
                     return true;
             }
         }
@@ -35,23 +35,23 @@ public class HexGridLoopClosureEquivalenceTests
 
     private static bool BruteIsLoopClosed(double[][] path)
     {
-        if (path.Length < GameConstants.MinLoopPoints) return false;
+        if (path.Length < TestRules.Loop.MinPoints) return false;
         return Geo.HaversineMeters(path[0][0], path[0][1], path[^1][0], path[^1][1])
-               <= GameConstants.LoopClosureDistanceMeters;
+               <= TestRules.Loop.ClosureDistanceMeters;
     }
 
     private static List<double[][]> BruteFindClosureLoops(double[][] path)
     {
         var loops = new List<double[][]>();
         var used = new bool[path.Length];
-        for (var i = GameConstants.LoopSkipNeighbors; i < path.Length; i++)
+        for (var i = TestRules.Loop.SkipNeighbors; i < path.Length; i++)
         {
             if (used[i]) continue;
-            for (var j = 0; j <= i - GameConstants.MinLoopPoints; j++)
+            for (var j = 0; j <= i - TestRules.Loop.MinPoints; j++)
             {
                 if (used[j]) continue;
                 if (Geo.HaversineMeters(path[i][0], path[i][1], path[j][0], path[j][1])
-                    > GameConstants.LoopClosureDistanceMeters) continue;
+                    > TestRules.Loop.ClosureDistanceMeters) continue;
 
                 var loopLength = i - j + 1;
                 var loop = new double[loopLength][];
@@ -98,7 +98,7 @@ public class HexGridLoopClosureEquivalenceTests
 
         for (var t = 0; t < 300; t++)
         {
-            var length = rng.Next(GameConstants.MinLoopPoints, 320);
+            var length = rng.Next(TestRules.Loop.MinPoints, 320);
             var baseLat = baseLats[rng.Next(baseLats.Length)];
             var path = RandomWalk(rng, length, baseLat, rng.NextDouble() * 100 - 50);
 
@@ -115,7 +115,7 @@ public class HexGridLoopClosureEquivalenceTests
 
         for (var t = 0; t < 300; t++)
         {
-            var length = rng.Next(GameConstants.MinLoopPoints, 320);
+            var length = rng.Next(TestRules.Loop.MinPoints, 320);
             var baseLat = baseLats[rng.Next(baseLats.Length)];
             var path = RandomWalk(rng, length, baseLat, rng.NextDouble() * 100 - 50);
 

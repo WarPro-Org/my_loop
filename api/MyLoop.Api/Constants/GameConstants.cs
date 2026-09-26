@@ -20,10 +20,6 @@ public static class GameConstants
     /// streaks and missions, which follow the player's local day via GameDay.Resolve (#106).
     /// </summary>
     public const int MaxClaimsPerDay = 20;
-    public const double LoopClosureDistanceMeters = 50.0;
-    public const int MinLoopPoints = 20;
-    public const int LoopSkipNeighbors = 10;
-    public const double MinFillAreaSquareMeters = 5_000.0;
     public const double DeduplicationOverlapThreshold = 0.80;
     /// <summary>
     /// Steal-back protection window: a just-captured cell cannot be stolen for this long.

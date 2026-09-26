@@ -12,7 +12,7 @@ namespace MyLoop.Api.Tests;
 /// </summary>
 public class HexGridServiceCaptureTests
 {
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
 
     // ── Empty / single-point paths ───────────────────────────────────────────
 
@@ -59,7 +59,7 @@ public class HexGridServiceCaptureTests
         // A player standing still can produce many identical GPS fixes in a row (or a malicious
         // client can replay one fix MinLoopPoints times) — the trail must not report a cell per
         // sample.
-        var path = new double[GameConstants.MinLoopPoints][];
+        var path = new double[TestRules.Loop.MinPoints][];
         for (var i = 0; i < path.Length; i++)
             path[i] = [12.9716, 77.5946];
 
@@ -74,7 +74,7 @@ public class HexGridServiceCaptureTests
         // Even though duplicate points trivially satisfy the closure-distance check (distance
         // 0), a zero-area "loop" must be filtered by the fill-area threshold and award no
         // fill — only the one trail cell the player is standing on.
-        var path = new double[GameConstants.MinLoopPoints][];
+        var path = new double[TestRules.Loop.MinPoints][];
         for (var i = 0; i < path.Length; i++)
             path[i] = [12.9716, 77.5946];
 
@@ -99,7 +99,7 @@ public class HexGridServiceCaptureTests
             [12.9750, 77.6050],
             [12.9700, 77.6000],
         ];
-        Assert.True(path.Length < GameConstants.MinLoopPoints);
+        Assert.True(path.Length < TestRules.Loop.MinPoints);
 
         var svc = Service();
         var territory = svc.ComputeCapturedTerritory(path);
