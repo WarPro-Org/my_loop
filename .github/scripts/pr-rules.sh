@@ -11,6 +11,13 @@ readonly MAX_LINES=400
 readonly FR_BRANCH='^v[0-9]+\.[0-9]+/fr([0-9]+)'
 readonly CLAUDE_MARK='claude.ai/code'
 readonly MASTER=origin/master
+# Gate rows: read from master's checkout (the working directory), never from the PR.
+readonly GATE_TABLES=CLAUDE.md
+readonly GATE_ROWS=.github/gate-rows.tsv
+readonly SKILLS_DIR=.claude/skills
+readonly FINAL_GATE=verification-loop
+readonly REMOVAL_GATE=coordinate-overlapping-pr-removals
+readonly NOT_CODE='^(docs/|\.claude/)|\.md$'   # same rule as code-changed.sh
 
 if [[ "${PR_AUTHOR_TYPE:-}" == "Bot" ]]; then
   echo "Bot PR: CLAUDE.md PR rules don't apply."
@@ -23,6 +30,91 @@ lines=$(( ${PR_ADDED:-0} + ${PR_DELETED:-0} ))
 merge="${PR_MERGE:-HEAD}"
 changed=$(git diff --name-only "$merge^1" "$merge" 2>/dev/null)
 problems=()
+# Changed code files as "<status><TAB><path>" lines. Read NUL-separated (-z): git then prints names
+# as they are, never quoted, so an unusual file name can't slip past the patterns. If the diff can't be read, the check fails (never skips).
+code_status=""
+status_file=$(mktemp)
+if git diff --no-renames --name-status -z "$merge^1" "$merge" >"$status_file" 2>/dev/null; then
+  while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+    if [[ "$path" == *$'\t'* || "$path" == *$'\n'* ]]; then
+      problems+=("File name with a tab or line break isn't allowed: rename it.")
+    elif ! [[ "$path" =~ $NOT_CODE ]]; then
+      code_status+="$status"$'\t'"$path"$'\n'
+    fi
+  done <"$status_file"
+else
+  problems+=("Couldn't read the PR's changed files (merge commit $merge).")
+fi
+rm -f "$status_file"
+
+# Skills named in CLAUDE.md's two gate tables (backticked names that are real skill folders).
+gate_skills() {
+  awk '/^## /{on = ($0 ~ /^## (Pre-Check-in|Pre-PR) Skill Gate/)} on && /^\|/' "$GATE_TABLES" 2>/dev/null \
+    | grep -oE '`[a-z0-9-]+`' | tr -d '`' | sort -u \
+    | while read -r skill; do [[ -d "$SKILLS_DIR/$skill" ]] && echo "$skill"; done
+}
+
+# "<skill><TAB><file>" for every gate skill a changed code file makes required.
+required_skills() {
+  local status file pattern skills skill
+  while IFS=$'\t' read -r status file; do
+    [[ -z "$file" ]] && continue
+    [[ "$status" == D ]] && printf '%s\t%s\n' "$REMOVAL_GATE" "$file"
+    while IFS=$'\t' read -r pattern skills; do
+      [[ -z "$pattern" || "$pattern" == \#* ]] && continue
+      [[ "$file" =~ $pattern ]] || continue
+      for skill in $skills; do printf '%s\t%s\n' "$skill" "$file"; done
+    done <"$GATE_ROWS"
+  done <<<"$code_status"
+}
+
+# The part of a line before its first " - " or " — ": the skill list. What follows is a reason or a
+# note, and a skill named there doesn't count.
+before_dash() {
+  local line=$1 em hyphen
+  em=${line%%" — "*}
+  hyphen=${line%%" - "*}
+  if (( ${#hyphen} < ${#em} )); then printf '%s\n' "$hyphen"; else printf '%s\n' "$em"; fi
+}
+
+# Every gate row must be gone through: a skill a changed file requires must have run, and every other
+# gate skill must be named, as run or as "- Not applicable: `skill` — <reason>".
+check_gate_rows() {
+  local all run na line skill file missing=()
+  all=$(gate_skills)
+  if [[ -z "$all" || ! -r "$GATE_ROWS" ]]; then
+    problems+=("Couldn't read the gate rows ($GATE_TABLES tables, $GATE_ROWS) on master.")
+    return
+  fi
+  line=$(grep -m1 '^\*\*Skills run:\*\*' <<<"$body")
+  run=$(before_dash "${line#\*\*Skills run:\*\*}" | grep -oE '`[a-z0-9-]+`' | tr -d '`')
+  na=""
+  # "- Not applicable: `a`, `b` — reason": skills before the first dash, the reason after it.
+  local rest names reason
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    rest=${line#*Not applicable:}
+    names=$(before_dash "$rest")
+    reason=${rest#"$names"}
+    if grep -qE '[A-Za-z]{3,}' <<<"$reason"; then
+      na+=$'\n'$(grep -oE '`[a-z0-9-]+`' <<<"$names" | tr -d '`')
+    else
+      problems+=("'${line}' has no reason: write '- Not applicable: \`skill\` — <why it doesn't apply>'.")
+    fi
+  done < <(grep -E '^(- )?Not applicable:' <<<"$body")
+
+  grep -qx "$FINAL_GATE" <<<"$run" \
+    || problems+=("\`$FINAL_GATE\` (scripts/verify.sh) must be in Skills run for a PR that changes code.")
+  while IFS=$'\t' read -r skill file; do
+    [[ -z "$skill" ]] && continue
+    grep -qx "$skill" <<<"$run" \
+      || problems+=("\`$skill\` is required by $file (CLAUDE.md gate row, $GATE_ROWS) but isn't in Skills run.")
+  done < <(required_skills | sort -u -t$'\t' -k1,1)
+  for skill in $all; do
+    grep -qx "$skill" <<<"$run"$'\n'"$na" || missing+=("\`$skill\`")
+  done
+  ((${#missing[@]})) && problems+=("Gate rows not gone through: ${missing[*]}. Add each to Skills run, or a line '- Not applicable: \`skill\` — <reason>'.")
+}
 
 fr=""
 [[ "${PR_BRANCH:-}" =~ $FR_BRANCH ]] && fr="${BASH_REMATCH[1]}"
@@ -41,6 +133,7 @@ if [[ -n "$fr" || "$by_claude" == true ]]; then
   for sha in $reviewed; do [[ -n "$head" && "$head" == "$sha"* ]] && covered=true; done
   [[ "$covered" == true ]] \
     || problems+=("Add 'REVIEWED ${head:0:7} — <result>' under '## Independent review': the latest commit has no recorded independent review.")
+  [[ -n "$code_status" ]] && check_gate_rows
 fi
 
 if [[ -n "$fr" ]]; then
