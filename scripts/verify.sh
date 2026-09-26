@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # MyLoop's verification-loop for the 0.x rebuild, on the current commit: build, the 0.1 user-story
-# tests, flutter analyze (no new issues) and a secrets scan of the changed files. Exits 0 only if
-# every step passed; any step that couldn't run counts as failed.
+# tests, flutter analyze (no new issues), the "PR rules" script tests and a secrets scan of the changed
+# files. Exits 0 only if every step passed; any step that couldn't run counts as failed.
 set -uo pipefail
 
 readonly ANALYZE_BASELINE=20   # issues on master before the rebuild; must not grow
@@ -60,6 +60,13 @@ if [[ -z "${issues:-}" ]]; then
 else
   echo "$issues issues (baseline $ANALYZE_BASELINE)"
   (( issues <= ANALYZE_BASELINE )) || failures+=("analyze")
+fi
+
+step "PR rules script tests"
+if .github/scripts/pr-rules.test.sh >"$logs/prrules" 2>&1; then
+  tail -1 "$logs/prrules"
+else
+  tail -30 "$logs/prrules"; failures+=("pr-rules-tests")
 fi
 
 step "Secrets scan (files changed vs origin/master)"

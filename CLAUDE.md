@@ -110,6 +110,8 @@ task and every PR of that FR. When any of them changes, update all the others in
 - For each problem: **what is wrong**, **how it affects the app for the user**, and **what to change** — a few lines each.
 - Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
 - Reading the diff is not enough. The reviewer also:
+  - checks the PR's gate section against the changed files and every row of both gate tables, and reports a row
+    that applies but wasn't run, or a "Not applicable" whose reason is wrong, as a finding;
   - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that
     skill's matrix and reports any moment nobody handled;
   - re-runs at least one of the author's "red when Y is removed" checks per new test, breaking code only in a
@@ -250,8 +252,15 @@ skill. After a new commit, gates that depend on the code run again.
 | 1 | writing FR code | Requirement agreed (Gate 1); design doc `docs/versions/<release>/<version>/design/frN-<name>.md` merged after the owner approved it (Gate 2) |
 | 2 | each commit | Pre-Check-in skills that apply have run; the lifecycle matrix tests for readers this commit touches are in it |
 | 3 | after each push | Linked items synced (see "Keep linked items in sync"); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
-| 4 | opening a PR | Pre-PR skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
+| 4 | opening a PR | Gate rows gone through **one by one** (below); the skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
 | 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
+
+**Going through the gate rows.** Never pick rows by what the PR is "about": a one-line comment edit in a Dart file
+or a test still triggers the Dart and test rows. List the changed files (`git diff --name-only master...HEAD`), then
+take **every** row of both gate tables in turn. Each skill ends up either in "Skills run" (invoked on the head
+commit) or on its own line ``- Not applicable: `<skill>` — <reason>``. A file that matches a row's pattern in
+`.github/gate-rows.tsv` means that skill applies, and "PR rules" fails without it. A row no file pattern can
+decide (state kept across launches, error handling, hex counts, anti-cheat logic) is judged by what the change does.
 
 **Enforced on GitHub** — so a forgotten step shows up as a red check the owner sees. It can't catch a false
 claim; the owner's review and the review records in the PR are what keep claims honest.
@@ -263,6 +272,9 @@ claim; the owner's review and the review records in the PR are what keep claims 
   "PR rules" check counts as not passed.**
   - Claude-made PRs (session link in the body, or a `claude/` branch) and FR PRs need the gate section, a
     filled "Skills run", and a line starting `REVIEWED <commit>` for the **latest** commit. Every push turns it red until that commit is reviewed and recorded.
+  - If such a PR changes code (anything but `docs/`, `.claude/` and `*.md`): every skill a changed file requires
+    (`.github/gate-rows.tsv`, plus the removals gate for a deleted file and `verification-loop` always) is in
+    "Skills run", and every skill in the two gate tables is named, as run or ``- Not applicable: `<skill>` — <reason>``.
   - FR PRs (branch `vX.Y/frN-…`) need a task link line, "Part k of N" matching the title's `(k/N)`, and FR N's
     design doc already merged into master. A docs-only PR that adds the design doc is the exception. When the
     design doc merges, re-run "PR rules" on the FR's open PRs (a push or a description edit does it).
@@ -284,7 +296,7 @@ These are fast, local, write-time skills — catch issues before they reach a PR
 > These two gate tables are **intended to be auto-maintained**: once the `/update-session`
 > tooling lands in this repo, extracting a new skill should append a row here (or to the
 > Pre-PR table if it's a review-time concern). Until that companion change merges, add rows
-> by hand. Keep the set of gate tables small (Pre-Check-in, Pre-PR) — every skill should
+> by hand. A row with a file pattern also gets a line in `.github/gate-rows.tsv`, in the same PR. Keep the set of gate tables small (Pre-Check-in, Pre-PR) — every skill should
 > fall under exactly one.
 
 ---

@@ -58,6 +58,17 @@ jobs:
       - name: Test (0.1 user stories)
         run: dotnet test tests/MyLoop.V01.Tests/MyLoop.V01.Tests.csproj --configuration Release
 
+  pr-rules-tests:
+    name: PR rules script tests
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test the gate-row check
+        run: .github/scripts/pr-rules.test.sh
+
   mobile:
     name: Mobile (Flutter)
     needs: changes
