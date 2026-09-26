@@ -36,7 +36,7 @@ public class PathValidationService : IPathValidationService
 
     /// <summary>
     /// Rejects paths where any two consecutive points imply movement faster than max walking/running speed.
-    /// Assumes points are roughly equidistant in time (~5 seconds apart from GPS sampling).
+    /// Assumes points are roughly equidistant in time (one GPS sample per sampling interval).
     /// </summary>
     private string? ValidateSpeed(double[][] path)
     {
@@ -44,15 +44,14 @@ public class PathValidationService : IPathValidationService
         for (int i = 1; i < path.Length; i++)
         {
             var distanceMeters = HaversineDistance(path[i - 1], path[i]);
-            // GPS sampling interval is ~5 seconds. Max plausible speed = 30 km/h (8.33 m/s).
-            // Over 5 seconds that's ~42m. Use generous threshold of 60m to account for GPS drift.
+            // The hop limit is max speed × sampling interval plus room for GPS drift (GameRules:AntiCheat).
             if (distanceMeters > _antiCheat.MaxDistanceBetweenPointsMeters)
             {
                 violations++;
             }
         }
 
-        // Allow up to 5% violations (GPS can occasionally jump)
+        // GPS occasionally jumps, so a small share of violating hops is tolerated.
         var violationRate = (double)violations / (path.Length - 1);
         if (violationRate > _antiCheat.MaxSpeedViolationRate)
         {
@@ -72,9 +71,9 @@ public class PathValidationService : IPathValidationService
     private string? ValidateDuration(double[][] path)
     {
         var totalDistance = CalculateTotalDistance(path);
-        // Minimum time = distance / max speed (30 km/h = 8.33 m/s)
+        // Minimum time = distance / max speed.
         var minDurationSeconds = totalDistance / _antiCheat.MaxSpeedMetersPerSecond;
-        // Implied duration = number of points * sampling interval (5s)
+        // Implied duration = number of points × sampling interval.
         var impliedDurationSeconds = (path.Length - 1) * _antiCheat.GpsSamplingIntervalSeconds;
 
         if (impliedDurationSeconds < minDurationSeconds * _antiCheat.DurationToleranceFactor)
@@ -112,7 +111,7 @@ public class PathValidationService : IPathValidationService
         var variance = bearingChanges.Average(c => (c - mean) * (c - mean));
         var stdDev = Math.Sqrt(variance);
 
-        // Real GPS paths have stdDev > 5° typically. Spoofed linear paths have < 2°.
+        // Real GPS paths jitter (typically > 5°); spoofed straight-line paths barely vary.
         if (stdDev < _antiCheat.MinBearingStdDev)
         {
             _logger.LogWarning("Path rejected: bearing stdDev {StdDev:F2}° — suspiciously smooth", stdDev);
@@ -125,7 +124,7 @@ public class PathValidationService : IPathValidationService
     /// <summary>
     /// Speed gate for real-time batch-step points. Unlike <see cref="Validate"/>, these
     /// points carry real capture timestamps, so we bound each hop by the time actually
-    /// elapsed (plus a GPS-uncertainty margin) instead of assuming a fixed 5s cadence.
+    /// elapsed (plus a GPS-uncertainty margin) instead of assuming a fixed sampling cadence.
     /// A hop is implausible only if the straight-line distance exceeds what max walking
     /// speed could cover in the elapsed time — this rejects teleport/spoof jumps between
     /// rapid samples while tolerating legitimately long gaps in the write-ahead-log drain.
