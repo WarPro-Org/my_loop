@@ -63,8 +63,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
 - Stacked PRs (each based on the previous one's branch) are merged **in order**. This repo allows only squash merges,
-  so after each merge: merge `master` into the next PR's branch, check build and tests, push, then retarget it to
-  `master`.
+  so after each merge: retarget the next PR to `master`, merge `master` into its branch, check build and tests, then
+  push (pushing after the retarget makes CI run against `master`).
   - Keep each next branch up to date: after every check-in on a parent, merge the parent into the next branch.
     Then the next branch already holds every parent fix, and a conflict with `master` is only the parent's own
     lines coming back in squashed form.
