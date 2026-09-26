@@ -51,6 +51,12 @@ void main() {
     expect(await FileRulesStore().load(), isNull);
   });
 
+  test('a saved copy with an unexpected shape is ignored instead of crashing', () async {
+    await File('${tempDir.path}/game_rules.json').writeAsString('{"rules": 42}');
+
+    expect(await FileRulesStore().load(), isNull);
+  });
+
   test('overlapping saves never fail and the last one wins on disk', () async {
     for (var round = 0; round < 25; round++) {
       final store = FileRulesStore();

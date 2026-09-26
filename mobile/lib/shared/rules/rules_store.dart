@@ -7,8 +7,8 @@ import 'dart:io';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 
-import 'game_rules.dart';
-import 'rules_source.dart';
+import 'package:myloop/shared/rules/game_rules.dart';
+import 'package:myloop/shared/rules/rules_source.dart';
 
 final _log = Logger('RulesStore');
 
@@ -39,14 +39,17 @@ class FileRulesStore implements RulesStore {
     try {
       final file = await _file();
       if (!await file.exists()) return null;
-      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      return SavedRules(
-        GameRules.fromJson(json[_rulesKey] as Map<String, dynamic>),
-        json[_tagKey] as String?,
-      );
-    } catch (e) {
+      if (jsonDecode(await file.readAsString())
+          case {_rulesKey: final Map<String, dynamic> rules, _tagKey: final String? tag}) {
+        return SavedRules(GameRules.fromJson(rules), tag);
+      }
+      throw const FormatException('Saved game rules have an unexpected shape');
+    } on FormatException catch (e) {
       // A corrupted copy must not block the app: fall back to the built-in rules.
       _log.warning('Saved game rules unreadable; using built-in copy', e);
+      return null;
+    } on FileSystemException catch (e) {
+      _log.warning('Saved game rules could not be read; using built-in copy', e);
       return null;
     }
   }

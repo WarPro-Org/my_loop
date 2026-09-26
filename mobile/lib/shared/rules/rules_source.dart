@@ -3,7 +3,7 @@ library;
 
 import 'package:myloop/shared/services/api_service.dart';
 
-import 'game_rules.dart';
+import 'package:myloop/shared/rules/game_rules.dart';
 
 /// Rules as received from the server, with the fingerprint the server gave them.
 class SavedRules {

@@ -7,15 +7,16 @@
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 
-import 'game_rules.dart';
-import 'rules_source.dart';
-import 'rules_store.dart';
+import 'package:myloop/shared/rules/game_rules.dart';
+import 'package:myloop/shared/rules/rules_source.dart';
+import 'package:myloop/shared/rules/rules_store.dart';
 
 final _log = Logger('GameRules');
 
@@ -60,9 +61,12 @@ class GameRulesNotifier extends Notifier<GameRules> {
     } on DioException catch (e) {
       // Offline, signed out (401) or server down: normal — keep the rules we have.
       _log.fine('Game rules refresh skipped; keeping version ${state.version}', e);
-    } catch (e, stack) {
-      // A malformed response or a failed save: keep the current rules but surface it.
-      _log.warning('Game rules refresh failed; keeping version ${state.version}', e, stack);
+    } on FormatException catch (e, stack) {
+      // The server sent rules the app can't read: keep the current rules but surface it.
+      _log.warning('Game rules response unreadable; keeping version ${state.version}', e, stack);
+    } on FileSystemException catch (e, stack) {
+      // New rules arrived but couldn't be saved: keep the current rules, retry next refresh.
+      _log.warning('Game rules could not be saved; keeping version ${state.version}', e, stack);
     }
   }
 }
