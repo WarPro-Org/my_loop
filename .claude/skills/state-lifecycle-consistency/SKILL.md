@@ -1,6 +1,6 @@
 ---
 name: state-lifecycle-consistency
-description: Use when adding or changing app state that is loaded, saved, cached, synced from the server, or pinned for a walk (rules, profile, queues, caches). Fills a lifecycle matrix (every reader × every app moment), writes one test per cell through the real trigger, and proves each test fails without its fix — so gaps are found by the author, not the user.
+description: Use when adding or changing app state that is kept across launches (saved to disk) or pinned for a walk AND read by more than one place (rules, saved profile, offline queues). Fills a lifecycle matrix (every reader × every app moment), writes one test per cell through the real trigger, and proves each test fails without its fix — so gaps are found by the author, not the user.
 origin: extracted-from-session-2026-09-26 (FR1 rules)
 ---
 
@@ -20,16 +20,23 @@ question later found:
 - **half the pinned values untested**: only the GPS filter was checked, not the loop estimate.
 
 ## When to Activate
-Before committing any change that adds or changes state which is read from disk, fetched from the
-server, cached, queued, or captured at the start of a walk/session.
+State that is **kept across launches** (saved to disk) **or pinned for a walk**, and is **read by
+more than one place**. A provider that just fetches and shows data does not qualify. For disk
+queues and caches, run this alongside `flutter-disk-concurrency-test`.
+
+- **Design time (Gate 2):** build the matrix in the design doc. That is its one home.
+- **Each commit:** update the matrix for the readers this commit adds or changes; their cells'
+  tests are due in the same commit. Readers a later PR adds get their tests in that PR (fits the
+  split server → wiring → app PRs and the 0.x "tests land with the story" rule).
+- **PR:** copy the current matrix into the PR description.
 
 ## Step 1 — List the readers
 Every place that reads the state (grep the provider/field). For a pinned value, list **each use**
 of the pinned copy separately (e.g. GPS filter AND loop estimate).
 
-## Step 2 — Fill the matrix (in the PR description)
-Rows = readers. Columns = moments. Each cell: expected value + the test that proves it, or
-"accepted: <reason>" agreed with the user.
+## Step 2 — Fill the matrix (design doc; copied into the PR)
+Rows = readers. Columns = moments. Each cell: expected value + the test that proves it, or a
+one-line "accepted: <reason>" when the cell is harmless or out of scope (agreed with the user).
 
 | Moment | What to check |
 |---|---|
@@ -41,6 +48,7 @@ Rows = readers. Columns = moments. Each cell: expected value + the test that pro
 | Killed mid-save | Old copy intact; next save works. |
 | Two updates at once (start + login refresh) | One wins cleanly; nothing lost. |
 | During a walk | Pinned copy used by every reader; next walk uses the new value. |
+| Killed mid-walk, then relaunched | A resumed or drained walk uses the rules pinned at its start (or the server judges it) — never the built-in or a newer copy by accident. |
 | Corrupt / unreadable saved copy | Falls back, still refreshes. |
 
 ## Step 3 — Test rules for every cell
@@ -51,9 +59,12 @@ Rows = readers. Columns = moments. Each cell: expected value + the test that pro
   itself.
 - **A "nothing happened" assertion needs a positive control first.** Before asserting "the fix was
   ignored", assert the flow is live (status tracking, no error, a good fix IS counted).
-- **Prove each test fails without its fix.** Break the fix (one at a time), run, see red, restore.
-  List in the PR: "test X — fails when Y is removed".
+- **Prove each test can fail.** Break the behaviour the test guards (one change at a time — for
+  new features too, not only bug fixes), run, see red, restore. Record it in the matrix:
+  "test X — red when Y is removed".
 
 ## Step 4 — Review
-The independent review gets the matrix and must (a) look for a missing row/column, (b) break at
-least one fix per new test to confirm it goes red. A review that only reads the diff is not done.
+The independent review gets the matrix and the "red when Y is removed" list. It must (a) look for a
+missing reader or moment, (b) re-run at least one "red when" per new test. Breaking code is done
+only in a scratch copy (`git worktree add` or `git stash`) and reverted before reporting; the
+author's tree is left clean. A review that only reads the diff is not done.

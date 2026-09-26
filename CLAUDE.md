@@ -78,12 +78,14 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Reading the diff is not enough. The reviewer also:
   - checks each changed reader of saved/cached/synced/pinned state against every app moment (cold start before
     load, offline, back online, sign in/out, killed mid-save, mid-walk) and reports any moment nobody handled;
-  - breaks at least one fix per new test and confirms the test goes red — a test that stays green guards nothing.
+  - re-runs at least one of the author's "red when Y is removed" checks per new test, breaking code only in a
+    scratch worktree or stash and reverting it before reporting — a test that stays green guards nothing.
 
 **Tests during the 0.x rebuild**
 - The old test suites and coverage gates are paused in CI (the old test project is still compiled). CI runs the build,
   `flutter analyze`, CodeQL, and the 0.1 user-story tests (`tests/MyLoop.V01.Tests`, `mobile/test/v0_1`) once they exist.
 - Each user story writes its own tests when it is finished. Those tests are added back to CI as they land.
+  Exception: lifecycle-matrix tests (`state-lifecycle-consistency`) land in the same PR as the reader they cover.
 - Where a gate below says run `dotnet test` / `flutter test`, run all 0.1 user-story tests plus build and `flutter analyze`.
 
 ---
@@ -210,7 +212,7 @@ These are fast, local, write-time skills — catch issues before they reach a PR
 | If the change touches… | Run before committing |
 |------------------------|-----------------------|
 | A disk-persisting / async-serialized service or its tests (`*queue*.dart`, `*cache*.dart`, WAL/offline queues, `mobile/test/**`) | `flutter-disk-concurrency-test` (stub `path_provider`, assert disk==memory + surviving set, prove the test fails without the fix) |
-| **State that is saved, cached, synced from the server, or pinned for a walk** (providers with a load/refresh, stores, queues, values captured at walk start) — app or server | `state-lifecycle-consistency` (reader × app-moment matrix; one test per cell through the real trigger; fake failures inside the real code, never its result; positive control before any "nothing happened" check; each test proven red without its fix) |
+| **App state kept across launches or pinned for a walk, read by more than one place** (e.g. rules, saved profile, offline queues, values captured at walk start) | `state-lifecycle-consistency` (reader × app-moment matrix from the design doc; tests for the readers this commit touches, through the real trigger; fake failures inside the real code, never its result; positive control before any "nothing happened" check; each test proven red when its behaviour is removed) |
 
 > These two gate tables are **intended to be auto-maintained**: once the `/update-session`
 > tooling lands in this repo, extracting a new skill should append a row here (or to the
