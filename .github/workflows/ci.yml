@@ -1,11 +1,11 @@
 name: CI
 
-# Once per PR commit, plus after each merge. A push to a branch with a PR used to run CI twice.
+# Once per PR commit (PRs into any branch, so stacked PRs get CI too), plus after each merge.
+# A push to a branch with a PR used to run CI twice.
 on:
   push:
     branches: [develop, main, master]
   pull_request:
-    branches: [develop, main, master]
   workflow_dispatch: # It unlocks manual terminal and UI execution.
 
 jobs:
