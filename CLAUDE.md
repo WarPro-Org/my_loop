@@ -57,13 +57,14 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Work is pushed there and opened as its own PR.
 - A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
 - **Every check-in gets an independent agent review.** Order for every change:
-  Pre-Check-in skills → commit and push → update the task → independent agent review against the task and the requirement (short,
-  human-style — see below) → fix what it finds (and review the fix) → Pre-PR skills → the user's final review → merge.
+  Pre-Check-in skills → commit and push → update the task → independent agent review against the task and the
+  requirement (short, human-style — see below) → fix what it finds (and review the fix) → Pre-PR skills → the user's final review → merge.
   Never ask the user to review work the agent hasn't reviewed.
 - Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
-- Stacked PRs (each based on the previous one's branch) are merged **in order with a merge commit, not squash** —
-  squashing a parent makes its children conflict. After each merge, retarget the next PR to `master`.
+- Stacked PRs (each based on the previous one's branch) are merged **in order**. This repo allows only squash merges,
+  so after each merge: merge `master` into the next PR's branch, check build and tests, push, then retarget it to
+  `master`.
 
 **Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
 - **FR task** ends with a `## Progress` section:
