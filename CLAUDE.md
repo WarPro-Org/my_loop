@@ -78,7 +78,7 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - The old test suites and coverage gates are paused in CI (the old test project is still compiled). CI runs the build,
   `flutter analyze`, CodeQL, and the 0.1 user-story tests (`tests/MyLoop.V01.Tests`, `mobile/test/v0_1`) once they exist.
 - Each user story writes its own tests when it is finished. Those tests are added back to CI as they land.
-- Where a gate below says run `dotnet test` / `flutter test`, run the current story's tests plus build and `flutter analyze`.
+- Where a gate below says run `dotnet test` / `flutter test`, run all 0.1 user-story tests plus build and `flutter analyze`.
 
 ---
 
@@ -236,7 +236,7 @@ chosen from MyLoop's documented failure classes).
 | **iOS-facing change** — auth/sign-in, location, push, permissions, data collected, account deletion, purchases, new SDK, `Info.plist` / `Runner.xcodeproj` / `PrivacyInfo.xcprivacy` | `app-store-compliance` (verify no App Store Review Guideline violation: SiwA 4.8, location 5.1.1/2.5.4, account deletion 5.1.1(v), privacy manifest) |
 | Error/exception handling or offline durability | `error-handling` |
 | **A PR that removes a method / endpoint / DTO / file** | `coordinate-overlapping-pr-removals` (grep open PRs for the deleted symbols — incl. their *tests*; decide + state merge order in both PRs; re-check overlapping PRs' mergeability after merging) |
-| **Always — final gate** | `verification-loop` (tests green — in 0.x, the current story's tests plus build and analyze) + the PR-review skill |
+| **Always — final gate** | `verification-loop` (tests green — in 0.x, all 0.1 user-story tests plus build and analyze) + the PR-review skill |
 
 The cross-stack row is a deliberate manual check — contract drift (.NET ↔ Flutter type/field/ID
 mismatches) is MyLoop's #1 bug class and no single skill fully owns it. If a skill surfaces an
@@ -304,7 +304,7 @@ GitHub Actions runs on every PR:
 - .NET 10 build of the API and every test project
 - Flutter analysis
 - CodeQL
-- During the 0.x rebuild only the 0.1 user-story tests run (see "Tests during the 0.x rebuild")
+- During the 0.x rebuild only the 0.1 user-story tests run, once they exist (see "Tests during the 0.x rebuild")
 
 PRs must pass CI before merging.
 
