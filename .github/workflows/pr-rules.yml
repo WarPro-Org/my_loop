@@ -29,12 +29,18 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          if ! git fetch --depth=2 origin "refs/pull/${PR_NUMBER}/merge:refs/remotes/pr/merge"; then
-            echo "::error::GitHub has no merge commit for this PR: resolve the merge conflicts, then re-run."
-            exit 1
-          fi
-          if [[ "$(git rev-parse refs/remotes/pr/merge^2)" != "$PR_HEAD_SHA" ]]; then
-            echo "::error::GitHub's merge commit is not ready for the latest push yet: re-run this check."
+          # GitHub rebuilds the PR's merge commit in the background after a push; wait for it.
+          ready=false
+          for attempt in 1 2 3 4 5; do
+            if git fetch --depth=2 origin "refs/pull/${PR_NUMBER}/merge:refs/remotes/pr/merge" 2>/dev/null \
+              && [[ "$(git rev-parse refs/remotes/pr/merge^2)" == "$PR_HEAD_SHA" ]]; then
+              ready=true
+              break
+            fi
+            sleep 10
+          done
+          if [[ "$ready" != true ]]; then
+            echo "::error::GitHub has no up-to-date merge commit for this PR: it has merge conflicts, or GitHub is still updating it. Resolve conflicts if any, then re-run."
             exit 1
           fi
           git fetch --depth=1 origin master:refs/remotes/origin/master

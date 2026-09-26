@@ -257,7 +257,8 @@ skill. After a new commit, gates that depend on the code run again.
 claim; the owner's review and the review records in the PR are what keep claims honest.
 - **CI** proves build, tests and analyze on every commit (`scripts/verify.sh` runs the same steps locally).
 - **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited). The script always
-  comes from master, so a PR can't loosen the check that judges it. A PR stacked on another branch gets the
+  comes from master (for a stacked PR: as long as its base branch's `pr-rules.yml` is unchanged from master),
+  so a PR can't loosen the check that judges it. A PR stacked on another branch gets the
   check only once that branch has the workflow, and every PR does once it is retargeted to master. **A missing
   "PR rules" check counts as not passed.**
   - Claude-made PRs (session link in the body, or a `claude/` branch) and FR PRs need the gate section, a
