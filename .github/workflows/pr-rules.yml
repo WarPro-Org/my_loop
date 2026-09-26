@@ -32,7 +32,7 @@ jobs:
           # GitHub rebuilds the PR's merge commit in the background after a push; wait for it.
           ready=false
           for attempt in 1 2 3 4 5; do
-            if git fetch --depth=2 origin "refs/pull/${PR_NUMBER}/merge:refs/remotes/pr/merge" 2>/dev/null \
+            if git fetch --depth=2 origin "+refs/pull/${PR_NUMBER}/merge:refs/remotes/pr/merge" \
               && [[ "$(git rev-parse refs/remotes/pr/merge^2)" == "$PR_HEAD_SHA" ]]; then
               ready=true
               break
