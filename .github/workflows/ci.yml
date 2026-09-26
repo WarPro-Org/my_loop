@@ -58,10 +58,10 @@ jobs:
       - name: Test (0.1 user stories)
         run: dotnet test tests/MyLoop.V01.Tests/MyLoop.V01.Tests.csproj --configuration Release
 
+  # Always runs (a few seconds): the "PR rules" check reads CLAUDE.md's gate tables, so a docs-only
+  # change to CLAUDE.md can break it too.
   pr-rules-tests:
     name: PR rules script tests
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

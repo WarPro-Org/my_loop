@@ -13,8 +13,9 @@ readonly SESSION=$'\nhttps://claude.ai/code/session_test'
 
 g() { git -c user.email=test@example.com -c user.name=test -c init.defaultBranch=master "$@"; }
 
-# make_pr "<added files>" "<deleted files>": a fresh repo whose HEAD is the PR's merge commit.
+# make_pr "<added files, one per line>" "<deleted files, one per line>": a fresh repo whose HEAD is the PR's merge commit.
 make_pr() {
+  local IFS=$'\n'   # one file per line; a name may contain spaces or a tab
   rm -rf "$work/repo" && mkdir -p "$work/repo" && cd "$work/repo" || exit 1
   g init -q
   mkdir -p .github .claude/skills
@@ -53,10 +54,15 @@ body() { # body "<skills run>" "<not-applicable lines>"
 }
 
 # #204's real code files (a sample of the old tests), with the gate lists it had before and after the audit.
-PR204_FILES="api/MyLoop.Api/Services/HexGridService.cs api/MyLoop.Api/Services/PathValidationService.cs
-api/MyLoop.Api/Constants/GameConstants.cs tests/MyLoop.V01.Tests/FR1/ServicesUseRulesTests.cs
-tests/MyLoop.Api.Tests/HexGridServiceTests.cs mobile/lib/features/journey/hex_overlay.dart
-mobile/test/mock_walk_engine_test.dart docs/runbooks/incident-spoofing.md .claude/skills/coding-standards/SKILL.md"
+PR204_FILES="api/MyLoop.Api/Services/HexGridService.cs
+api/MyLoop.Api/Services/PathValidationService.cs
+api/MyLoop.Api/Constants/GameConstants.cs
+tests/MyLoop.V01.Tests/FR1/ServicesUseRulesTests.cs
+tests/MyLoop.Api.Tests/HexGridServiceTests.cs
+mobile/lib/features/journey/hex_overlay.dart
+mobile/test/mock_walk_engine_test.dart
+docs/runbooks/incident-spoofing.md
+.claude/skills/coding-standards/SKILL.md"
 PR204_DELETED="api/MyLoop.Api/Constants/AntiCheatConstants.cs"
 FIRST_204='`coding-standards`, `dotnet-patterns`, `csharp-testing`, `security-review`, `coordinate-overlapping-pr-removals`, `verification-loop`'
 FINAL_204='`flutter-disk-concurrency-test`, `coding-standards`, `dotnet-patterns`, `csharp-testing`, `security-review`, `database-migrations`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mock-gps-anticheat`, `coordinate-overlapping-pr-removals`, `verification-loop`'
@@ -90,7 +96,28 @@ expect fail "#205's api_service change needs api-design" \
   "$(body '`coding-standards`, `dart-flutter-patterns`, `flutter-dart-code-review`, `verification-loop`' "$NA_204")" \
   '`api-design` is required by mobile/lib/shared/services/api_service.dart'
 
-make_pr "docs/versions/1/0.1/design/fr9-x.md .claude/skills/mock-gps-anticheat/SKILL.md README.md" "docs/old.md"
+make_pr "api/MyLoop.Api/Models/ClaimRequest.cs" ""
+expect fail "a server request/response class needs api-design" \
+  "$(body '`coding-standards`, `dotnet-patterns`, `csharp-testing`, `verification-loop`' "$NA_204")" \
+  '`api-design` is required by api/MyLoop.Api/Models/ClaimRequest.cs'
+
+make_pr "api/MyLoop.Api/Services/Café.cs" ""
+expect fail "a non-ASCII file name still matches its rows" \
+  "$(body '`verification-loop`' "$NA_204")" '`coding-standards` is required by api/MyLoop.Api/Services/Café.cs'
+
+make_pr $'mobile/lib/a\tb.dart' ""
+expect fail "a file name with a tab fails" "$(body "$FINAL_204" "$NA_204")" "File name with a tab"
+
+make_pr "api/MyLoop.Api/Migrations/20260101_Add.cs" ""
+MIGRATION_RUN='`coding-standards`, `dotnet-patterns`, `csharp-testing`, `database-migrations`, `verification-loop`, `flutter-disk-concurrency-test`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mock-gps-anticheat`, `coordinate-overlapping-pr-removals`'
+NA_MIGRATION=$'- Not applicable: `database-retry-resilience` — no transaction, and no change to `DbContext`\n'"${NA_204/\`database-retry-resilience\`/\`dotnet-patterns\`}"
+expect pass "a migration doesn't force the retry skill; a reason may name code in backticks" \
+  "$(body "$MIGRATION_RUN, \`security-review\`" "$NA_MIGRATION")"
+expect fail "a skill named only inside a reason doesn't count" \
+  "$(body "$MIGRATION_RUN" "$NA_MIGRATION"$'\n- Not applicable: `state-lifecycle-consistency` — reviewed like `security-review`')" \
+  'Gate rows not gone through: `security-review`'
+
+make_pr $'docs/versions/1/0.1/design/fr9-x.md\n.claude/skills/mock-gps-anticheat/SKILL.md\nREADME.md' "docs/old.md"
 expect pass "docs-only PR: no gate rows required" "$(body 'none' '')"
 MERGE=no-such-ref expect fail "changed files can't be read: fails, never skips" "$(body 'none' '')" \
   "Couldn't read the PR's changed files"
