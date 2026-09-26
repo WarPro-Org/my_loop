@@ -68,6 +68,15 @@ required_skills() {
   done <<<"$code_status"
 }
 
+# The part of a line before its first " - " or " — ": the skill list. What follows is a reason or a
+# note, and a skill named there doesn't count.
+before_dash() {
+  local line=$1 em hyphen
+  em=${line%%" — "*}
+  hyphen=${line%%" - "*}
+  if (( ${#hyphen} < ${#em} )); then printf '%s\n' "$hyphen"; else printf '%s\n' "$em"; fi
+}
+
 # Every gate row must be gone through: a skill a changed file requires must have run, and every other
 # gate skill must be named, as run or as "- Not applicable: `skill` — <reason>".
 check_gate_rows() {
@@ -77,16 +86,15 @@ check_gate_rows() {
     problems+=("Couldn't read the gate rows ($GATE_TABLES tables, $GATE_ROWS) on master.")
     return
   fi
-  run=$(grep -m1 '^\*\*Skills run:\*\*' <<<"$body" | grep -oE '`[a-z0-9-]+`' | tr -d '`')
+  line=$(grep -m1 '^\*\*Skills run:\*\*' <<<"$body")
+  run=$(before_dash "${line#\*\*Skills run:\*\*}" | grep -oE '`[a-z0-9-]+`' | tr -d '`')
   na=""
   # "- Not applicable: `a`, `b` — reason": skills before the first dash, the reason after it.
-  local rest names hyphen_cut reason
+  local rest names reason
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     rest=${line#*Not applicable:}
-    names=${rest%%" — "*}   # cut at whichever dash comes first
-    hyphen_cut=${rest%%" - "*}
-    (( ${#hyphen_cut} < ${#names} )) && names=$hyphen_cut
+    names=$(before_dash "$rest")
     reason=${rest#"$names"}
     if grep -qE '[A-Za-z]{3,}' <<<"$reason"; then
       na+=$'\n'$(grep -oE '`[a-z0-9-]+`' <<<"$names" | tr -d '`')
