@@ -61,6 +61,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
   Never ask the user to review work the agent hasn't reviewed.
 - Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
+- Stacked PRs (each based on the previous one's branch) are merged **in order with a merge commit, not squash** —
+  squashing a parent makes its children conflict. After each merge, retarget the next PR to `master`.
 
 **Stay on the goal**
 - Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
@@ -73,7 +75,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
 
 **Tests during the 0.x rebuild**
-- The old test suites and coverage gates are paused in CI. CI runs build, `flutter analyze` and CodeQL only.
+- The old test suites and coverage gates are paused in CI (the old test project is still compiled). CI runs the build,
+  `flutter analyze`, CodeQL, and the 0.1 user-story tests (`tests/MyLoop.V01.Tests`, `mobile/test/v0_1`) once they exist.
 - Each user story writes its own tests when it is finished. Those tests are added back to CI as they land.
 - Where a gate below says run `dotnet test` / `flutter test`, run the current story's tests plus build and `flutter analyze`.
 
