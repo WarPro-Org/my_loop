@@ -183,7 +183,7 @@ class ApiService {
     final response = await _dio.get<Map<String, dynamic>>(
       _rulesPath,
       options: Options(
-        headers: {if (knownTag != null) 'If-None-Match': '"$knownTag"'},
+        headers: {if (knownTag != null) HttpHeaders.ifNoneMatchHeader: '"$knownTag"'},
         validateStatus: (status) =>
             status == HttpStatus.ok || status == HttpStatus.notModified,
       ),

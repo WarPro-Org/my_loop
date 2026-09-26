@@ -192,7 +192,6 @@ class JourneyController extends Notifier<JourneyState> {
     if (!_isCurrentSession(generation)) return;
     // Right after launch the saved rules may still be loading; a walk pinned to the built-in
     // copy would use older rules for its whole length.
-    ref.read(gameRulesProvider);
     await ref.read(gameRulesProvider.notifier).ready;
     if (!_isCurrentSession(generation)) return;
     _walkRules = ref.read(gameRulesProvider);
