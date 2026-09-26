@@ -15,6 +15,32 @@ These rules override all default Claude behavior. No exceptions.
 
 ---
 
+## Planning Chat & User Stories (Spec-Driven Development)
+
+Applies when planning versions, discussing requirements, or creating tasks.
+
+**Chat style**
+- Keep every response short, plain, and easy to read. No walls of text.
+- One point and one question per turn. Wait for the answer before moving on.
+- Discuss a requirement fully and get the user's agreement **before** any work on it starts.
+
+**Spec-driven order**
+- Requirements live in `docs/versions/<release>/<version>/requirements.md` (e.g. `docs/versions/1/0.1/`).
+- Requirements are numbered FR1, FR2, … in build order. Work happens strictly in that order.
+- The spec is updated first; code follows the spec. Any change of plan updates the spec before the code.
+
+**User stories (GitHub tasks)**
+- One task per requirement (FR). Title format: `0.1 > FR1 > <short title>`.
+- Body is short — readable in under a minute:
+  - **Story:** As a …, I want …, so that …
+  - **What:** what we will build (2–4 bullets).
+  - **Why:** the reason, with requirement IDs (e.g. `#20`).
+  - **How:** the approach in 2–4 bullets — no code.
+  - **Acceptance criteria:** a checklist that can be tested.
+- Show the draft to the user and create the task **only after they approve it**.
+
+---
+
 ## Socratic Requirement & Design Protocol (SRDP)
 
 **Applies to every task — bugs, features, refactors, and small changes. Never skip a gate. Gate approval is signalled by the user saying anything like "yeah ok", "ok next", "this seems ok", "looks good", etc.**
