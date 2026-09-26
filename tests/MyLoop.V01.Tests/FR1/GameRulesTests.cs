@@ -65,6 +65,14 @@ public class GameRulesTests
     }
 
     [Fact]
+    public void Zero_skip_neighbors_is_allowed()
+    {
+        var rules = Build(ShippedWith("GameRules:Loop:SkipNeighbors", "0")).GetRequiredService<IRuleSettings>().Current;
+
+        Assert.Equal(0, rules.Loop.SkipNeighbors);
+    }
+
+    [Fact]
     public async Task Server_refuses_to_start_with_missing_rules()
     {
         var builder = Host.CreateApplicationBuilder();
