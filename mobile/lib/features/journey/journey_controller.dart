@@ -6,6 +6,8 @@ library;
 
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/rules/game_rules.dart';
+import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
@@ -177,7 +179,12 @@ class JourneyController extends Notifier<JourneyState> {
   @override
   JourneyState build() => const JourneyState();
 
+  /// Rules this walk started with. A rules update that arrives mid-walk (login/resume refresh)
+  /// only applies to the next walk, so one walk is never judged by two sets of numbers (#20).
+  GameRules _walkRules = defaultGameRules;
+
   Future<void> startJourney() async {
+    _walkRules = ref.read(gameRulesProvider);
     // Captured before the first await: a sign-out that begins during any of the
     // awaits below bumps the generation, and each re-check then aborts (#110).
     final generation = _sessionGeneration;
@@ -255,7 +262,7 @@ class JourneyController extends Notifier<JourneyState> {
   // ────────────────────────────────────────────────────────────────────────────
 
   void _onPosition(Position pos) {
-    if (pos.accuracy > AppConstants.maxAccuracyMeters) {
+    if (pos.accuracy > _walkRules.gpsAccuracyThresholdMeters) {
       state = state.copyWith(currentPosition: pos);
       return;
     }
@@ -523,7 +530,7 @@ class JourneyController extends Notifier<JourneyState> {
     // the displayed count: the server returns the authoritative, area-validated
     // and de-duplicated loopCount, which avoids the over-count this used to
     // show live (issue #21). state.loopCount is set only from the preview.
-    final estimate = LoopDetector.countLoops(path);
+    final estimate = LoopDetector.countLoops(path, _walkRules);
     if (estimate != _lastLoopCount) {
       _lastLoopCount = estimate;
       if (estimate > 0) {
