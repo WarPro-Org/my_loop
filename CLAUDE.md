@@ -68,9 +68,11 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - Keep each next branch up to date: after every check-in on a parent, merge the parent into the next branch.
     Then the next branch already holds every parent fix, and a conflict with `master` is only the parent's own
     lines coming back in squashed form.
-  - Before resolving, check `git diff <parent's final commit> <next branch>` shows only the next PR's own changes.
-    If it does, keep the next branch's version; if not, merge the parent's final commit in first. Never drop a line
-    the parent changed.
+  - Before resolving, check `git diff <parent's final commit> <next branch>` shows only the next PR's own changes;
+    if not, merge the parent's final commit in first.
+  - Per conflicting file: keep the next branch's version only if `git diff <parent's final commit> master -- <file>`
+    is empty (the conflict is only the parent's squashed lines). Otherwise another PR changed it too: resolve by
+    hand and keep both changes. Never drop a line the parent or another PR changed.
 
 **Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
 - **FR task** ends with a `## Progress` section:
