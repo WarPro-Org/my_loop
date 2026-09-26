@@ -80,12 +80,13 @@ check_gate_rows() {
   run=$(grep -m1 '^\*\*Skills run:\*\*' <<<"$body" | grep -oE '`[a-z0-9-]+`' | tr -d '`')
   na=""
   # "- Not applicable: `a`, `b` — reason": skills before the first dash, the reason after it.
-  local rest names reason
+  local rest names hyphen_cut reason
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     rest=${line#*Not applicable:}
-    names=${rest%%" — "*}
-    [[ "$names" == "$rest" ]] && names=${rest%%" - "*}
+    names=${rest%%" — "*}   # cut at whichever dash comes first
+    hyphen_cut=${rest%%" - "*}
+    (( ${#hyphen_cut} < ${#names} )) && names=$hyphen_cut
     reason=${rest#"$names"}
     if grep -qE '[A-Za-z]{3,}' <<<"$reason"; then
       na+=$'\n'$(grep -oE '`[a-z0-9-]+`' <<<"$names" | tr -d '`')
