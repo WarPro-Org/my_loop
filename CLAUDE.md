@@ -39,6 +39,11 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - **Acceptance criteria:** a checklist that can be tested.
 - Show the draft to the user and create the task **only after they approve it**.
 
+**Tests during the 0.x rebuild**
+- The old test suites and coverage gates are paused in CI. CI runs build, `flutter analyze` and CodeQL only.
+- Each user story writes its own tests when it is finished. Those tests are added back to CI as they land.
+- Where a gate below says run `dotnet test` / `flutter test`, run the current story's tests plus build and `flutter analyze`.
+
 ---
 
 ## Socratic Requirement & Design Protocol (SRDP)
