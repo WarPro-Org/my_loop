@@ -12,7 +12,7 @@ namespace MyLoop.Api.Tests;
 /// </summary>
 public class HexGridRegionIdTests
 {
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
 
     [Fact]
     public void Accepts_a_real_res3_region_id()

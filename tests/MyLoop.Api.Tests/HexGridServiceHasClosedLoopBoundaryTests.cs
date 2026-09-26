@@ -16,7 +16,7 @@ namespace MyLoop.Api.Tests;
 /// </summary>
 public class HexGridServiceHasClosedLoopBoundaryTests
 {
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
 
     // ── Degenerate inputs (guarded by the length check, before any geo math runs) ────
 
@@ -35,7 +35,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     [Fact]
     public void Path_one_point_short_of_the_minimum_has_no_closed_loop()
     {
-        var path = new double[GameConstants.MinLoopPoints - 1][];
+        var path = new double[TestRules.Loop.MinPoints - 1][];
         for (var i = 0; i < path.Length; i++)
             path[i] = [12.9716, 77.5946]; // all identical — would trivially close if length allowed it
 
@@ -45,7 +45,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     [Fact]
     public void Path_at_exactly_the_minimum_length_with_identical_points_closes()
     {
-        var path = new double[GameConstants.MinLoopPoints][];
+        var path = new double[TestRules.Loop.MinPoints][];
         for (var i = 0; i < path.Length; i++)
             path[i] = [12.9716, 77.5946];
 
@@ -65,8 +65,8 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     // Points are ~0.011 m apart so every one lands in the same spatial-hash bucket (the index
     // buckets by real coordinates, not the mocked distance) and every pair is a candidate.
 
-    private const double FarBeyondClosureMeters = GameConstants.LoopClosureDistanceMeters * 100;
-    private const double HairBeyondClosureMeters = GameConstants.LoopClosureDistanceMeters + 0.0001;
+    private static readonly double FarBeyondClosureMeters = TestRules.Loop.ClosureDistanceMeters * 100;
+    private static readonly double HairBeyondClosureMeters = TestRules.Loop.ClosureDistanceMeters + 0.0001;
 
     private static double[][] DistinctPointsInOneBucket(int length)
     {
@@ -79,21 +79,21 @@ public class HexGridServiceHasClosedLoopBoundaryTests
 
     private static HexGridService ServiceWhereOnlyScanPairReturns(double[][] path, double scanPairMeters)
     {
-        var closingPoint = path[GameConstants.MinLoopPoints];
+        var closingPoint = path[TestRules.Loop.MinPoints];
         var geo = new Mock<IGeoService>();
         geo.Setup(g => g.HaversineMeters(
                 It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
             .Returns(FarBeyondClosureMeters);
         geo.Setup(g => g.HaversineMeters(closingPoint[0], closingPoint[1], path[0][0], path[0][1]))
             .Returns(scanPairMeters);
-        return new HexGridService(geo.Object);
+        return new HexGridService(geo.Object, TestRules.Settings);
     }
 
     [Fact]
     public void Scan_pair_exactly_at_the_closure_threshold_counts_as_closed()
     {
-        var path = DistinctPointsInOneBucket(GameConstants.MinLoopPoints + 2);
-        var svc = ServiceWhereOnlyScanPairReturns(path, GameConstants.LoopClosureDistanceMeters);
+        var path = DistinctPointsInOneBucket(TestRules.Loop.MinPoints + 2);
+        var svc = ServiceWhereOnlyScanPairReturns(path, TestRules.Loop.ClosureDistanceMeters);
 
         Assert.True(svc.HasClosedLoop(path));
     }
@@ -101,7 +101,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     [Fact]
     public void Scan_pair_a_hair_beyond_the_closure_threshold_does_not_close()
     {
-        var path = DistinctPointsInOneBucket(GameConstants.MinLoopPoints + 2);
+        var path = DistinctPointsInOneBucket(TestRules.Loop.MinPoints + 2);
         var svc = ServiceWhereOnlyScanPairReturns(path, HairBeyondClosureMeters);
 
         Assert.False(svc.HasClosedLoop(path));
@@ -125,15 +125,15 @@ public class HexGridServiceHasClosedLoopBoundaryTests
         geo.Setup(g => g.HaversineMeters(
                 It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()))
             .Returns(meters);
-        return new HexGridService(geo.Object);
+        return new HexGridService(geo.Object, TestRules.Settings);
     }
 
     [Fact]
     public void Endpoints_exactly_at_the_closure_threshold_count_as_closed()
     {
-        var svc = ServiceWhereEveryPairReturns(GameConstants.LoopClosureDistanceMeters);
+        var svc = ServiceWhereEveryPairReturns(TestRules.Loop.ClosureDistanceMeters);
 
-        Assert.True(svc.HasClosedLoop(IdenticalCoordinatePath(GameConstants.MinLoopPoints)));
+        Assert.True(svc.HasClosedLoop(IdenticalCoordinatePath(TestRules.Loop.MinPoints)));
     }
 
     [Fact]
@@ -141,7 +141,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     {
         var svc = ServiceWhereEveryPairReturns(HairBeyondClosureMeters);
 
-        Assert.False(svc.HasClosedLoop(IdenticalCoordinatePath(GameConstants.MinLoopPoints)));
+        Assert.False(svc.HasClosedLoop(IdenticalCoordinatePath(TestRules.Loop.MinPoints)));
     }
 
     // ── Interior closure vs. endpoint-only closure ────────────────────────────────
@@ -165,7 +165,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
         geo.Setup(g => g.HaversineMeters(path[20][0], path[20][1], path[0][0], path[0][1]))
             .Returns(1.0);
 
-        var svc = new HexGridService(geo.Object);
+        var svc = new HexGridService(geo.Object, TestRules.Settings);
 
         Assert.True(svc.HasClosedLoop(path));
     }
@@ -193,7 +193,7 @@ public class HexGridServiceHasClosedLoopBoundaryTests
     public void A_straight_line_walk_that_never_returns_does_not_close()
     {
         var svc = Service();
-        var path = new double[GameConstants.MinLoopPoints + 5][];
+        var path = new double[TestRules.Loop.MinPoints + 5][];
         for (var i = 0; i < path.Length; i++)
             path[i] = [i * 0.001, 0.0]; // marching north, ~111m per step, never doubling back
 
