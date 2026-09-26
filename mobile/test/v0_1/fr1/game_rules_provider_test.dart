@@ -26,10 +26,14 @@ class _MemoryStore implements RulesStore {
 }
 
 class _BrokenStore implements RulesStore {
+  int saveAttempts = 0;
   @override
   Future<SavedRules?> load() async => throw Exception('no documents directory');
   @override
-  Future<void> save(SavedRules rules) async => throw Exception('no documents directory');
+  Future<void> save(SavedRules rules) async {
+    saveAttempts++;
+    throw Exception('no documents directory');
+  }
 }
 
 class _FakeSource implements RulesSource {
@@ -108,13 +112,15 @@ void main() {
 
   test('broken phone storage still falls back to built-in rules and checks the server', () async {
     final source = _FakeSource(serverRules: _version(3));
+    final store = _BrokenStore();
     final container = ProviderContainer(overrides: [
-      rulesStoreProvider.overrideWithValue(_BrokenStore()),
+      rulesStoreProvider.overrideWithValue(store),
       rulesSourceProvider.overrideWithValue(source),
     ]);
     addTearDown(container.dispose);
 
     // _settle awaits refresh(): it must complete normally, with the server's rules applied.
     expect((await _settle(container)).version, 3);
+    expect(store.saveAttempts, 1);
   });
 }

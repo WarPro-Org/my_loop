@@ -52,7 +52,7 @@ class GameRulesNotifier extends Notifier<GameRules> {
     }
   }
 
-  /// Asks the server whether the rules changed and saves any new copy. Called on app start and on every
+  /// Asks the server whether the rules changed; applies any new copy and tries to save it. Called on app start and on every
   /// login/resume. Offline or signed out → keeps the current rules.
   Future<void> refresh() async {
     await _loadSaved;
