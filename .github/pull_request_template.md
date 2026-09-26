@@ -1,3 +1,6 @@
+Task: #<!-- number -->
+Design doc (FR work only): <!-- docs/versions/<release>/<version>/design/frN-<name>.md -->
+
 ## What & why
 
 <!-- Explain the "why", not just the "what". -->
@@ -17,7 +20,13 @@ then check the boxes that apply and note which skills you ran.
 - [ ] Error handling / offline durability → `error-handling`
 - [ ] **Final gate** → `verification-loop` (tests green) + PR review
 
-**Skills run:** <!-- list them -->
+**Skills run:** <!-- only skills actually invoked on the head commit; "none" if none. Never from memory. -->
+
+<!-- Over ~15 files / ~400 lines? Split the PR, or add a line: "Size exception: <reason, agreed with the owner>" -->
+
+## Independent review
+
+<!-- One line per reviewed commit, newest last: REVIEWED <commit> — <result, and what was fixed>. The latest commit must be listed. -->
 
 ## Testing
 
