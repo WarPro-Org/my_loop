@@ -304,7 +304,7 @@ GitHub Actions runs on every PR:
 - .NET 10 build of the API and every test project
 - Flutter analysis
 - CodeQL
-- During the 0.x rebuild only the current user stories' tests run (see "Tests during the 0.x rebuild")
+- During the 0.x rebuild only the 0.1 user-story tests run (see "Tests during the 0.x rebuild")
 
 PRs must pass CI before merging.
 
