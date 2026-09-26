@@ -41,10 +41,16 @@ class GameRulesNotifier extends Notifier<GameRules> {
   }
 
   Future<void> _useSavedCopy() async {
-    final saved = await ref.read(rulesStoreProvider).load();
-    if (saved == null) return;
-    _tag = saved.tag;
-    state = saved.rules;
+    try {
+      final saved = await ref.read(rulesStoreProvider).load();
+      if (saved == null) return;
+      _tag = saved.tag;
+      state = saved.rules;
+    } on Exception catch (e) {
+      // Storage itself unavailable (e.g. no documents directory): the built-in rules are always
+      // a safe fallback, and refresh() must still run instead of failing on every app open.
+      _log.warning('Saved game rules unavailable; using built-in copy', e);
+    }
   }
 
   /// Asks the server whether the rules changed and saves any new copy. Called on app start and on every
