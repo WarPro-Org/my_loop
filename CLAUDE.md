@@ -55,9 +55,10 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Every FR gets its own branch named with version and title: `v0.1/fr1-configurable-game-settings`.
 - Work is pushed there and opened as its own PR.
 - A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
-- **Every check-in gets an independent agent review first.** After any change is pushed, a fresh agent reviews it
-  against the task and the requirement (short, human-style — see below). Fix what it finds, then hand the user the
-  final review. Never ask the user to review work the agent hasn't reviewed.
+- **Every check-in gets an independent agent review.** Order for every change:
+  Pre-Check-in skills → commit and push → independent agent review against the task and the requirement (short,
+  human-style — see below) → fix what it finds (and review the fix) → Pre-PR skills → the user's final review → merge.
+  Never ask the user to review work the agent hasn't reviewed.
 - Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
 
@@ -174,7 +175,8 @@ my_loop/
 
 ## Branch & PR Workflow
 
-- Branch format: `{username}/{short-description}` (e.g. `ashukla/fix-login-flow`)
+- Branch format: FR work uses `v0.1/frN-<part>` (see Planning Chat & User Stories); everything else uses
+  `{username}/{short-description}` (e.g. `ashukla/fix-login-flow`)
 - **Never push directly to `master`** — branch protection is enforced
 - All changes require a PR with at least 1 approval before merging
 - Keep PRs focused — one concern per PR
@@ -231,7 +233,7 @@ chosen from MyLoop's documented failure classes).
 | **iOS-facing change** — auth/sign-in, location, push, permissions, data collected, account deletion, purchases, new SDK, `Info.plist` / `Runner.xcodeproj` / `PrivacyInfo.xcprivacy` | `app-store-compliance` (verify no App Store Review Guideline violation: SiwA 4.8, location 5.1.1/2.5.4, account deletion 5.1.1(v), privacy manifest) |
 | Error/exception handling or offline durability | `error-handling` |
 | **A PR that removes a method / endpoint / DTO / file** | `coordinate-overlapping-pr-removals` (grep open PRs for the deleted symbols — incl. their *tests*; decide + state merge order in both PRs; re-check overlapping PRs' mergeability after merging) |
-| **Always — final gate** | `verification-loop` (tests green) + the PR-review skill |
+| **Always — final gate** | `verification-loop` (tests green — in 0.x, the current story's tests plus build and analyze) + the PR-review skill |
 
 The cross-stack row is a deliberate manual check — contract drift (.NET ↔ Flutter type/field/ID
 mismatches) is MyLoop's #1 bug class and no single skill fully owns it. If a skill surfaces an
@@ -296,8 +298,10 @@ Debug builds fall back to a dev tunnel, so plain `flutter run` needs no flags.
 ## CI
 
 GitHub Actions runs on every PR:
-- .NET 10 build + test
-- Flutter widget analysis
+- .NET 10 build of the API and every test project
+- Flutter analysis
+- CodeQL
+- During the 0.x rebuild only the current user stories' tests run (see "Tests during the 0.x rebuild")
 
 PRs must pass CI before merging.
 
