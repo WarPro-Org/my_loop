@@ -1,6 +1,7 @@
 /// FR1 — the app always has usable rules: built-in → saved copy → server update.
 library;
 
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/shared/rules/game_rules.dart';
@@ -8,16 +9,17 @@ import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:myloop/shared/rules/rules_source.dart';
 import 'package:myloop/shared/rules/rules_store.dart';
 
-GameRules _version(int v) => GameRules.fromJson({...defaultGameRules.toJson(), 'version': v});
+SavedRules _version(int v) =>
+    SavedRules(GameRules.fromJson({...defaultGameRules.toJson(), 'version': v}), 'tag-$v');
 
 class _MemoryStore implements RulesStore {
   _MemoryStore([this.saved]);
-  GameRules? saved;
+  SavedRules? saved;
   int saves = 0;
   @override
-  Future<GameRules?> load() async => saved;
+  Future<SavedRules?> load() async => saved;
   @override
-  Future<void> save(GameRules rules) async {
+  Future<void> save(SavedRules rules) async {
     saved = rules;
     saves++;
   }
@@ -25,14 +27,14 @@ class _MemoryStore implements RulesStore {
 
 class _FakeSource implements RulesSource {
   _FakeSource({this.serverRules, this.offline = false});
-  final GameRules? serverRules;
+  final SavedRules? serverRules;
   final bool offline;
-  int? askedWithVersion;
+  String? askedWithTag;
   @override
-  Future<GameRules?> fetchIfChanged(int knownVersion) async {
-    askedWithVersion = knownVersion;
-    if (offline) throw Exception('no internet');
-    return serverRules == null || serverRules!.version == knownVersion ? null : serverRules;
+  Future<SavedRules?> fetchIfChanged(String? knownTag) async {
+    askedWithTag = knownTag;
+    if (offline) throw DioException(requestOptions: RequestOptions(), message: 'no internet');
+    return serverRules == null || serverRules!.tag == knownTag ? null : serverRules;
   }
 }
 
@@ -52,6 +54,14 @@ ProviderContainer _container(_MemoryStore store, _FakeSource source) {
 }
 
 void main() {
+  test('first launch with no saved copy asks the server without a fingerprint', () async {
+    final source = _FakeSource(serverRules: _version(2));
+    final container = _container(_MemoryStore(), source);
+
+    expect((await _settle(container)).version, 2);
+    expect(source.askedWithTag, isNull);
+  });
+
   test('first launch with no internet uses the built-in copy', () async {
     final container = _container(_MemoryStore(), _FakeSource(offline: true));
 
@@ -73,11 +83,11 @@ void main() {
     final rules = await _settle(container);
 
     expect(rules.version, 6);
-    expect(store.saved?.version, 6);
-    expect(source.askedWithVersion, isNotNull);
+    expect(store.saved?.rules.version, 6);
+    expect(source.askedWithTag, 'tag-5');
   });
 
-  test('up-to-date app asks with its saved version and saves nothing', () async {
+  test('up-to-date app asks with its saved fingerprint and saves nothing', () async {
     final store = _MemoryStore(_version(5));
     final source = _FakeSource(serverRules: _version(5));
     final container = _container(store, source);
@@ -85,7 +95,7 @@ void main() {
     final rules = await _settle(container);
 
     expect(rules.version, 5);
-    expect(source.askedWithVersion, 5);
+    expect(source.askedWithTag, 'tag-5');
     expect(store.saves, 0);
   });
 }

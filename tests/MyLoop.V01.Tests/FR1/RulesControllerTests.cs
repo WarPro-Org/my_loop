@@ -6,19 +6,24 @@ using MyLoop.Modules.Rules;
 
 namespace MyLoop.V01.Tests.FR1;
 
-/// <summary>FR1: GET /api/rules returns the app's rules, or 304 when the app is already current.</summary>
+/// <summary>FR1: GET /api/rules returns the app's rules, or 304 when the app already has them.</summary>
 public class RulesControllerTests
 {
     private const int RulesVersion = 7;
 
-    private static RulesController Controller(string? ifNoneMatch = null)
-    {
-        var rules = new GameRules
+    private static RuleSettings Settings(double closureDistanceMeters = 50) =>
+        new(Options.Create(new GameRules
         {
             Version = RulesVersion,
-            Loop = new LoopRules { ClosureDistanceMeters = 50, MinPoints = 20, SkipNeighbors = 10, MinAreaSquareMeters = 5000 },
-        };
-        var controller = new RulesController(new RuleSettings(Options.Create(rules)))
+            Loop = new LoopRules
+            {
+                ClosureDistanceMeters = closureDistanceMeters, MinPoints = 20, SkipNeighbors = 10, MinAreaSquareMeters = 5000,
+            },
+        }));
+
+    private static RulesController Controller(IRuleSettings settings, string? ifNoneMatch = null)
+    {
+        var controller = new RulesController(settings)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -28,33 +33,43 @@ public class RulesControllerTests
     }
 
     [Fact]
-    public void First_request_returns_rules_and_version_as_etag()
+    public void First_request_returns_rules_and_their_fingerprint_as_etag()
     {
-        var controller = Controller();
+        var settings = Settings();
+        var controller = Controller(settings);
 
         var result = Assert.IsType<OkObjectResult>(controller.Get());
 
         var body = Assert.IsType<ClientRules>(result.Value);
         Assert.Equal(RulesVersion, body.Version);
         Assert.Equal(50, body.LoopClosureDistanceMeters);
-        Assert.Equal($"\"{RulesVersion}\"", controller.Response.Headers.ETag.ToString());
+        Assert.Equal($"\"{settings.ClientRulesTag}\"", controller.Response.Headers.ETag.ToString());
     }
 
     [Fact]
-    public void App_with_current_version_gets_not_modified()
+    public void App_with_current_rules_gets_not_modified()
     {
-        var controller = Controller(ifNoneMatch: $"\"{RulesVersion}\"");
+        var settings = Settings();
 
-        var result = Assert.IsType<StatusCodeResult>(controller.Get());
+        var result = Assert.IsType<StatusCodeResult>(Controller(settings, $"\"{settings.ClientRulesTag}\"").Get());
 
         Assert.Equal(StatusCodes.Status304NotModified, result.StatusCode);
     }
 
     [Fact]
-    public void App_with_older_version_gets_the_new_rules()
+    public void App_with_older_rules_gets_the_new_rules()
     {
-        var controller = Controller(ifNoneMatch: $"\"{RulesVersion - 1}\"");
+        Assert.IsType<OkObjectResult>(Controller(Settings(), "\"6-0000000000000000\"").Get());
+    }
 
-        Assert.IsType<OkObjectResult>(controller.Get());
+    [Fact]
+    public void Changed_value_without_a_version_bump_still_reaches_the_app()
+    {
+        // Someone edits a value (or overrides it in production) but forgets to bump Version.
+        var before = Settings(closureDistanceMeters: 50);
+        var after = Settings(closureDistanceMeters: 40);
+
+        Assert.NotEqual(before.ClientRulesTag, after.ClientRulesTag);
+        Assert.IsType<OkObjectResult>(Controller(after, $"\"{before.ClientRulesTag}\"").Get());
     }
 }

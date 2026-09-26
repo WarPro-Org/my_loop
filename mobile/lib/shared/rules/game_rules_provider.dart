@@ -2,7 +2,8 @@
 ///
 /// Always synchronous and always usable: it starts with the built-in copy, switches to the
 /// saved copy once read from disk, and then to the server's rules when a refresh finds they changed.
-/// A walk never waits on the network for rules.
+/// A walk never waits on the network for rules, and a running walk keeps the rules it started
+/// with (see JourneyController), so a mid-walk update only affects the next walk (#20).
 library;
 
 import 'dart:async';
@@ -28,6 +29,9 @@ final gameRulesProvider = NotifierProvider<GameRulesNotifier, GameRules>(GameRul
 class GameRulesNotifier extends Notifier<GameRules> {
   Future<void>? _loadSaved;
 
+  /// Server fingerprint of [state]; null while on the built-in copy.
+  String? _tag;
+
   @override
   GameRules build() {
     _loadSaved = _useSavedCopy();
@@ -37,7 +41,9 @@ class GameRulesNotifier extends Notifier<GameRules> {
 
   Future<void> _useSavedCopy() async {
     final saved = await ref.read(rulesStoreProvider).load();
-    if (saved != null) state = saved;
+    if (saved == null) return;
+    _tag = saved.tag;
+    state = saved.rules;
   }
 
   /// Asks the server whether the rules changed and saves any new copy. Called on app start and on every
@@ -45,11 +51,12 @@ class GameRulesNotifier extends Notifier<GameRules> {
   Future<void> refresh() async {
     await _loadSaved;
     try {
-      final changed = await ref.read(rulesSourceProvider).fetchIfChanged(state.version);
+      final changed = await ref.read(rulesSourceProvider).fetchIfChanged(_tag);
       if (changed == null) return;
       await ref.read(rulesStoreProvider).save(changed);
-      state = changed;
-      _log.info('Game rules updated to version ${changed.version}');
+      _tag = changed.tag;
+      state = changed.rules;
+      _log.info('Game rules updated to version ${changed.rules.version}');
     } on DioException catch (e) {
       // Offline, signed out (401) or server down: normal — keep the rules we have.
       _log.fine('Game rules refresh skipped; keeping version ${state.version}', e);

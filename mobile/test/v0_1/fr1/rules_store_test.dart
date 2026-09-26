@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/shared/rules/game_rules.dart';
+import 'package:myloop/shared/rules/rules_source.dart';
 import 'package:myloop/shared/rules/rules_store.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
@@ -16,7 +17,8 @@ class _FakePathProvider extends PathProviderPlatform with MockPlatformInterfaceM
   Future<String?> getApplicationDocumentsPath() async => dir;
 }
 
-GameRules _version(int v) => GameRules.fromJson({...defaultGameRules.toJson(), 'version': v});
+SavedRules _version(int v) =>
+    SavedRules(GameRules.fromJson({...defaultGameRules.toJson(), 'version': v}), 'tag-$v');
 
 void main() {
   late Directory tempDir;
@@ -39,7 +41,8 @@ void main() {
 
     final reopened = await FileRulesStore().load();
 
-    expect(reopened?.toJson(), _version(4).toJson());
+    expect(reopened?.rules.toJson(), _version(4).rules.toJson());
+    expect(reopened?.tag, 'tag-4');
   });
 
   test('a corrupted saved copy is ignored instead of crashing', () async {
@@ -59,7 +62,7 @@ void main() {
       ]);
 
       final onDisk = await FileRulesStore().load();
-      expect(onDisk?.version, 4, reason: 'round $round');
+      expect(onDisk?.rules.version, 4, reason: 'round $round');
       expect(File('${tempDir.path}/game_rules.json.tmp').existsSync(), isFalse);
     }
   });

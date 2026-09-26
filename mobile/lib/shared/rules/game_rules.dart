@@ -76,7 +76,7 @@ const GameRules defaultGameRules = GameRules(
   minLoopPoints: 20,
   loopSkipNeighbors: 10,
   minLoopAreaSquareMeters: 5000,
-  gpsAccuracyThresholdMeters: 25,
+  gpsAccuracyThresholdMeters: 50,
   autoEndIdleMinutes: 30,
   autoEndVehicleSpeedKmh: 35,
   autoEndVehicleMinutes: 3,

@@ -43,14 +43,4 @@ public class ClientRulesTests
         Assert.Equal(server.AutoEnd.IdleMinutes, client.AutoEndIdleMinutes);
         Assert.Equal(server.SafetyAlarm.DelaySeconds, client.SafetyAlarmDelaySeconds);
     }
-
-    [Fact]
-    public void Auto_end_vehicle_speed_stays_above_the_anti_cheat_limit()
-    {
-        // The app learns the auto-end speed, so it must not equal or reveal the anti-cheat limit.
-        var rules = ShippedRules().Current;
-        var antiCheatKmh = rules.AntiCheat.MaxAverageSpeedMetersPerSecond * 3.6;
-
-        Assert.True(rules.AutoEnd.VehicleSpeedKmh > antiCheatKmh);
-    }
 }

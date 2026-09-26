@@ -12,12 +12,13 @@ internal static class TestRules
     {
         Version = 1,
         Loop = new LoopRules { ClosureDistanceMeters = 50, MinPoints = 20, SkipNeighbors = 10, MinAreaSquareMeters = 5000 },
-        Gps = new GpsRules { AccuracyThresholdMeters = 25 },
+        Gps = new GpsRules { AccuracyThresholdMeters = 50 },
         Gap = new GapRules { MaxSeconds = 60, MaxMeters = 100 },
         AntiCheat = new AntiCheatRules
         {
             MaxSpeedMetersPerSecond = 8.33,
             MaxAverageSpeedMetersPerSecond = 9.0,
+            GpsDriftMarginMeters = 30,
             MaxDistanceBetweenPointsMeters = 60,
             MaxSpeedViolationRate = 0.05,
             GpsSamplingIntervalSeconds = 5,

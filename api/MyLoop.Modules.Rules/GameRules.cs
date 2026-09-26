@@ -69,6 +69,9 @@ public sealed class AntiCheatRules
     /// </summary>
     public double MaxAverageSpeedMetersPerSecond { get; init; }
 
+    /// <summary>Extra distance allowed per hop for GPS drift — even a still phone wanders ~30 m between fixes.</summary>
+    public double GpsDriftMarginMeters { get; init; }
+
     /// <summary>Largest plausible jump between consecutive points (includes a GPS drift margin).</summary>
     public double MaxDistanceBetweenPointsMeters { get; init; }
 

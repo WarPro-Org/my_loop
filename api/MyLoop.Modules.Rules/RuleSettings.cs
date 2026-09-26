@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 
 namespace MyLoop.Modules.Rules;
@@ -14,11 +16,21 @@ public sealed class RuleSettings : IRuleSettings
     {
         Current = options.Value;
         _clientRules = ToClientRules(Current);
+        ClientRulesTag = Fingerprint(_clientRules);
     }
 
     public GameRules Current { get; }
 
     public ClientRules GetClientRules() => _clientRules;
+
+    public string ClientRulesTag { get; }
+
+    private static string Fingerprint(ClientRules rules)
+    {
+        const int tagHexLength = 16;
+        var hash = SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(rules));
+        return $"{rules.Version}-{Convert.ToHexStringLower(hash)[..tagHexLength]}";
+    }
 
     private static ClientRules ToClientRules(GameRules rules) => new(
         Version: rules.Version,

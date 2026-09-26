@@ -134,8 +134,7 @@ public class PathValidationService : IPathValidationService
     {
         if (points.Count < 2) return null;
 
-        // GPS horizontal uncertainty: even a stationary device drifts ~30m between fixes.
-        const double gpsDriftMarginMeters = 30.0;
+        var gpsDriftMarginMeters = _antiCheat.GpsDriftMarginMeters;
 
         var violations = 0;
         var totalDistanceMeters = 0.0;

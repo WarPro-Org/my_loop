@@ -8,19 +8,22 @@ import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'game_rules.dart';
+import 'rules_source.dart';
 
 final _log = Logger('RulesStore');
 
 abstract class RulesStore {
   /// The saved rules, or null when none are saved or the saved copy is unreadable.
-  Future<GameRules?> load();
+  Future<SavedRules?> load();
 
-  Future<void> save(GameRules rules);
+  Future<void> save(SavedRules saved);
 }
 
 /// Keeps the rules as JSON in the app documents directory.
 class FileRulesStore implements RulesStore {
   static const _fileName = 'game_rules.json';
+  static const _tagKey = 'tag';
+  static const _rulesKey = 'rules';
 
   /// Saves run one at a time: app start and login can both refresh the rules, and two
   /// overlapping write-then-rename saves would race on the same temp file.
@@ -32,12 +35,15 @@ class FileRulesStore implements RulesStore {
   }
 
   @override
-  Future<GameRules?> load() async {
+  Future<SavedRules?> load() async {
     try {
       final file = await _file();
       if (!await file.exists()) return null;
       final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      return GameRules.fromJson(json);
+      return SavedRules(
+        GameRules.fromJson(json[_rulesKey] as Map<String, dynamic>),
+        json[_tagKey] as String?,
+      );
     } catch (e) {
       // A corrupted copy must not block the app: fall back to the built-in rules.
       _log.warning('Saved game rules unreadable; using built-in copy', e);
@@ -46,18 +52,19 @@ class FileRulesStore implements RulesStore {
   }
 
   @override
-  Future<void> save(GameRules rules) {
+  Future<void> save(SavedRules saved) {
     // A failed earlier save was already reported to its own caller; it must not block this one.
-    final next = _lastSave.catchError((_) {}).then((_) => _write(rules));
+    final next = _lastSave.catchError((_) {}).then((_) => _write(saved));
     _lastSave = next;
     return next;
   }
 
-  Future<void> _write(GameRules rules) async {
+  Future<void> _write(SavedRules saved) async {
     final file = await _file();
     // Write-then-rename so a crash mid-write never leaves a half-written file behind.
     final tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(jsonEncode(rules.toJson()), flush: true);
+    final json = {_tagKey: saved.tag, _rulesKey: saved.rules.toJson()};
+    await tmp.writeAsString(jsonEncode(json), flush: true);
     await tmp.rename(file.path);
   }
 }

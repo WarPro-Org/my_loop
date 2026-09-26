@@ -8,4 +8,10 @@ public interface IRuleSettings
 
     /// <summary>The subset the app is allowed to see.</summary>
     ClientRules GetClientRules();
+
+    /// <summary>
+    /// Fingerprint of the app's rules — changes whenever any value the app sees changes, even if
+    /// nobody bumped <see cref="GameRules.Version"/> (e.g. a production override).
+    /// </summary>
+    string ClientRulesTag { get; }
 }

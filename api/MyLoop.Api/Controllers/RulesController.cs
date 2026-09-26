@@ -7,8 +7,8 @@ using MyLoop.Modules.Rules;
 namespace MyLoop.Api.Controllers;
 
 /// <summary>
-/// Hands the app the rules it needs (FR1). The rules version is the ETag, so an app that already
-/// has the current version gets 304 Not Modified and keeps its saved copy.
+/// Hands the app the rules it needs (FR1). The ETag is a fingerprint of those rules, so an app
+/// that already has them gets 304 Not Modified and keeps its saved copy.
 /// </summary>
 [ApiController]
 [Route(ApiRoutes.Rules)]
@@ -25,14 +25,13 @@ public class RulesController : ControllerBase
     [HttpGet]
     public IActionResult Get()
     {
-        var clientRules = _rules.GetClientRules();
-        var etag = new EntityTagHeaderValue($"\"{clientRules.Version}\"");
+        var etag = new EntityTagHeaderValue($"\"{_rules.ClientRulesTag}\"");
 
         Response.GetTypedHeaders().ETag = etag;
         var ifNoneMatch = Request.GetTypedHeaders().IfNoneMatch;
         if (ifNoneMatch.Any(tag => tag.Compare(etag, useStrongComparison: false)))
             return StatusCode(StatusCodes.Status304NotModified);
 
-        return Ok(clientRules);
+        return Ok(_rules.GetClientRules());
     }
 }

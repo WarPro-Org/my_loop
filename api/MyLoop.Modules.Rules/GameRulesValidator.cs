@@ -36,6 +36,7 @@ public sealed class GameRulesValidator : IValidateOptions<GameRules>
 
         Positive(rules.AntiCheat.MaxSpeedMetersPerSecond, "AntiCheat:MaxSpeedMetersPerSecond");
         Positive(rules.AntiCheat.MaxAverageSpeedMetersPerSecond, "AntiCheat:MaxAverageSpeedMetersPerSecond");
+        Positive(rules.AntiCheat.GpsDriftMarginMeters, "AntiCheat:GpsDriftMarginMeters");
         Positive(rules.AntiCheat.MaxDistanceBetweenPointsMeters, "AntiCheat:MaxDistanceBetweenPointsMeters");
         Fraction(rules.AntiCheat.MaxSpeedViolationRate, "AntiCheat:MaxSpeedViolationRate");
         Positive(rules.AntiCheat.GpsSamplingIntervalSeconds, "AntiCheat:GpsSamplingIntervalSeconds");
@@ -49,6 +50,26 @@ public sealed class GameRulesValidator : IValidateOptions<GameRules>
         Positive(rules.SafetyAlarm.DelaySeconds, "SafetyAlarm:DelaySeconds");
         Positive(rules.Guests.InactivityDays, "Guests:InactivityDays");
 
+        CheckCombinations(rules, failures);
+
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
+    }
+
+    /// <summary>Rules that are only safe together: a bad combination ends real walks or leaks the speed limit.</summary>
+    private static void CheckCombinations(GameRules rules, List<string> failures)
+    {
+        const double secondsPerHour = 3600;
+        const double metersPerKilometer = 1000;
+        var antiCheat = rules.AntiCheat;
+
+        if (antiCheat.MaxAverageSpeedMetersPerSecond < antiCheat.MaxSpeedMetersPerSecond)
+            failures.Add($"{GameRules.SectionName}:AntiCheat:MaxAverageSpeedMetersPerSecond must not be below MaxSpeedMetersPerSecond");
+
+        // Auto-end at or below the speed limit would end fast runners' walks, and the app is told
+        // the auto-end speed, so it must not sit on top of the secret speed limit.
+        var fastestAllowedKmh = Math.Max(antiCheat.MaxSpeedMetersPerSecond, antiCheat.MaxAverageSpeedMetersPerSecond)
+                                * secondsPerHour / metersPerKilometer;
+        if (rules.AutoEnd.VehicleSpeedKmh <= fastestAllowedKmh)
+            failures.Add($"{GameRules.SectionName}:AutoEnd:VehicleSpeedKmh must be above the anti-cheat speed limit");
     }
 }

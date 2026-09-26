@@ -177,18 +177,21 @@ class ApiService {
     ));
   }
 
-  /// FR1: the game rules when they differ from [knownVersion], or null when the app already
-  /// has the current version (304 Not Modified). The version is the ETag.
-  Future<Map<String, dynamic>?> getRules(int knownVersion) async {
+  /// FR1: the game rules and their fingerprint (ETag) when they differ from [knownTag], or null
+  /// when the app already has them (304 Not Modified).
+  Future<({Map<String, dynamic> json, String? tag})?> getRules(String? knownTag) async {
     final response = await _dio.get<Map<String, dynamic>>(
       _rulesPath,
       options: Options(
-        headers: {'If-None-Match': '"$knownVersion"'},
+        headers: {if (knownTag != null) 'If-None-Match': '"$knownTag"'},
         validateStatus: (status) =>
             status == HttpStatus.ok || status == HttpStatus.notModified,
       ),
     );
-    return response.statusCode == HttpStatus.notModified ? null : response.data;
+    final body = response.data;
+    if (response.statusCode == HttpStatus.notModified || body == null) return null;
+    final etag = response.headers.value(HttpHeaders.etagHeader);
+    return (json: body, tag: etag?.replaceAll('"', ''));
   }
 
   /// Returns true if the backend is reachable right now.

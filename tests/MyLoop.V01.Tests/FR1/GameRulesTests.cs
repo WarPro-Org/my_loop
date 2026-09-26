@@ -54,6 +54,9 @@ public class GameRulesTests
     [InlineData("GameRules:Loop:MinAreaSquareMeters", "0", "Loop:MinAreaSquareMeters")]
     [InlineData("GameRules:AntiCheat:MaxSpeedViolationRate", "1.5", "AntiCheat:MaxSpeedViolationRate")]
     [InlineData("GameRules:Version", "0", "Version")]
+    [InlineData("GameRules:AntiCheat:GpsDriftMarginMeters", "0", "AntiCheat:GpsDriftMarginMeters")]
+    [InlineData("GameRules:AutoEnd:VehicleSpeedKmh", "25", "AutoEnd:VehicleSpeedKmh must be above the anti-cheat speed limit")]
+    [InlineData("GameRules:AntiCheat:MaxAverageSpeedMetersPerSecond", "5", "MaxAverageSpeedMetersPerSecond must not be below")]
     public void Invalid_value_stops_startup_and_names_the_setting(string key, string value, string expectedPath)
     {
         var ex = Assert.Throws<OptionsValidationException>(

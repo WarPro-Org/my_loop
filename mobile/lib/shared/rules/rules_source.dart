@@ -5,10 +5,20 @@ import 'package:myloop/shared/services/api_service.dart';
 
 import 'game_rules.dart';
 
+/// Rules as received from the server, with the fingerprint the server gave them.
+class SavedRules {
+  final GameRules rules;
+
+  /// Server fingerprint of [rules]; null for the built-in copy (never came from the server).
+  final String? tag;
+
+  const SavedRules(this.rules, this.tag);
+}
+
 abstract class RulesSource {
-  /// The server's rules when they differ from [knownVersion], or null when the app is already
-  /// up to date. Throws when the server can't be reached.
-  Future<GameRules?> fetchIfChanged(int knownVersion);
+  /// The server's rules when they differ from the ones fingerprinted by [knownTag], or null when
+  /// the app already has them. Throws when the server can't be reached.
+  Future<SavedRules?> fetchIfChanged(String? knownTag);
 }
 
 class ApiRulesSource implements RulesSource {
@@ -17,8 +27,8 @@ class ApiRulesSource implements RulesSource {
   ApiRulesSource(this._api);
 
   @override
-  Future<GameRules?> fetchIfChanged(int knownVersion) async {
-    final json = await _api.getRules(knownVersion);
-    return json == null ? null : GameRules.fromJson(json);
+  Future<SavedRules?> fetchIfChanged(String? knownTag) async {
+    final response = await _api.getRules(knownTag);
+    return response == null ? null : SavedRules(GameRules.fromJson(response.json), response.tag);
   }
 }

@@ -51,6 +51,11 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - **Acceptance criteria:** a checklist that can be tested.
 - Show the draft to the user and create the task **only after they approve it**.
 
+**Branch and merge per requirement**
+- Every FR gets its own branch named with version and title: `v0.1/fr1-configurable-game-settings`.
+- Work is pushed there and opened as its own PR.
+- A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
+
 **Code reviews by an agent**
 - Whenever the user asks for a new agent to review code, the agent reviews like a human teammate would:
   short, on point, plain language — no long technical essays.
