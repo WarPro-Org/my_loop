@@ -21,6 +21,10 @@ log, cache) and/or serializes async operations — especially when it uses `path
   reopen a fresh instance that reads only from disk and assert it equals the live
   in-memory view — AND assert the exact expected surviving set (disk==memory alone can
   pass on a regression that drops everything, leaving both empty).
+- **Make the real write fail; never write the "after crash" file yourself.** Planting a
+  half-written temp file only proves nothing touched the real file. Inject the failure into the
+  real save instead (e.g. an injectable rename/swap step that throws), then assert the old copy
+  loads and the next save works. Removing write-then-rename must turn the test red.
 - **Force the race deterministically.** Fire conflicting ops without awaiting between
   them (`Future.wait([rewrite, append, append])`) and loop ~25 iterations.
 - **Prove the test catches the bug.** Temporarily restore the pre-fix source

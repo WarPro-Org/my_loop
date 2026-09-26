@@ -48,7 +48,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - **What:** what we will build (2–4 bullets).
   - **Why:** the reason, with requirement IDs (e.g. `#20`).
   - **How:** the approach in 2–4 bullets — no code.
-  - **Acceptance criteria:** a checklist that can be tested.
+  - **Acceptance criteria:** a checklist that can be tested. If the story adds state covered by
+    `state-lifecycle-consistency`, the criteria cover every app moment in that skill's matrix. The user must never be the one to find a missing case.
 - Show the draft to the user and create the task **only after they approve it**.
 
 **Branch and merge per requirement**
@@ -73,11 +74,17 @@ Applies when planning versions, discussing requirements, or creating tasks.
   short, on point, plain language — no long technical essays.
 - For each problem: **what is wrong**, **how it affects the app for the user**, and **what to change** — a few lines each.
 - Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
+- Reading the diff is not enough. The reviewer also:
+  - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that
+    skill's matrix and reports any moment nobody handled;
+  - re-runs at least one of the author's "red when Y is removed" checks per new test, breaking code only in a
+    scratch worktree (`git worktree add <tmp> HEAD`, removed afterwards) — a test that stays green guards nothing.
 
 **Tests during the 0.x rebuild**
 - The old test suites and coverage gates are paused in CI (the old test project is still compiled). CI runs the build,
   `flutter analyze`, CodeQL, and the 0.1 user-story tests (`tests/MyLoop.V01.Tests`, `mobile/test/v0_1`) once they exist.
 - Each user story writes its own tests when it is finished. Those tests are added back to CI as they land.
+  Exception: lifecycle-matrix tests (`state-lifecycle-consistency`) land in the same commit as the reader they cover.
 - Where a gate below says run `dotnet test` / `flutter test`, run all 0.1 user-story tests plus build and `flutter analyze`.
 
 ---
@@ -98,6 +105,8 @@ Produce a Bug Report covering:
 - **Root cause hypothesis:** Where in the code the fault likely lives, and why. Cite file paths.
 - **Blast radius:** What else could break if this area is changed.
 - **Fix plan:** The proposed change in plain English — no code yet.
+- **Lifecycle matrix rows** (if the bug is in state covered by `state-lifecycle-consistency`): the affected rows,
+  each with the test that will prove it. On the bug track this report is the matrix's home.
 
 Do not write code until the user approves the Bug Report.
 
@@ -137,6 +146,8 @@ Write a Design Doc only after Gate 1 is approved. Must include:
 - **Riverpod state impact:** Which providers change, what they hold, how they are invalidated.
 - **Cross-stack contract table:** Side-by-side field name + type mapping for every .NET ↔ Flutter boundary touched.
 - **Known risk checklist:** Race conditions, offline edge cases, anti-cheat gaps — each either mitigated or explicitly accepted.
+- **Lifecycle matrix** (for state covered by `state-lifecycle-consistency`): every reader × every app moment, each with its test or
+  an agreed "accepted" — see `state-lifecycle-consistency`.
 
 Do not write implementation code until the user explicitly approves the Design Doc. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.
 
@@ -202,6 +213,7 @@ These are fast, local, write-time skills — catch issues before they reach a PR
 | If the change touches… | Run before committing |
 |------------------------|-----------------------|
 | A disk-persisting / async-serialized service or its tests (`*queue*.dart`, `*cache*.dart`, WAL/offline queues, `mobile/test/**`) | `flutter-disk-concurrency-test` (stub `path_provider`, assert disk==memory + surviving set, prove the test fails without the fix) |
+| **App state kept across launches or pinned for a walk, read by more than one place** (e.g. rules, saved profile, offline queues, values captured at walk start) | `state-lifecycle-consistency` (reader × app-moment matrix from the design doc (or the Bug Report on the bug track); tests for the readers this commit touches, through the real trigger; fake failures inside the real code, never its result; positive control before any "nothing happened" check; each test proven red when its behaviour is removed) |
 
 > These two gate tables are **intended to be auto-maintained**: once the `/update-session`
 > tooling lands in this repo, extracting a new skill should append a row here (or to the
