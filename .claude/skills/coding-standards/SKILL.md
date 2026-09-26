@@ -29,7 +29,7 @@ responsibility and nesting depth (aim for ≤3 levels; use guard clauses to flat
 Every literal with meaning gets a name. Tunables and domain values live in a constants
 home, not inline.
 
-- **C#:** `Constants/` (`GameConstants`, `AntiCheatConstants`, `ApiRoutes`, `FirebaseClaims`, `InfrastructureDefaults`)
+- **C#:** game-rule numbers in `GameRules` (appsettings.json, read via `IRuleSettings`); other constants in `Constants/` (`GameConstants`, `ApiRoutes`, `FirebaseClaims`, `InfrastructureDefaults`)
 - **Dart:** a `*_constants.dart` / `const` in the feature, never a bare literal in a widget/provider
 
 ```csharp

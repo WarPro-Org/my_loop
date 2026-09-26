@@ -26,6 +26,6 @@ Signals that a cheat wave is underway:
 
 ## Harden (follow-up)
 
-- Tighten the relevant `AntiCheatConstants` threshold if a systematic bypass is found.
+- Tighten the relevant `GameRules:AntiCheat` setting in `appsettings.json` (and bump `Version`) if a systematic bypass is found.
 - Record the bypass and fix as a dated entry in [../learnings/phase-1.md](../learnings/phase-1.md).
 - Consider server-side cross-claim checks (e.g., impossible travel between consecutive claims).

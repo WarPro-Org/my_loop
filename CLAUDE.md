@@ -57,13 +57,37 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Work is pushed there and opened as its own PR.
 - A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
 - **Every check-in gets an independent agent review.** Order for every change:
-  Pre-Check-in skills → commit and push → independent agent review against the task and the requirement (short,
-  human-style — see below) → fix what it finds (and review the fix) → Pre-PR skills → the user's final review → merge.
+  Pre-Check-in skills → commit and push → update the task → independent agent review against the task and the
+  requirement (short, human-style — see below) → fix what it finds (and review the fix) → Pre-PR skills → the user's final review → merge.
   Never ask the user to review work the agent hasn't reviewed.
 - Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
-- Stacked PRs (each based on the previous one's branch) are merged **in order with a merge commit, not squash** —
-  squashing a parent makes its children conflict. After each merge, retarget the next PR to `master`.
+- Stacked PRs (each based on the previous one's branch) are merged **in order**. This repo allows only squash merges,
+  so after each merge: retarget the next PR to `master`, merge `master` into its branch, check build and tests, then
+  push (pushing after the retarget makes CI run against `master`).
+  - Keep each next branch up to date: after every check-in on a parent, merge the parent into the next branch.
+    Then the next branch already holds every parent fix, and a conflict with `master` is only the parent's own
+    lines coming back in squashed form.
+  - Before resolving, check `git diff <parent's final commit> <next branch>` shows only the next PR's own changes;
+    if not, merge the parent's final commit in first.
+  - Per conflicting file: keep the next branch's version only if `git diff <parent's final commit> master -- <file>`
+    is empty (the conflict is only the parent's squashed lines). Otherwise another PR changed it too: resolve by
+    hand and keep both changes. Never drop a line the parent or another PR changed.
+
+**Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
+- **FR task** ends with a `## Progress` section:
+  - a table: PR | what it does (one line) | status;
+  - under it, a check-in log grouped by PR: `commit — what changed and why`, one line each, clear without the chat.
+- **Parent version task** ends with a `## Progress` table: FR | task | what it does (one line) | status — no commit log.
+  Work not tied to an FR (process, bug fix) gets a row there with FR "—"; if it has its own task, that task gets
+  the FR-task format.
+- A PR closed without merging, or split, keeps its row: "Closed — replaced by #… because …".
+- Decisions and deviations (a value kept, work moved to a later FR) go in How or the log, with the reason.
+- When: in the same turn as every check-in, PR opened or closed, review result and merge — before reporting to
+  the user. When a PR merges, tick the criteria it meets; after the last merge, close the task and mark it done in
+  the parent.
+- A change of plan updates the task's What / How / Acceptance criteria after the user agrees, together with the spec.
+- Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
 
 **Stay on the goal**
 - Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
