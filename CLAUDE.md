@@ -51,6 +51,17 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - **Acceptance criteria:** a checklist that can be tested.
 - Show the draft to the user and create the task **only after they approve it**.
 
+**Branch and merge per requirement**
+- Every FR gets its own branch named with version and title: `v0.1/fr1-configurable-game-settings`.
+- Work is pushed there and opened as its own PR.
+- A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
+- Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
+  several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
+
+**Stay on the goal**
+- Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
+- Still design for extension (interfaces, modules, versioned data) so later FRs add code instead of rewriting it.
+
 **Code reviews by an agent**
 - Whenever the user asks for a new agent to review code, the agent reviews like a human teammate would:
   short, on point, plain language — no long technical essays.
