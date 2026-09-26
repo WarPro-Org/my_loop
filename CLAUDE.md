@@ -55,6 +55,9 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Every FR gets its own branch named with version and title: `v0.1/fr1-configurable-game-settings`.
 - Work is pushed there and opened as its own PR.
 - A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
+- **Every check-in gets an independent agent review first.** After any change is pushed, a fresh agent reviews it
+  against the task and the requirement (short, human-style — see below). Fix what it finds, then hand the user the
+  final review. Never ask the user to review work the agent hasn't reviewed.
 - Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
 
