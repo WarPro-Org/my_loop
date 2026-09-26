@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Host.AddMyLoopSerilog();
 
 builder.Services
-    .AddRulesModule(builder.Configuration)
+    .AddMyLoopRules(builder.Configuration)
     .AddMyLoopDatabase(builder.Configuration)
     .AddMyLoopServices()
     .AddMyLoopPushNotifications(builder.Configuration)

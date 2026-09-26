@@ -9,7 +9,7 @@ public class ClientRulesTests
 {
     private static IRuleSettings ShippedRules() =>
         new ServiceCollection()
-            .AddRulesModule(new ConfigurationBuilder()
+            .AddMyLoopRules(new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("shipped-appsettings.json")
                 .Build())
