@@ -29,7 +29,7 @@ class _BrokenStore implements RulesStore {
   @override
   Future<SavedRules?> load() async => throw Exception('no documents directory');
   @override
-  Future<void> save(SavedRules rules) async {}
+  Future<void> save(SavedRules rules) async => throw Exception('no documents directory');
 }
 
 class _FakeSource implements RulesSource {
@@ -114,6 +114,7 @@ void main() {
     ]);
     addTearDown(container.dispose);
 
+    // _settle awaits refresh(): it must complete normally, with the server's rules applied.
     expect((await _settle(container)).version, 3);
   });
 }

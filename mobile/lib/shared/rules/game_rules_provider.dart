@@ -7,7 +7,6 @@
 library;
 
 import 'dart:async';
-import 'dart:io';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,10 +45,10 @@ class GameRulesNotifier extends Notifier<GameRules> {
       if (saved == null) return;
       _tag = saved.tag;
       state = saved.rules;
-    } on Exception catch (e) {
+    } on Exception catch (e, stack) {
       // Storage itself unavailable (e.g. no documents directory): the built-in rules are always
       // a safe fallback, and refresh() must still run instead of failing on every app open.
-      _log.warning('Saved game rules unavailable; using built-in copy', e);
+      _log.warning('Saved game rules unavailable; using built-in copy', e, stack);
     }
   }
 
@@ -60,19 +59,27 @@ class GameRulesNotifier extends Notifier<GameRules> {
     try {
       final changed = await ref.read(rulesSourceProvider).fetchIfChanged(_tag);
       if (changed == null) return;
-      await ref.read(rulesStoreProvider).save(changed);
+      // Apply first: the new rules are valid even if saving them fails.
       _tag = changed.tag;
       state = changed.rules;
       _log.info('Game rules updated to version ${changed.rules.version}');
+      await _save(changed);
     } on DioException catch (e) {
       // Offline, signed out (401) or server down: normal — keep the rules we have.
       _log.fine('Game rules refresh skipped; keeping version ${state.version}', e);
     } on FormatException catch (e, stack) {
       // The server sent rules the app can't read: keep the current rules but surface it.
       _log.warning('Game rules response unreadable; keeping version ${state.version}', e, stack);
-    } on FileSystemException catch (e, stack) {
-      // New rules arrived but couldn't be saved: keep the current rules, retry next refresh.
-      _log.warning('Game rules could not be saved; keeping version ${state.version}', e, stack);
+    }
+  }
+
+  Future<void> _save(SavedRules rules) async {
+    try {
+      await ref.read(rulesStoreProvider).save(rules);
+    } on Exception catch (e, stack) {
+      // Storage unavailable: the rules still apply for this session. The saved copy stays older,
+      // so the next launch starts from it and refresh() fetches these rules again.
+      _log.warning('Game rules could not be saved; using them for this session only', e, stack);
     }
   }
 }
