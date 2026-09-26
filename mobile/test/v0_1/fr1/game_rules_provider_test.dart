@@ -41,8 +41,10 @@ class _FakeSource implements RulesSource {
   final SavedRules? serverRules;
   final bool offline;
   String? askedWithTag;
+  int fetches = 0;
   @override
   Future<SavedRules?> fetchIfChanged(String? knownTag) async {
+    fetches++;
     askedWithTag = knownTag;
     if (offline) throw DioException(requestOptions: RequestOptions(), message: 'no internet');
     return serverRules == null || serverRules!.tag == knownTag ? null : serverRules;
@@ -121,7 +123,19 @@ void main() {
 
     // _settle awaits refresh(): it must complete normally, with the server's rules applied.
     expect((await _settle(container)).version, 3);
-    // Building the provider starts a refresh and _settle runs another, so both may try to save.
-    expect(store.saveAttempts, greaterThanOrEqualTo(1));
+    // Building the provider starts a refresh and _settle asks for another; they share one request.
+    expect(store.saveAttempts, 1);
+  });
+
+  test('refresh on app start and on login at the same time asks the server once', () async {
+    final source = _FakeSource(serverRules: _version(4));
+    final container = _container(_MemoryStore(), source);
+
+    container.read(gameRulesProvider);
+    final notifier = container.read(gameRulesProvider.notifier);
+    await Future.wait([notifier.refresh(), notifier.refresh()]);
+
+    expect(source.fetches, 1);
+    expect(container.read(gameRulesProvider).version, 4);
   });
 }

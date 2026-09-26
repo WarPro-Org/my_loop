@@ -32,6 +32,8 @@ class GameRulesNotifier extends Notifier<GameRules> {
   /// Server fingerprint of [state]; null while on the built-in copy.
   String? _tag;
 
+  Future<void>? _inFlight;
+
   @override
   GameRules build() {
     _loadSaved = _useSavedCopy();
@@ -54,7 +56,12 @@ class GameRulesNotifier extends Notifier<GameRules> {
 
   /// Asks the server whether the rules changed; applies any new copy and tries to save it. Called on app start and on every
   /// login/resume. Offline or signed out → keeps the current rules.
-  Future<void> refresh() async {
+  ///
+  /// App start and hydration often call this at the same moment; overlapping calls share one
+  /// request instead of each fetching and saving.
+  Future<void> refresh() => _inFlight ??= _refresh().whenComplete(() => _inFlight = null);
+
+  Future<void> _refresh() async {
     await _loadSaved;
     try {
       final changed = await ref.read(rulesSourceProvider).fetchIfChanged(_tag);
