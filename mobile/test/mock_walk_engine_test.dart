@@ -23,12 +23,12 @@ import 'package:myloop/shared/services/mock/mock_walk_engine.dart';
 final double _closureThresholdMeters = LoopDetector.closureThresholdMeters;
 final int _minLoopPoints = LoopDetector.minLoopPoints;
 
-// Server-side (C#) thresholds the mock must satisfy. These live in AntiCheatConstants.cs
+// Server-side (C#) thresholds the mock must satisfy. These live in GameRules:AntiCheat (appsettings.json)
 // and can't be imported into Dart, so they're duplicated here on purpose — a server
 // tightening should break this test loudly.
-const double _minBearingStdDev = 2.0; // AntiCheatConstants.MinBearingStdDev
-const double _maxHopMeters = 60.0; // AntiCheatConstants.MaxDistanceBetweenPointsMeters
-const double _maxAverageSpeedMps = 9.0; // AntiCheatConstants.MaxAverageSpeedMetersPerSecond
+const double _minBearingStdDev = 2.0; // GameRules:AntiCheat:MinBearingStdDev
+const double _maxHopMeters = 60.0; // GameRules:AntiCheat:MaxDistanceBetweenPointsMeters
+const double _maxAverageSpeedMps = 9.0; // GameRules:AntiCheat:MaxAverageSpeedMetersPerSecond
 
 /// The real moving noise floor the journey controller applies to a mock fix (whose
 /// speed is always > stationary threshold): clamp(accuracy, movingMin, movingMax).
@@ -378,7 +378,7 @@ void main() {
     // only when its straight-line distance exceeds what max walking speed could cover
     // in the elapsed capturedAt time, PLUS a GPS-uncertainty margin. Mirrored here so
     // the assertion matches what the backend actually rejects (not a bare d/dt).
-    const maxSpeedMps = 8.33; // AntiCheatConstants.MaxSpeedMetersPerSecond
+    const maxSpeedMps = 8.33; // GameRules:AntiCheat:MaxSpeedMetersPerSecond
     const gpsDriftMarginMeters = 30.0; // PathValidationService.gpsDriftMarginMeters
 
     for (final scenario in MockWalkScenarios.all) {
