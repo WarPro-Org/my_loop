@@ -6,20 +6,27 @@ name: PR rules
 # Runs on description edits too, so fixing the description re-runs it. Separate from CI so a
 # description edit never re-runs the build.
 on:
-  pull_request:
+  # pull_request_target runs master's copy of this workflow and script, so a PR can't weaken the
+  # check that judges it. The PR's code is never run: it is fetched only as git data.
+  pull_request_target:
     types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
 
 jobs:
   pr-rules:
     name: PR rules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2 # the merge commit and its parents: base (^1) and PR head (^2)
+      - uses: actions/checkout@v4 # master (the base) — the trusted script
 
-      - name: Fetch master (approved design docs live there)
-        run: git fetch --depth=1 origin master:refs/remotes/origin/master
+      - name: Fetch the PR merge commit (data only) and master
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git fetch --depth=2 origin "refs/pull/${PR_NUMBER}/merge:refs/remotes/pr/merge"
+          git fetch --depth=1 origin master:refs/remotes/origin/master
 
       - name: Check PR against CLAUDE.md rules
         env:
@@ -27,6 +34,7 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_MERGE: refs/remotes/pr/merge
           PR_FILES: ${{ github.event.pull_request.changed_files }}
           PR_ADDED: ${{ github.event.pull_request.additions }}
           PR_DELETED: ${{ github.event.pull_request.deletions }}

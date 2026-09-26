@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Checks a pull request against the CLAUDE.md rules a machine can check. Prints every broken rule
-# and exits 1 if any. Run from a checkout of the PR merge commit (HEAD^1 = base) with origin/master
-# fetched. Inputs (env): PR_TITLE, PR_BODY, PR_BRANCH, PR_HEAD_SHA, PR_FILES, PR_ADDED, PR_DELETED,
-# PR_AUTHOR_TYPE.
+# and exits 1 if any. Runs from master's copy of this script (pull_request_target), so a PR can't
+# loosen its own check; the PR is only read as git data. Inputs (env): PR_TITLE, PR_BODY, PR_BRANCH,
+# PR_HEAD_SHA, PR_MERGE (a ref to the PR's merge commit, default HEAD), PR_FILES, PR_ADDED,
+# PR_DELETED, PR_AUTHOR_TYPE.
 set -uo pipefail
 
 readonly MAX_FILES=15
@@ -19,13 +20,14 @@ fi
 # Template hints (HTML comments, even multi-line) left in place don't count as filled in.
 body=$(perl -0pe 's/<!--.*?-->//gs' <<<"${PR_BODY:-}")
 lines=$(( ${PR_ADDED:-0} + ${PR_DELETED:-0} ))
-changed=$(git diff --name-only HEAD^1 HEAD 2>/dev/null)
+merge="${PR_MERGE:-HEAD}"
+changed=$(git diff --name-only "$merge^1" "$merge" 2>/dev/null)
 problems=()
 
 fr=""
 [[ "${PR_BRANCH:-}" =~ $FR_BRANCH ]] && fr="${BASH_REMATCH[1]}"
 by_claude=false
-grep -q "$CLAUDE_MARK" <<<"$body" && by_claude=true
+{ grep -q "$CLAUDE_MARK" <<<"$body" || [[ "${PR_BRANCH:-}" == claude/* ]]; } && by_claude=true
 
 if [[ -n "$fr" || "$by_claude" == true ]]; then
   grep -q '^## Pre-PR Skill Gate' <<<"$body" \
@@ -34,7 +36,7 @@ if [[ -n "$fr" || "$by_claude" == true ]]; then
   [[ "$skills" =~ [a-z] ]] \
     || problems+=("Fill in '**Skills run:**' with the skills that actually ran on the head commit (or 'none').")
   head="${PR_HEAD_SHA:-}"
-  reviewed=$(grep -oE 'REVIEWED [0-9a-f]{7,40}' <<<"$body" | cut -d' ' -f2)
+  reviewed=$(grep -oE '^(- )?REVIEWED [0-9a-f]{7,40}' <<<"$body" | awk '{print $NF}')
   covered=false
   for sha in $reviewed; do [[ -n "$head" && "$head" == "$sha"* ]] && covered=true; done
   [[ "$covered" == true ]] \
@@ -44,10 +46,14 @@ fi
 if [[ -n "$fr" ]]; then
   grep -qE '^(Task: |Closes |Part of |Part [0-9]+ of [0-9]+ for )[^#]*#[0-9]+' <<<"$body" \
     || problems+=("FR PRs start with a task link line, e.g. 'Task: #201'.")
-  if [[ "${PR_TITLE:-}" =~ FR${fr}\ \(([0-9]+)/([0-9]+)\) ]]; then
-    part="Part ${BASH_REMATCH[1]} of ${BASH_REMATCH[2]}"
-    grep -q "$part" <<<"$body" \
-      || problems+=("Title says ${BASH_REMATCH[1]}/${BASH_REMATCH[2]} but the description doesn't say '$part': keep them in sync.")
+  title_part=""; body_part=""
+  [[ "${PR_TITLE:-}" =~ ^[0-9]+\.[0-9]+\ \>\ FR${fr}\ \(([0-9]+)/([0-9]+)\)\ \> ]] \
+    && title_part="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  [[ "$body" =~ Part\ ([0-9]+)\ of\ ([0-9]+)([^0-9]|$) ]] && body_part="${BASH_REMATCH[1]}/${BASH_REMATCH[2]}"
+  if [[ -z "$title_part" ]]; then
+    problems+=("FR PR titles look like '0.1 > FR${fr} (k/N) > <title>'.")
+  elif [[ "$title_part" != "$body_part" ]]; then
+    problems+=("Title says ${title_part} but the description says '${body_part:-nothing}': write 'Part ${title_part%/*} of ${title_part#*/}' and keep them in sync.")
   fi
   doc_pattern="docs/versions/[^ )\`]+/design/fr${fr}-[^ )\`]*\\.md"
   doc=$(grep -oE "$doc_pattern" <<<"$body" | head -1)

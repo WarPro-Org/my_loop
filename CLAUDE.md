@@ -42,7 +42,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - The spec is updated first; code follows the spec. Any change of plan updates the spec before the code.
 
 **User stories (GitHub tasks)**
-- One task per requirement (FR). Title format: `0.1 > FR1 > <short title>`.
+- One task per requirement (FR). Task title: `0.1 > FR1 > <short title>`. PR title: `0.1 > FR1 (k/N) > <short title>`,
+  with "Part k of N" in the description.
 - Body is short — readable in under a minute:
   - **Story:** As a …, I want …, so that …
   - **What:** what we will build (2–4 bullets).
@@ -183,7 +184,8 @@ Write a Design Doc only after Gate 1 is approved. Must include:
 - **Lifecycle matrix** (for state covered by `state-lifecycle-consistency`): every reader × every app moment, each with its test or
   an agreed "accepted" — see `state-lifecycle-consistency`.
 
-Do not write implementation code until the user explicitly approves the Design Doc. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.
+Do not write implementation code until the user explicitly approves the Design Doc. The doc lives at
+`docs/versions/<release>/<version>/design/frN-<name>.md`; approval = the owner merges its PR into master. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.
 
 #### Gate 3 — Implementation + Verification
 
@@ -254,11 +256,13 @@ skill. After a new commit, gates that depend on the code run again.
 **Enforced on GitHub** — so a forgotten step shows up as a red check the owner sees. It can't catch a false
 claim; the owner's review and the review records in the PR are what keep claims honest.
 - **CI** proves build, tests and analyze on every commit (`scripts/verify.sh` runs the same steps locally).
-- **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited):
-  - Claude-made and FR PRs need the gate section, a filled "Skills run", and a `REVIEWED <commit>` line
-    for the **latest** commit. Every push turns it red until that commit is reviewed and recorded.
+- **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited). It always runs
+  master's copy of the check, so a PR can't loosen the check that judges it:
+  - Claude-made PRs (session link in the body, or a `claude/` branch) and FR PRs need the gate section, a
+    filled "Skills run", and a line starting `REVIEWED <commit>` for the **latest** commit. Every push turns it red until that commit is reviewed and recorded.
   - FR PRs (branch `vX.Y/frN-…`) need a task link line, "Part k of N" matching the title's `(k/N)`, and FR N's
-    design doc already merged into master. A docs-only PR that adds the design doc is the exception.
+    design doc already merged into master. A docs-only PR that adds the design doc is the exception. When the
+    design doc merges, re-run "PR rules" on the FR's open PRs (a push or a description edit does it).
   - Any PR over the size limit needs a `Size exception:` line.
   - Bot PRs are skipped.
 
