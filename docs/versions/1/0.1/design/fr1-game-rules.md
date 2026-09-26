@@ -3,7 +3,8 @@
 Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1.
 
 **Status:** written after the code, because Gate 2 was skipped when FR1 was built (see #201). It describes what
-was built and lists the tests still to add. The owner approves it before any more FR1 code merges.
+was built, the gaps found while writing it, and the tests still to add. The owner approves it before any more FR1
+code merges.
 
 ## In one paragraph
 
@@ -17,9 +18,9 @@ them for its GPS filter and live loop estimate. Anti-cheat numbers never leave t
 **Rules module** — `api/MyLoop.Modules.Rules`, its own project.
 - Public: `IRuleSettings` (`Current`, `GetClientRules()`, `ClientRulesTag`), `GameRules` and its sections,
   `ClientRules`, and `AddMyLoopRules()`.
-- Internal: `RuleSettings` (reads the rules once at startup) and `GameRulesValidator` (startup check).
-- Other code uses only `IRuleSettings`. Today that is `HexGridService`, `PathValidationService` and
-  `RulesController`.
+- Meant to be internal: `RuleSettings` (reads the rules once at startup) and `GameRulesValidator` (startup check).
+  Both are public today; see "Tests to add".
+- Other code uses only `IRuleSettings`: `HexGridService`, `PathValidationService`, `RulesController`.
 
 **Settings** — `GameRules` in `appsettings.json`:
 
@@ -51,7 +52,8 @@ without a bump, the fingerprint changes, so phones still get the new numbers.
 | Rules changed | `If-None-Match: "<old tag>"` | `200` with the new rules and tag |
 | Not signed in | — | `401` |
 
-`<tag>` = `{Version}-{first 16 hex chars of SHA-256 of the ClientRules JSON}`, e.g. `1-3fa2…`.
+`<tag>` is an opaque server fingerprint: `{Version}-{16 hex chars}`. The phone stores it and sends it back, and
+never builds one itself.
 
 No database, migration or SignalR change.
 
@@ -66,61 +68,93 @@ No database, migration or SignalR change.
 | `GpsAccuracyThresholdMeters` | `gpsAccuracyThresholdMeters` | `gpsAccuracyThresholdMeters` | double |
 | `ETag` header `"<tag>"` | — | `SavedRules.tag` (quotes removed) | string |
 
-The phone rejects a response with a missing or wrongly typed field instead of half-applying it.
+Exactly these five fields; anything else in `ClientRules` is a leak. The phone rejects a response with a missing
+or wrongly typed field instead of half-applying it.
 
 ## Phone
 
-- `gameRulesProvider` (Riverpod) always holds usable rules: the built-in copy first, then the saved copy, then
-  the server's.
+**Providers (Riverpod)**
+- `gameRulesProvider` holds the rules the app uses now: the built-in copy first, then the saved copy, then the
+  server's. It is never invalidated, not even on sign-out, because rules aren't tied to a user. The app root keeps
+  it alive with `ref.listen`.
+- `rulesStoreProvider` → `FileRulesStore` (saved copy). `rulesSourceProvider` → `ApiRulesSource` (server).
+  Tests replace both.
 - `ready` completes once the saved copy has been read.
 - `refresh()` asks the server with the saved tag. Only one request runs at a time; a refresh asked for during one
-  runs once more afterwards.
-- It refreshes on app start, login, resume and reconnect (hydration).
-- New rules are applied first, then saved. If saving fails, they still apply for this session.
-- Saved as `game_rules.json` in the app documents folder: write a temp file, then rename, one save at a time.
-- `JourneyController` fixes the rules at walk start (after `ready`), and uses them for the GPS accuracy filter and
-  the live loop estimate for the whole walk.
-- Built-in copy = version 1 of `appsettings.json`; a test fails if they drift.
+  runs once more afterwards. New rules are applied first, then saved. If saving fails, they still apply for this
+  session.
+
+**When it refreshes:** app start (always), and through hydration when signed in: login, onboarding (avatar
+picker, set home), after each walk, app resume, and reconnect.
+
+**Saved copy:** `game_rules.json` in the app documents folder. Write a temp file, then rename. One save at a
+time.
+
+**Readers**
+- **R1** GPS accuracy filter during a walk.
+- **R2** live loop estimate during a walk.
+- R1 and R2 use the rules `JourneyController` fixed at walk start, after `ready`.
+- **R3** the rules the app holds (provider and saved file).
+- **R4** server loop and anti-cheat code.
+- **R5** mock-walk dev screen (watches the live rules).
+
+The built-in copy is version 1 of `appsettings.json`; a test fails if they drift.
 
 ## State consistency (every reader × every app moment)
 
-Readers: **R1** GPS filter during a walk · **R2** live loop estimate · **R3** the rules the app holds (provider and
-saved file) · **R4** server loop/anti-cheat code.
+"Red when" = the change that makes the test fail. It was proven by breaking the code on purpose, unless marked
+*to prove*.
 
-| Moment | Expected | Test (fails when the fix is removed) |
+| Moment | Expected | Test — red when … |
 |---|---|---|
-| Cold start, before the saved copy loads | A walk waits for it (R1, R2) | `rules_consistency_test`: walk started right after launch |
-| First launch, offline, nothing saved | Built-in rules (R3) | `game_rules_provider_test`: first launch with no internet |
-| Offline / server error / 401 | Current rules kept (R3) | `game_rules_provider_test`: offline with a saved copy; 401 then login |
-| Back online / back to the app | Rules checked again (R3) | `rules_consistency_test`: reconnect; resume |
-| Sign in | Rules checked again after login (R3) | `game_rules_provider_test`: refresh after login not lost |
-| Sign out / switch account | Rules kept — they aren't tied to a user (R3) | `rules_consistency_test`: sign-out |
-| Killed mid-save | Old copy intact; next save works (R3) | `rules_consistency_test`: save cut off |
-| Two refreshes at once | One request; none lost (R3) | `game_rules_provider_test`: overlapping refreshes; last-moment refresh |
-| During a walk | Start rules kept by R1 and R2; next walk uses new ones | `rules_consistency_test`: walk keeps GPS rules; walk keeps loop rules |
+| Cold start, before the saved copy loads | A walk waits for it (R1, R2) | walk started right after launch — red when `startJourney` doesn't await `ready` |
+| Walk starts while a refresh is running | **Gap — decision needed (D1)** | — |
+| First launch, offline, nothing saved | Built-in rules (R3) | first launch with no internet — *to prove* |
+| Offline / server error / 401 | Current rules kept (R3) | offline with a saved copy — *to prove*; 401 then login — red when a refresh asked for mid-request joins it instead of running again |
+| Offline with an expired sign-in token (non-Dio error) | Current rules kept; later refreshes still work (R3) | **Gap:** only Dio and format errors are caught today. Fix and test in the next PR |
+| Server sends 200 with an unreadable body | Current rules kept (R3) | **to add** |
+| Back online / back to the app (signed in) | Rules checked again (R3) | reconnect; resume — red when hydration doesn't call `refresh()` |
+| Login | Rules checked again (R3) | **to add** — must go through the real login hydration, not call `refresh()` by hand |
+| Sign out / switch account | Rules kept (R3) | sign-out — red when sign-out invalidates `gameRulesProvider` |
+| Killed mid-save | Old copy intact; next save works (R3) | save cut off — red when the save writes straight to the file (no temp + rename) |
+| Two refreshes at once | One request; none lost (R3) | overlapping refreshes; last-moment refresh — red when calls aren't coalesced / `_inFlight` is cleared late |
+| During a walk | R1 and R2 keep the start rules; the next walk uses new ones | walk keeps GPS rules; walk keeps loop rules — red when they read the live rules |
+| During a walk, server redeployed with new rules | **Accepted until FR9 (D2):** the rest of the walk, and saved points sent later, are judged by the new server rules. This breaks requirement #20 ("future walks only") until walks store their rules version | — |
 | Killed mid-walk, relaunched | Accepted: a walk doesn't resume; saved points are judged by the server's rules (R4) | — |
-| Corrupt saved copy | Built-in rules, still refreshes (R3) | `rules_store_test`: corrupted / wrong shape; provider: broken storage |
-| Server restart or config change | New numbers only after redeploy; bad numbers stop startup (R4) | `GameRulesTests`: invalid value / missing section stops startup |
-| Mock-walk dev screen | Accepted: dev only, follows live rules | — |
+| Corrupt saved copy | Built-in rules, still refreshes (R3) | corrupted / wrong shape; broken storage — red when load errors aren't caught |
+| Server restart or bad config | Bad numbers stop startup (R4) | server refuses to start — red without `ValidateOnStart` |
+| Any moment, R5 | Accepted: dev-only screen follows the live rules | — |
 
 ## Risks
 
 | Risk | Status |
 |---|---|
-| Anti-cheat numbers leak to the phone | Mitigated: `ClientRules` has no anti-cheat fields; tested on both sides |
-| Server and phone disagree on field names or types | Mitigated today by hand-written tests; **to add:** one shared JSON sample both sides test against |
-| Phone mishandles the ETag (quotes, 304) | **To add:** test of `getRules` request and response handling |
-| Other code uses the module's internal classes | **To add:** make `RuleSettings` and `GameRulesValidator` internal, and a test that the module's public types are only the listed ones |
-| A rule changes mid-walk | Mitigated: rules fixed at walk start (tested) |
-| A walk starts on built-in rules right after launch | Mitigated: walk waits for `ready` (tested) |
-| The server doesn't record which rules version judged a walk | Accepted until walk storage (FR9) |
+| Anti-cheat numbers leak to the phone | Partly mitigated: today's tests only check field names for "Speed", "Violation" and "Drift". **To add:** the exact five-field list |
+| Server and phone disagree on field names or types | Mitigated by hand-written tests. **To add:** one shared JSON sample both sides test against |
+| Phone mishandles the ETag | **To add:** a test of `getRules` covering quotes, 304, a missing ETag and a weak `W/"…"` ETag |
+| Other code uses the module's internal classes | **To add:** make `RuleSettings` and `GameRulesValidator` internal, and a test of the allowed public types |
+| A non-Dio error during refresh | **Fix in the next PR:** catch every error in refresh, log it, keep the current rules |
+| A walk starts on old rules while a refresh is running | **Decision D1** |
+| A redeploy mid-walk changes how the rest of the walk is judged | **Decision D2** (accept until FR9) |
 | Speed limit is 30 km/h, not the spec's 20–25 | Accepted: FR5 sets it |
+
+## Decisions needed from the owner
+
+- **D1 — walk starts while a refresh is running.** Proposal: `startJourney` waits for a running refresh for up to
+  a few seconds (a named constant), then starts with whatever rules the app has. A walk can only start online, so
+  this usually finishes in well under a second.
+- **D2 — server rules change mid-walk.** Proposal: accept until FR9, which stores each walk's rules version.
 
 ## Tests to add (next FR1 PR, after this doc is approved)
 
 1. **Shared contract sample** `tests/contracts/client_rules.json`. The C# test serializes `ClientRules` the way
-   the API does and must equal it; the Dart test must read it field for field.
-2. **Phone ETag handling:** `getRules` sends `If-None-Match` with quotes, returns nothing on 304, and strips
-   quotes from the tag.
-3. **Module boundary:** `RuleSettings` and `GameRulesValidator` become internal (the compiler then blocks other
-   code from using them), plus a test listing the module's allowed public types.
+   the API does and must equal it exactly (same five fields); the Dart test must read it field for field.
+2. **Phone ETag handling:** `getRules` sends `If-None-Match` with quotes, returns nothing on 304, strips quotes
+   from the tag, and handles a missing ETag and a weak `W/"…"` one.
+3. **Module boundary:** `RuleSettings` and `GameRulesValidator` become internal. The test projects build them
+   through `AddMyLoopRules` (preferred) or `InternalsVisibleTo`. A test lists the module's allowed public types.
+4. **Refresh errors:** a source that throws a non-Dio error keeps the current rules, and the next refresh still
+   runs; a 200 with an unreadable body keeps the current rules.
+5. **Login trigger:** the real login hydration path starts a rules refresh.
+6. **D1** (if accepted): a walk started during a running refresh uses the refreshed rules.
+7. **Prove "red when"** for the cells marked *to prove*.
