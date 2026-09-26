@@ -6,8 +6,9 @@ name: PR rules
 # Runs on description edits too, so fixing the description re-runs it. Separate from CI so a
 # description edit never re-runs the build.
 on:
-  # pull_request_target runs master's copy of this workflow and script, so a PR can't weaken the
-  # check that judges it. The PR's code is never run: it is fetched only as git data.
+  # pull_request_target takes this workflow from the PR's base branch, and the job checks out master's
+  # copy of the script, so a PR can't weaken the check that judges it. The PR's code is never run: it
+  # is fetched only as git data. A PR whose base branch has no copy of this workflow gets no check.
   pull_request_target:
     types: [opened, edited, synchronize, reopened]
 
@@ -19,13 +20,23 @@ jobs:
     name: PR rules
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # master (the base) — the trusted script
+      - uses: actions/checkout@v4
+        with:
+          ref: master # the trusted script, even for a PR stacked on another branch
 
       - name: Fetch the PR merge commit (data only) and master
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          git fetch --depth=2 origin "refs/pull/${PR_NUMBER}/merge:refs/remotes/pr/merge"
+          if ! git fetch --depth=2 origin "refs/pull/${PR_NUMBER}/merge:refs/remotes/pr/merge"; then
+            echo "::error::GitHub has no merge commit for this PR: resolve the merge conflicts, then re-run."
+            exit 1
+          fi
+          if [[ "$(git rev-parse refs/remotes/pr/merge^2)" != "$PR_HEAD_SHA" ]]; then
+            echo "::error::GitHub's merge commit is not ready for the latest push yet: re-run this check."
+            exit 1
+          fi
           git fetch --depth=1 origin master:refs/remotes/origin/master
 
       - name: Check PR against CLAUDE.md rules

@@ -256,8 +256,10 @@ skill. After a new commit, gates that depend on the code run again.
 **Enforced on GitHub** — so a forgotten step shows up as a red check the owner sees. It can't catch a false
 claim; the owner's review and the review records in the PR are what keep claims honest.
 - **CI** proves build, tests and analyze on every commit (`scripts/verify.sh` runs the same steps locally).
-- **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited). It always runs
-  master's copy of the check, so a PR can't loosen the check that judges it:
+- **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited). The script always
+  comes from master, so a PR can't loosen the check that judges it. A PR stacked on another branch gets the
+  check only once that branch has the workflow, and every PR does once it is retargeted to master. **A missing
+  "PR rules" check counts as not passed.**
   - Claude-made PRs (session link in the body, or a `claude/` branch) and FR PRs need the gate section, a
     filled "Skills run", and a line starting `REVIEWED <commit>` for the **latest** commit. Every push turns it red until that commit is reviewed and recorded.
   - FR PRs (branch `vX.Y/frN-…`) need a task link line, "Part k of N" matching the title's `(k/N)`, and FR N's
