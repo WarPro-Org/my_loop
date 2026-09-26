@@ -150,6 +150,27 @@ void main() {
     expect(container.read(gameRulesProvider).version, 4);
   });
 
+  test('a refresh asked for as the last request finishes is never lost', () async {
+    // Try every moment around the end of the request, one microtask apart.
+    for (var hops = 0; hops <= 10; hops++) {
+      final source = _GatedSource();
+      final container = _container(_MemoryStore(), source);
+
+      container.read(gameRulesProvider);
+      await pumpEventQueue();
+      source.answerNext(null); // the only request finishes: nothing changed
+      for (var i = 0; i < hops; i++) {
+        await Future<void>.microtask(() {});
+      }
+      final late = container.read(gameRulesProvider.notifier).refresh();
+      await pumpEventQueue();
+      if (source.hasPending) source.answerNext(null);
+      await late;
+
+      expect(source.fetches, 2, reason: 'refresh after $hops microtasks was dropped');
+    }
+  });
+
   test('a refresh after login is not lost behind a signed-out request that got a 401', () async {
     final source = _ScriptedSource();
     final container = _container(_MemoryStore(), source);
@@ -197,6 +218,8 @@ class _GatedSource implements RulesSource {
       _open--;
     }
   }
+
+  bool get hasPending => _pending.isNotEmpty;
 
   void answerNext(SavedRules? rules) => _pending.removeAt(0).complete(rules);
 }
