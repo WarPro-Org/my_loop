@@ -57,7 +57,7 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Work is pushed there and opened as its own PR.
 - A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
 - **Every check-in gets an independent agent review.** Order for every change:
-  Pre-Check-in skills → commit and push → independent agent review against the task and the requirement (short,
+  Pre-Check-in skills → commit and push → update the task → independent agent review against the task and the requirement (short,
   human-style — see below) → fix what it finds (and review the fix) → Pre-PR skills → the user's final review → merge.
   Never ask the user to review work the agent hasn't reviewed.
 - Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
@@ -65,13 +65,19 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Stacked PRs (each based on the previous one's branch) are merged **in order with a merge commit, not squash** —
   squashing a parent makes its children conflict. After each merge, retarget the next PR to `master`.
 
-**Keep tasks up to date (no info lost)**
-- Each FR task ends with a `## Progress` section; the parent version task has one row per FR.
-  - A table: PR | what it does (one line) | status.
-  - Under it, a check-in log: `commit — what changed, and why if not obvious`, one line each.
-- Update the task (and the parent when an FR's status changes) in the same turn as every check-in, PR opened,
-  review result and merge — before reporting to the user.
-- A change of plan updates the task's What / How / Acceptance criteria at the same time as the spec.
+**Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
+- **FR task** ends with a `## Progress` section:
+  - a table: PR | what it does (one line) | status;
+  - under it, a check-in log grouped by PR: `commit — what changed and why`, one line each, clear without the chat.
+- **Parent version task** ends with a `## Progress` table: FR | task | what it does (one line) | status — no commit log.
+  Work not tied to an FR (process, bug fix) gets a row there with FR "—"; if it has its own task, that task gets
+  the FR-task format.
+- A PR closed without merging, or split, keeps its row: "Closed — replaced by #… because …".
+- Decisions and deviations (a value kept, work moved to a later FR) go in How or the log, with the reason.
+- When: in the same turn as every check-in, PR opened or closed, review result and merge — before reporting to
+  the user. When a PR merges, tick the criteria it meets; after the last merge, close the task and mark it done in
+  the parent.
+- A change of plan updates the task's What / How / Acceptance criteria after the user agrees, together with the spec.
 - Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
 
 **Stay on the goal**
