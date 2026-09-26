@@ -33,6 +33,7 @@ class GameRulesNotifier extends Notifier<GameRules> {
   String? _tag;
 
   Future<void>? _inFlight;
+  bool _runAgain = false;
 
   @override
   GameRules build() {
@@ -57,9 +58,23 @@ class GameRulesNotifier extends Notifier<GameRules> {
   /// Asks the server whether the rules changed; applies any new copy and tries to save it. Called on app start and on every
   /// login/resume. Offline or signed out → keeps the current rules.
   ///
-  /// App start and hydration often call this at the same moment; overlapping calls share one
-  /// request instead of each fetching and saving.
-  Future<void> refresh() => _inFlight ??= _refresh().whenComplete(() => _inFlight = null);
+  /// App start and hydration often call this at the same moment. Only one request runs at a
+  /// time; a call that arrives mid-request makes it run once more afterwards, because things may
+  /// have changed since it started (e.g. the user signed in after a request that got a 401).
+  Future<void> refresh() {
+    if (_inFlight case final running?) {
+      _runAgain = true;
+      return running;
+    }
+    return _inFlight = _refreshUntilSettled().whenComplete(() => _inFlight = null);
+  }
+
+  Future<void> _refreshUntilSettled() async {
+    do {
+      _runAgain = false;
+      await _refresh();
+    } while (_runAgain);
+  }
 
   Future<void> _refresh() async {
     await _loadSaved;

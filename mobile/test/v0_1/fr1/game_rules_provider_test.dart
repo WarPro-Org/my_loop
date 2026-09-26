@@ -1,6 +1,8 @@
 /// FR1 — the app always has usable rules: built-in → saved copy → server update.
 library;
 
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -40,12 +42,12 @@ class _FakeSource implements RulesSource {
   _FakeSource({this.serverRules, this.offline = false});
   final SavedRules? serverRules;
   final bool offline;
-  String? askedWithTag;
-  int fetches = 0;
+  /// Fingerprint sent with each request, in order.
+  final askedWithTags = <String?>[];
+  int get fetches => askedWithTags.length;
   @override
   Future<SavedRules?> fetchIfChanged(String? knownTag) async {
-    fetches++;
-    askedWithTag = knownTag;
+    askedWithTags.add(knownTag);
     if (offline) throw DioException(requestOptions: RequestOptions(), message: 'no internet');
     return serverRules == null || serverRules!.tag == knownTag ? null : serverRules;
   }
@@ -57,7 +59,7 @@ Future<GameRules> _settle(ProviderContainer container) async {
   return container.read(gameRulesProvider);
 }
 
-ProviderContainer _container(_MemoryStore store, _FakeSource source) {
+ProviderContainer _container(RulesStore store, RulesSource source) {
   final container = ProviderContainer(overrides: [
     rulesStoreProvider.overrideWithValue(store),
     rulesSourceProvider.overrideWithValue(source),
@@ -72,7 +74,7 @@ void main() {
     final container = _container(_MemoryStore(), source);
 
     expect((await _settle(container)).version, 2);
-    expect(source.askedWithTag, isNull);
+    expect(source.askedWithTags.first, isNull);
   });
 
   test('first launch with no internet uses the built-in copy', () async {
@@ -97,7 +99,7 @@ void main() {
 
     expect(rules.version, 6);
     expect(store.saved?.rules.version, 6);
-    expect(source.askedWithTag, 'tag-5');
+    expect(source.askedWithTags.first, 'tag-5');
   });
 
   test('up-to-date app asks with its saved fingerprint and saves nothing', () async {
@@ -108,7 +110,7 @@ void main() {
     final rules = await _settle(container);
 
     expect(rules.version, 5);
-    expect(source.askedWithTag, 'tag-5');
+    expect(source.askedWithTags.first, 'tag-5');
     expect(store.saves, 0);
   });
 
@@ -123,19 +125,48 @@ void main() {
 
     // _settle awaits refresh(): it must complete normally, with the server's rules applied.
     expect((await _settle(container)).version, 3);
-    // Building the provider starts a refresh and _settle asks for another; they share one request.
+    // Building the provider starts a refresh and _settle asks for another. The second run sees
+    // the new fingerprint, gets "not modified" and saves nothing.
     expect(store.saveAttempts, 1);
   });
 
-  test('refresh on app start and on login at the same time asks the server once', () async {
+  test('overlapping refreshes never fetch in parallel or save twice', () async {
+    final store = _MemoryStore();
     final source = _FakeSource(serverRules: _version(4));
-    final container = _container(_MemoryStore(), source);
+    final container = _container(store, source);
 
     container.read(gameRulesProvider);
     final notifier = container.read(gameRulesProvider.notifier);
     await Future.wait([notifier.refresh(), notifier.refresh()]);
 
-    expect(source.fetches, 1);
+    expect(container.read(gameRulesProvider).version, 4);
+    expect(store.saves, 1);
+    expect(source.fetches, lessThanOrEqualTo(2));
+  });
+
+  test('a refresh after login is not lost behind a signed-out request that got a 401', () async {
+    final source = _ScriptedSource();
+    final container = _container(_MemoryStore(), source);
+
+    container.read(gameRulesProvider); // app start: signed out
+    await pumpEventQueue();
+    final loginRefresh = container.read(gameRulesProvider.notifier).refresh(); // after login
+
+    source.first.completeError(DioException(requestOptions: RequestOptions(), message: '401'));
+    await loginRefresh;
+
+    expect(source.fetches, 2);
     expect(container.read(gameRulesProvider).version, 4);
   });
+}
+
+/// First call waits on [first] (the signed-out request); later calls return rules version 4.
+class _ScriptedSource implements RulesSource {
+  final first = Completer<SavedRules?>();
+  int fetches = 0;
+  @override
+  Future<SavedRules?> fetchIfChanged(String? knownTag) {
+    fetches++;
+    return fetches == 1 ? first.future : Future.value(_version(4));
+  }
 }
