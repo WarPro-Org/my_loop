@@ -23,8 +23,8 @@ and the client noise filter — not where the mock is written — so they are ea
 |-------|-----|---------------------|
 | Inject jitter, even on straight routes | `ValidateSmoothness` rejects bearing std-dev < 2° | Gaussian σ≈4 m/fix; straight line FAILS without it |
 | Pace in real wall-clock time | `ValidateConsecutivePoints` bounds hops by elapsed `capturedAt`; the client stamps `capturedAt` at retained-point time | ~1 fix/sec; speed under 8.33 m/s cap with margin |
-| Keep retained density high enough | client drops fixes closer than `clamp(accuracy, movingMin, movingMax)` (~8 m) | loop perimeter/8 ≥ `minLoopPoints` (20); straight/8 ≥ `minGpsPointsPerClaim` (10) → loop radius ≥ 30 m, straight ≥ 100 m |
-| Close loops within tolerance | `LoopDetector.closureThresholdMeters` (50 m) | closed polygon; jitter on start/end ≪ 50 m |
+| Keep retained density high enough | client drops fixes closer than `clamp(accuracy, movingMin, movingMax)` (~8 m) | loop perimeter/8 ≥ game rules `minLoopPoints` (20); straight/8 ≥ `minGpsPointsPerClaim` (10) → loop radius ≥ 30 m, straight ≥ 100 m |
+| Close loops within tolerance | game rules `loopClosureDistanceMeters` (`GameRules:Loop:ClosureDistanceMeters`, 50 m) | closed polygon; jitter on start/end ≪ 50 m |
 | One plotted route, reused | one-shot fix and live stream must agree | memoize plotted points; don't re-roll RNG per call |
 | Environment-gate any honored mock flag | a flag trusted from any client is an evasion vector | honor only outside Production; branch **logging only**, never validation/claim |
 

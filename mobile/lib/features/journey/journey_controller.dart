@@ -179,8 +179,10 @@ class JourneyController extends Notifier<JourneyState> {
   @override
   JourneyState build() => const JourneyState();
 
-  /// Rules this walk started with. A rules update that arrives mid-walk (login/resume refresh)
-  /// only applies to the next walk, so one walk is never judged by two sets of numbers (#20).
+  /// Rules this walk started with, so the app's live estimate uses one set of numbers for the
+  /// whole walk even if an update arrives mid-walk (login/resume refresh). The server does not
+  /// pin rules per walk yet: recording which rules version decided a walk comes with walk
+  /// storage (FR9, #19).
   GameRules _walkRules = defaultGameRules;
 
   Future<void> startJourney() async {

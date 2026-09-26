@@ -386,7 +386,7 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
         .clamp(AppConstants.movingNoiseFloorMin, AppConstants.movingNoiseFloorMax);
     final closes = config.routeType == MockRouteType.loop ||
         (config.routeType == MockRouteType.multiWaypoint && config.autoCloseLoop);
-    final floor = closes ? ref.read(gameRulesProvider).minLoopPoints : AppConstants.minGpsPointsPerClaim;
+    final floor = closes ? ref.watch(gameRulesProvider).minLoopPoints : AppConstants.minGpsPointsPerClaim;
     final retainedEstimate = total / noiseFloor;
 
     return Column(
