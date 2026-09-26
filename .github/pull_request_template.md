@@ -7,20 +7,18 @@ Design doc (FR work only): <!-- docs/versions/<release>/<version>/design/frN-<na
 
 ## Pre-PR Skill Gate
 
-Run the skill(s) relevant to what this PR touches (see CLAUDE.md → Pre-PR Skill Gate),
-then check the boxes that apply and note which skills you ran.
+<!-- Go through EVERY row of both gate tables in CLAUDE.md (Pre-Check-in and Pre-PR) against the
+changed files: git diff --name-only master...HEAD. Don't pick rows by what the PR is "about".
+One line per row that applies: the row → `skill`, run on <commit>: <result>.
+"PR rules" fails if a skill a changed file requires (.github/gate-rows.tsv) isn't in Skills run,
+or if any gate skill is not named below. -->
 
-- [ ] .NET API code → `dotnet-patterns`, `csharp-testing`
-- [ ] DB schema / EF migrations / hex counts → `database-migrations` (atomicity + explicit transactions)
-- [ ] API endpoints / request-response shapes → `api-design`
-- [ ] **Cross-stack (.NET ↔ Flutter)** → field names, types (H3 CellId, UserId), constants verified to match on both sides
-- [ ] Auth / anti-cheat / client coords / rate limits / secrets → `security-review`
-- [ ] SignalR / real-time / caches / offline queues → `latency-critical-systems`
-- [ ] Flutter / Dart / Riverpod state → `dart-flutter-patterns`, `flutter-dart-code-review`
-- [ ] Error handling / offline durability → `error-handling`
-- [ ] **Final gate** → `verification-loop` (tests green) + PR review
+- 
 
-**Skills run:** <!-- only skills actually invoked on the head commit; "none" if none. Never from memory. -->
+**Skills run:** <!-- only skills actually invoked on the head commit, in backticks; "none" if none. Never from memory. -->
+
+<!-- Every other gate skill, one line each (several skills may share a reason):
+- Not applicable: `skill` — <why no changed file or behaviour triggers it> -->
 
 <!-- Over ~15 files / ~400 lines? Split the PR, or add a line: "Size exception: <reason, agreed with the owner>" -->
 

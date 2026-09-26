@@ -1,0 +1,23 @@
+# Which gate skills a changed file makes required. Read by .github/scripts/pr-rules.sh ("PR rules").
+# Mirrors the file patterns in CLAUDE.md's Pre-Check-in and Pre-PR gate tables: when a row there
+# changes, change its line here in the same PR.
+#
+# Format: <pattern><TAB><skill> [<skill> ...]. The pattern is a bash extended regex matched against
+# each changed file's path. Docs (docs/, *.md) and .claude/ files never require a skill.
+# Two rows are built into the script: a deleted code file requires coordinate-overlapping-pr-removals,
+# and every code PR requires verification-loop.
+# Rows no pattern can decide (state kept across launches, error handling, hex counts, …) are not here:
+# the PR must still name them, as run or "Not applicable" with a reason.
+^api/.*\.cs$	coding-standards	dotnet-patterns	csharp-testing
+^mobile/lib/.*\.dart$	coding-standards
+^tests/.*\.cs$	csharp-testing
+^mobile/.*\.dart$	dart-flutter-patterns	flutter-dart-code-review
+(^|/)Program\.cs$|^api/.*/Configuration/.*Extensions\.cs$|^api/.*/Controllers/	webapi-standards
+^api/.*/Migrations/|DbContext	database-migrations	database-retry-resilience
+^api/.*/(Controllers|Hubs|Dtos?)/|ClientRules\.cs$|^mobile/lib/shared/(services/api_service\.dart|models/)	api-design
+AntiCheat|PathValidation|[Aa]uth|RateLimit|appsettings[^/]*\.json$|[Ff]irebase	security-review
+^api/.*/Hubs/|[Ss]ignal[Rr]|[Cc]ache|[Qq]ueue	latency-critical-systems
+^mobile/test/|[Qq]ueue[^/]*\.dart$|[Cc]ache[^/]*\.dart$	flutter-disk-concurrency-test
+location_service\.dart$|AndroidManifest\.xml$|Info\.plist$	mobile-background-location
+[Mm]ock[^/]*[Ww]alk|[Mm]ock[^/]*[Ll]ocation|\.gpx$	mock-gps-anticheat
+Info\.plist$|Runner\.xcodeproj/|PrivacyInfo\.xcprivacy$	app-store-compliance

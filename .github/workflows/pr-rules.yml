@@ -1,8 +1,9 @@
 name: PR rules
 
-# Checks each PR against the CLAUDE.md rules a machine can check: gate section, "Skills run" and a
-# recorded independent review of the head commit (Claude-made and FR PRs); task link, k/N in sync,
-# and an approved design doc on master (FR PRs); size.
+# Checks each PR against the CLAUDE.md rules a machine can check: gate section, "Skills run", every
+# gate row gone through (the skills its changed files require, .github/gate-rows.tsv) and a recorded
+# independent review of the head commit (Claude-made and FR PRs); task link, k/N in sync, and an
+# approved design doc on master (FR PRs); size.
 # Runs on description edits too, so fixing the description re-runs it. Separate from CI so a
 # description edit never re-runs the build.
 on:
