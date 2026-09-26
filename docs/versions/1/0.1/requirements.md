@@ -61,9 +61,11 @@ Every tunable number lives in one place so the rules can be tuned from real test
 
 - **[#20]** Numbers are settings, not written into the code. Changing a setting applies to future walks only; past
   results never change silently.
-- The 0.1 settings are: loop-closing distance (also used for resuming after a pause), minimum loop size, short-gap
-  time and distance limits, GPS accuracy threshold, speed limit, auto-end thresholds (vehicle-speed duration, idle
-  duration), safety-alarm delay, and guest inactivity period. Exact values are tuned from real test walks.
+- FR1 builds the settings system and moves the numbers today's code uses: loop-closing distance, minimum loop
+  points and size, GPS accuracy threshold, and the anti-cheat speed checks. Exact values are tuned from real test walks.
+- Each later FR adds its own settings when it is built: auto-end thresholds (FR2), short-gap limits and safety-alarm
+  delay (FR4), guest inactivity period (FR12).
+- The old claim minimums (10 GPS points, 200 m walked) stay in code until FR6 replaces the old claim code.
 
 Depends on: nothing.
 
