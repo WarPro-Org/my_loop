@@ -1,8 +1,9 @@
 name: PR rules
 
-# Checks each PR against the CLAUDE.md rules a machine can check (task link, gate section,
-# design doc for FR work, branch name, size). Runs on description edits too, so fixing the
-# description re-runs it. Separate from CI so a description edit never re-runs the build.
+# Checks each PR against the CLAUDE.md rules a machine can check: gate section and "Skills run"
+# (Claude-made and FR PRs), task link and an approved design doc on the base branch (FR PRs), size.
+# Runs on description edits too, so fixing the description re-runs it. Separate from CI so a
+# description edit never re-runs the build.
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
@@ -13,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # the merge commit and its parents: base (^1) and PR head (^2)
 
       - name: Check PR against CLAUDE.md rules
         env:
@@ -22,4 +25,5 @@ jobs:
           PR_FILES: ${{ github.event.pull_request.changed_files }}
           PR_ADDED: ${{ github.event.pull_request.additions }}
           PR_DELETED: ${{ github.event.pull_request.deletions }}
+          PR_AUTHOR_TYPE: ${{ github.event.pull_request.user.type }}
         run: .github/scripts/pr-rules.sh

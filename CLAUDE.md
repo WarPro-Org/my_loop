@@ -227,26 +227,31 @@ The Pre-Check-in gate, the Pre-PR gate and the independent agent review run on *
 no exception, and no user instruction (e.g. "speed up", "just push it") bypasses them. If a gate cannot run,
 stop and say so instead of checking in. The PR description lists every gate row that applies and the skill run for it.
 
-**Only claim what ran.** A gate counts only if its skill was actually invoked on that exact commit in this session.
-Never tick a box or write "Skills run" from memory or the template. A gate done by hand is written as "by hand",
-not as the skill. After a new commit, gates that depend on the code run again.
+**Only claim what ran.** A gate counts only if its skill was actually invoked on that exact commit. Never tick a
+box or write "Skills run" from memory or the template. A gate done by hand is written as "by hand", not as the
+skill. After a new commit, gates that depend on the code run again.
 
 **Checklist — go through it every time** (the rules above are spread across this file; this is the one list):
 
 | Step | Before … | Must be true |
 |---|---|---|
-| 1 | writing FR code | Requirement agreed (Gate 1); design doc in `docs/versions/<release>/<version>/design/` approved by the owner (Gate 2) |
+| 1 | writing FR code | Requirement agreed (Gate 1); design doc `docs/versions/<release>/<version>/design/frN-<name>.md` merged after the owner approved it (Gate 2) |
 | 2 | each commit | Pre-Check-in skills that apply have run; the lifecycle matrix tests for readers this commit touches are in it |
-| 3 | after each push | Task updated; independent review of **this** commit; its findings fixed and the fix reviewed |
-| 4 | opening a PR | Pre-PR skills that apply have run on the head commit; `verification-loop` too; description names each, truthfully |
+| 3 | after each push | Task updated; independent review of **this** commit (foreground, report ends with `REVIEWED <commit>`); findings fixed and the fix reviewed |
+| 4 | opening a PR | Pre-PR skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully |
 | 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
 
-**Enforced by machine** (so a missed step is caught, not trusted):
-- `.claude/settings.json` hooks log every skill run and review against the commit, and refuse to open or merge a
-  PR whose head commit has no `verification-loop` and no independent review logged.
-- The "PR rules" check (`.github/workflows/pr-rules.yml`) fails a PR with no task link, no gate section, an empty
-  "Skills run", an FR PR without a design doc or with a wrong branch name, or over the size limit without a
-  `Size exception:` line.
+**Enforced by machine** — the rest of the checklist still relies on honesty and the owner's review:
+- Claude Code hooks (`.claude/settings.json`) refuse to open, merge or auto-merge a PR unless its pushed head
+  commit has `scripts/verify.sh` passing and a finished independent review naming that commit in the gate log.
+  They also log every skill loaded, and block Bash commands that name the gate log. The log is per container: a
+  new session re-runs these two gates. The hooks catch forgetting, not deliberate bypassing.
+- The "PR rules" check (`.github/workflows/pr-rules.yml`):
+  - Claude-made and FR PRs need the gate section and a filled "Skills run".
+  - FR PRs (branch `vX.Y/frN-…`) need a task link line and FR N's design doc, already merged into the base
+    branch. A docs-only PR that adds the design doc is the exception.
+  - Any PR over the size limit needs a `Size exception:` line.
+  - Bot PRs are skipped.
 
 ---
 
@@ -293,7 +298,7 @@ chosen from MyLoop's documented failure classes).
 | **iOS-facing change** — auth/sign-in, location, push, permissions, data collected, account deletion, purchases, new SDK, `Info.plist` / `Runner.xcodeproj` / `PrivacyInfo.xcprivacy` | `app-store-compliance` (verify no App Store Review Guideline violation: SiwA 4.8, location 5.1.1/2.5.4, account deletion 5.1.1(v), privacy manifest) |
 | Error/exception handling or offline durability | `error-handling` |
 | **A PR that removes a method / endpoint / DTO / file** | `coordinate-overlapping-pr-removals` (grep open PRs for the deleted symbols — incl. their *tests*; decide + state merge order in both PRs; re-check overlapping PRs' mergeability after merging) |
-| **Always — final gate** | `verification-loop` (tests green — in 0.x, all 0.1 user-story tests plus build and analyze) + the PR-review skill |
+| **Always — final gate** | `verification-loop`, run as `scripts/verify.sh` (build, 0.1 user-story tests, analyze with no new issues, secrets scan) + the independent agent review |
 
 The cross-stack row is a deliberate manual check — contract drift (.NET ↔ Flutter type/field/ID
 mismatches) is MyLoop's #1 bug class and no single skill fully owns it. If a skill surfaces an
