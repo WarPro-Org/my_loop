@@ -227,6 +227,27 @@ The Pre-Check-in gate, the Pre-PR gate and the independent agent review run on *
 no exception, and no user instruction (e.g. "speed up", "just push it") bypasses them. If a gate cannot run,
 stop and say so instead of checking in. The PR description lists every gate row that applies and the skill run for it.
 
+**Only claim what ran.** A gate counts only if its skill was actually invoked on that exact commit in this session.
+Never tick a box or write "Skills run" from memory or the template. A gate done by hand is written as "by hand",
+not as the skill. After a new commit, gates that depend on the code run again.
+
+**Checklist — go through it every time** (the rules above are spread across this file; this is the one list):
+
+| Step | Before … | Must be true |
+|---|---|---|
+| 1 | writing FR code | Requirement agreed (Gate 1); design doc in `docs/versions/<release>/<version>/design/` approved by the owner (Gate 2) |
+| 2 | each commit | Pre-Check-in skills that apply have run; the lifecycle matrix tests for readers this commit touches are in it |
+| 3 | after each push | Task updated; independent review of **this** commit; its findings fixed and the fix reviewed |
+| 4 | opening a PR | Pre-PR skills that apply have run on the head commit; `verification-loop` too; description names each, truthfully |
+| 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
+
+**Enforced by machine** (so a missed step is caught, not trusted):
+- `.claude/settings.json` hooks log every skill run and review against the commit, and refuse to open or merge a
+  PR whose head commit has no `verification-loop` and no independent review logged.
+- The "PR rules" check (`.github/workflows/pr-rules.yml`) fails a PR with no task link, no gate section, an empty
+  "Skills run", an FR PR without a design doc or with a wrong branch name, or over the size limit without a
+  `Size exception:` line.
+
 ---
 
 ## Pre-Check-in Skill Gate

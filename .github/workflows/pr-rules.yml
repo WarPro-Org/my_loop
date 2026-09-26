@@ -1,0 +1,25 @@
+name: PR rules
+
+# Checks each PR against the CLAUDE.md rules a machine can check (task link, gate section,
+# design doc for FR work, branch name, size). Runs on description edits too, so fixing the
+# description re-runs it. Separate from CI so a description edit never re-runs the build.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+jobs:
+  pr-rules:
+    name: PR rules
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check PR against CLAUDE.md rules
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_FILES: ${{ github.event.pull_request.changed_files }}
+          PR_ADDED: ${{ github.event.pull_request.additions }}
+          PR_DELETED: ${{ github.event.pull_request.deletions }}
+        run: .github/scripts/pr-rules.sh
