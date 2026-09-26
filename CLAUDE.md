@@ -15,6 +15,18 @@ These rules override all default Claude behavior. No exceptions.
 
 ---
 
+## Architecture Rules — SOLID, independent modules in one app
+
+- **Always follow SOLID.**
+- The API is **one deployable app made of independent modules** (e.g. Rules, Walks, Accounts, Areas) — not microservices.
+- Each module is its own class-library project with a public interface. Other modules use only that interface — never
+  its internal classes or its database tables.
+- Controllers are thin: they call a module's interface and nothing else.
+- Add an interface where there is a real second implementation or a test seam — not one per class.
+- The Flutter app follows the same idea: features depend on abstractions (e.g. `ILocationSource`), not concrete plugins.
+
+---
+
 ## Planning Chat & User Stories (Spec-Driven Development)
 
 Applies when planning versions, discussing requirements, or creating tasks.
