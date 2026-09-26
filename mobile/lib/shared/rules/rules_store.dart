@@ -4,6 +4,7 @@ library;
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:logging/logging.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -21,6 +22,15 @@ abstract class RulesStore {
 
 /// Keeps the rules as JSON in the app documents directory.
 class FileRulesStore implements RulesStore {
+  FileRulesStore({@visibleForTesting Future<void> Function(File tmp, String path)? replace})
+      : _replace = replace ?? _rename;
+
+  /// Swaps the fully written temp file in for the saved copy; a test can make it fail to act as
+  /// a crash between writing and swapping.
+  final Future<void> Function(File tmp, String path) _replace;
+
+  static Future<void> _rename(File tmp, String path) => tmp.rename(path);
+
   static const _fileName = 'game_rules.json';
   static const _tagKey = 'tag';
   static const _rulesKey = 'rules';
@@ -68,6 +78,6 @@ class FileRulesStore implements RulesStore {
     final tmp = File('${file.path}.tmp');
     final json = {_tagKey: saved.tag, _rulesKey: saved.rules.toJson()};
     await tmp.writeAsString(jsonEncode(json), flush: true);
-    await tmp.rename(file.path);
+    await _replace(tmp, file.path);
   }
 }

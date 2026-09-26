@@ -4,7 +4,9 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
+import 'package:dio/dio.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,19 +29,29 @@ const _lenientAccuracyMeters = 50.0;
 const _strictAccuracyMeters = 20.0;
 const _fixAccuracyMeters = 30.0; // accepted by the lenient rules, rejected by the strict ones
 
-SavedRules _rules(int version, {double accuracy = _lenientAccuracyMeters}) => SavedRules(
+SavedRules _rules(int version,
+        {double accuracy = _lenientAccuracyMeters, int? minLoopPoints}) =>
+    SavedRules(
       GameRules.fromJson({
         ...defaultGameRules.toJson(),
         'version': version,
         'gpsAccuracyThresholdMeters': accuracy,
+        'minLoopPoints': ?minLoopPoints,
       }),
       'tag-$version',
     );
 
 class _MemoryStore implements RulesStore {
+  _MemoryStore([this.saved]);
   SavedRules? saved;
+
+  /// Holds load() open until completed, like a slow disk right after launch.
+  Completer<void>? slowLoad;
   @override
-  Future<SavedRules?> load() async => saved;
+  Future<SavedRules?> load() async {
+    await slowLoad?.future;
+    return saved;
+  }
   @override
   Future<void> save(SavedRules rules) async => saved = rules;
 }
@@ -56,8 +68,20 @@ class _SwitchableSource implements RulesSource {
   }
 }
 
+class _OfflineSource implements RulesSource {
+  @override
+  Future<SavedRules?> fetchIfChanged(String? knownTag) async =>
+      throw DioException(requestOptions: RequestOptions(path: '/api/rules'));
+}
+
 class _FakeApi extends ApiService {
   _FakeApi() : super(baseUrl: 'http://localhost');
+  int previews = 0;
+  @override
+  Future<PreviewResult> previewClaim({required List<List<double>> path}) async {
+    previews++;
+    return const PreviewResult(boundaries: [], loopCount: 1);
+  }
   @override
   Future<bool> isServerReachable() async => true;
   @override
@@ -77,9 +101,30 @@ class _FakeLocation extends LocationService {
   /// A fix ~33 m further north each time, so every one clears the noise floor.
   Position next({double accuracy = 5}) {
     _step++;
+    return _at(51.5 + _step * 0.0003, -0.12, accuracy);
+  }
+
+  static const _loopCentreLat = 51.5;
+  static const _loopCentreLng = -0.12;
+  static const _loopRadiusDegrees = 0.00135; // ~150 m
+  static const loopSteps = 25; // ~38 m apart: above the noise floor, back to the start at the end
+
+  /// Point [k] of a circle walked from due east; point 0 and point [loopSteps] are the same.
+  Position onLoop(int k) {
+    final angle = 2 * math.pi * k / loopSteps;
+    return _at(
+      _loopCentreLat + _loopRadiusDegrees * math.sin(angle),
+      _loopCentreLng + _loopRadiusDegrees * math.cos(angle) / math.cos(_loopCentreLat * math.pi / 180),
+      5,
+    );
+  }
+
+  Position? startAt;
+
+  Position _at(double latitude, double longitude, double accuracy) {
     return Position(
-      latitude: 51.5 + _step * 0.0003,
-      longitude: -0.12,
+      latitude: latitude,
+      longitude: longitude,
       timestamp: DateTime.now(),
       accuracy: accuracy,
       altitude: 0,
@@ -94,7 +139,7 @@ class _FakeLocation extends LocationService {
   @override
   Future<bool> requestPermission() async => true;
   @override
-  Future<Position> getCurrentPosition() async => next();
+  Future<Position> getCurrentPosition() async => startAt ?? next();
   @override
   Stream<Position> startTracking() => gps.stream;
 }
@@ -106,11 +151,12 @@ class _FakePathProvider extends PathProviderPlatform with MockPlatformInterfaceM
   Future<String?> getApplicationDocumentsPath() async => dir;
 }
 
-ProviderContainer _container(_SwitchableSource source, {_FakeLocation? location}) {
+ProviderContainer _container(RulesSource source,
+    {_FakeLocation? location, _MemoryStore? store, _FakeApi? api}) {
   final container = ProviderContainer(overrides: [
-    rulesStoreProvider.overrideWithValue(_MemoryStore()),
+    rulesStoreProvider.overrideWithValue(store ?? _MemoryStore()),
     rulesSourceProvider.overrideWithValue(source),
-    apiServiceProvider.overrideWithValue(_FakeApi()),
+    apiServiceProvider.overrideWithValue(api ?? _FakeApi()),
     territoryRealtimeProvider.overrideWithValue(_FakeRealtime()),
     if (location != null) locationServiceProvider.overrideWithValue(location),
   ]);
@@ -149,11 +195,65 @@ void main() {
 
     journey.stopJourney();
     await journey.startJourney();
-    final pointsAtSecondStart = container.read(journeyControllerProvider).path.length;
+    final second = container.read(journeyControllerProvider);
+    expect(second.status, JourneyStatus.tracking);
+    expect(second.error, isNull);
+    location.gps.add(location.next());
+    await pumpEventQueue();
+    final pointsBeforeFix = container.read(journeyControllerProvider).path.length;
+    expect(pointsBeforeFix, second.path.length + 1, reason: 'the second walk is recording');
+
     location.gps.add(location.next(accuracy: _fixAccuracyMeters));
     await pumpEventQueue();
-    expect(container.read(journeyControllerProvider).path.length, pointsAtSecondStart,
+    expect(container.read(journeyControllerProvider).path.length, pointsBeforeFix,
         reason: 'the next walk uses the strict rules, so the 30 m fix is ignored');
+    journey.stopJourney();
+  });
+
+  test('a walk keeps its loop rules when new ones arrive mid-walk', () async {
+    final source = _SwitchableSource(_rules(1));
+    final location = _FakeLocation()..startAt = _FakeLocation().onLoop(0);
+    final api = _FakeApi();
+    final container = _container(source, location: location, api: api);
+    await _rulesSettled(container);
+    final journey = container.read(journeyControllerProvider.notifier);
+    await journey.startJourney();
+
+    // Mid-walk the server demands far more points per loop than this walk will have.
+    source.current = _rules(2, minLoopPoints: 1000);
+    await container.read(gameRulesProvider.notifier).refresh();
+    expect(container.read(gameRulesProvider).minLoopPoints, 1000);
+
+    for (var k = 1; k <= _FakeLocation.loopSteps; k++) {
+      location.gps.add(location.onLoop(k));
+      await pumpEventQueue();
+    }
+
+    expect(container.read(journeyControllerProvider).path.length, _FakeLocation.loopSteps + 1);
+    expect(api.previews, greaterThan(0),
+        reason: 'the walk started with a 20-point minimum, so closing the circle is a loop');
+    journey.stopJourney();
+  });
+
+  test('a walk started right after launch waits for the saved rules', () async {
+    final store = _MemoryStore(_rules(6, accuracy: _strictAccuracyMeters))
+      ..slowLoad = Completer<void>();
+    final location = _FakeLocation();
+    // No rules from the server at launch (offline): only the saved copy can tell the app.
+    final container = _container(_OfflineSource(), location: location, store: store);
+    final journey = container.read(journeyControllerProvider.notifier);
+
+    final starting = journey.startJourney();
+    await pumpEventQueue();
+    store.slowLoad!.complete();
+    await starting;
+
+    expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
+    final pointsAtStart = container.read(journeyControllerProvider).path.length;
+    location.gps.add(location.next(accuracy: _fixAccuracyMeters));
+    await pumpEventQueue();
+    expect(container.read(journeyControllerProvider).path.length, pointsAtStart,
+        reason: 'the saved strict rules (v6) apply, not the built-in lenient ones');
     journey.stopJourney();
   });
 
@@ -232,13 +332,16 @@ void main() {
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     });
 
-    test('a half-written save never replaces the saved copy, and the next save still works', () async {
+    test('a save cut off before it finishes never replaces the saved copy, and the next save works',
+        () async {
       await FileRulesStore().save(_rules(4));
-      // A crash mid-save leaves a half-written temp file behind; the real file is untouched.
-      await File('${tempDir.path}/game_rules.json.tmp').writeAsString('{"tag": "tag-5", "rul');
+      // The app dies after writing the new copy but before swapping it in.
+      final crashing = FileRulesStore(
+          replace: (tmp, path) async => throw const FileSystemException('app killed'));
+      await expectLater(crashing.save(_rules(5)), throwsA(isA<FileSystemException>()));
 
       final afterCrash = await FileRulesStore().load();
-      expect(afterCrash?.rules.version, 4);
+      expect(afterCrash?.rules.version, 4, reason: 'the saved copy was never touched');
 
       await FileRulesStore().save(_rules(5));
       final afterNextSave = await FileRulesStore().load();

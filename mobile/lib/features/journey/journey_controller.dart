@@ -186,11 +186,16 @@ class JourneyController extends Notifier<JourneyState> {
   GameRules _walkRules = defaultGameRules;
 
   Future<void> startJourney() async {
-    _walkRules = ref.read(gameRulesProvider);
     // Captured before the first await: a sign-out that begins during any of the
     // awaits below bumps the generation, and each re-check then aborts (#110).
     final generation = _sessionGeneration;
     if (!_isCurrentSession(generation)) return;
+    // Right after launch the saved rules may still be loading; a walk pinned to the built-in
+    // copy would use older rules for its whole length.
+    ref.read(gameRulesProvider);
+    await ref.read(gameRulesProvider.notifier).ready;
+    if (!_isCurrentSession(generation)) return;
+    _walkRules = ref.read(gameRulesProvider);
     final locationService = ref.read(locationServiceProvider);
 
     // A journey is meaningless offline: hex capture is server-validated and the

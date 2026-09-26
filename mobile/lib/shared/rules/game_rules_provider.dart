@@ -42,6 +42,10 @@ class GameRulesNotifier extends Notifier<GameRules> {
     return defaultGameRules;
   }
 
+  /// Completes once the saved copy has been read (or found missing), so a caller that must not
+  /// start on the built-in copy — e.g. a walk started right after launch — can wait for it.
+  Future<void> get ready => _loadSaved ?? Future.value();
+
   Future<void> _useSavedCopy() async {
     try {
       final saved = await ref.read(rulesStoreProvider).load();
