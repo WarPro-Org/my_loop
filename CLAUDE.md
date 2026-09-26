@@ -106,7 +106,7 @@ Produce a Bug Report covering:
 - **Blast radius:** What else could break if this area is changed.
 - **Fix plan:** The proposed change in plain English — no code yet.
 - **Lifecycle matrix rows** (if the bug is in state covered by `state-lifecycle-consistency`): the affected rows,
-  each with its test. On the bug track this report is the matrix's home.
+  each with the test that will prove it. On the bug track this report is the matrix's home.
 
 Do not write code until the user approves the Bug Report.
 
@@ -213,7 +213,7 @@ These are fast, local, write-time skills — catch issues before they reach a PR
 | If the change touches… | Run before committing |
 |------------------------|-----------------------|
 | A disk-persisting / async-serialized service or its tests (`*queue*.dart`, `*cache*.dart`, WAL/offline queues, `mobile/test/**`) | `flutter-disk-concurrency-test` (stub `path_provider`, assert disk==memory + surviving set, prove the test fails without the fix) |
-| **App state kept across launches or pinned for a walk, read by more than one place** (e.g. rules, saved profile, offline queues, values captured at walk start) | `state-lifecycle-consistency` (reader × app-moment matrix from the design doc; tests for the readers this commit touches, through the real trigger; fake failures inside the real code, never its result; positive control before any "nothing happened" check; each test proven red when its behaviour is removed) |
+| **App state kept across launches or pinned for a walk, read by more than one place** (e.g. rules, saved profile, offline queues, values captured at walk start) | `state-lifecycle-consistency` (reader × app-moment matrix from the design doc (or the Bug Report on the bug track); tests for the readers this commit touches, through the real trigger; fake failures inside the real code, never its result; positive control before any "nothing happened" check; each test proven red when its behaviour is removed) |
 
 > These two gate tables are **intended to be auto-maintained**: once the `/update-session`
 > tooling lands in this repo, extracting a new skill should append a row here (or to the
