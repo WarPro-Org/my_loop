@@ -30,15 +30,22 @@ lines=$(( ${PR_ADDED:-0} + ${PR_DELETED:-0} ))
 merge="${PR_MERGE:-HEAD}"
 changed=$(git diff --name-only "$merge^1" "$merge" 2>/dev/null)
 problems=()
-# Changed code files as "<status><TAB><path>". If the diff can't be read, the check fails (never skips).
-if all_status=$(git diff --no-renames --name-status "$merge^1" "$merge" 2>/dev/null); then
-  # ENVIRON, not -v: awk -v would turn the regex's "\." into "." (any character).
-  code_status=$(SKIP_RE="$NOT_CODE" awk -F'\t' '$2 !~ ENVIRON["SKIP_RE"]' <<<"$all_status") \
-    || problems+=("Couldn't filter the PR's changed files.")
+# Changed code files as "<status><TAB><path>" lines. Read NUL-separated (-z): git then prints names
+# as they are, never quoted, so an unusual file name can't slip past the patterns. If the diff can't be read, the check fails (never skips).
+code_status=""
+status_file=$(mktemp)
+if git diff --no-renames --name-status -z "$merge^1" "$merge" >"$status_file" 2>/dev/null; then
+  while IFS= read -r -d '' status && IFS= read -r -d '' path; do
+    if [[ "$path" == *$'\t'* || "$path" == *$'\n'* ]]; then
+      problems+=("File name with a tab or line break isn't allowed: rename it.")
+    elif ! [[ "$path" =~ $NOT_CODE ]]; then
+      code_status+="$status"$'\t'"$path"$'\n'
+    fi
+  done <"$status_file"
 else
-  code_status=""
   problems+=("Couldn't read the PR's changed files (merge commit $merge).")
 fi
+rm -f "$status_file"
 
 # Skills named in CLAUDE.md's two gate tables (backticked names that are real skill folders).
 gate_skills() {
@@ -66,16 +73,22 @@ required_skills() {
 check_gate_rows() {
   local all run na line skill file missing=()
   all=$(gate_skills)
-  if [[ -z "$all" || ! -f "$GATE_ROWS" ]]; then
+  if [[ -z "$all" || ! -r "$GATE_ROWS" ]]; then
     problems+=("Couldn't read the gate rows ($GATE_TABLES tables, $GATE_ROWS) on master.")
     return
   fi
   run=$(grep -m1 '^\*\*Skills run:\*\*' <<<"$body" | grep -oE '`[a-z0-9-]+`' | tr -d '`')
   na=""
+  # "- Not applicable: `a`, `b` — reason": skills before the first dash, the reason after it.
+  local rest names reason
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
-    if grep -qE '[A-Za-z]{3,}' <<<"${line##*\`}"; then
-      na+=$'\n'$(grep -oE '`[a-z0-9-]+`' <<<"$line" | tr -d '`')
+    rest=${line#*Not applicable:}
+    names=${rest%%" — "*}
+    [[ "$names" == "$rest" ]] && names=${rest%%" - "*}
+    reason=${rest#"$names"}
+    if grep -qE '[A-Za-z]{3,}' <<<"$reason"; then
+      na+=$'\n'$(grep -oE '`[a-z0-9-]+`' <<<"$names" | tr -d '`')
     else
       problems+=("'${line}' has no reason: write '- Not applicable: \`skill\` — <why it doesn't apply>'.")
     fi
