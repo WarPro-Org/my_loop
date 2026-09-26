@@ -17,6 +17,11 @@ public sealed class GameRulesValidator : IValidateOptions<GameRules>
             if (!(value > 0)) failures.Add($"{GameRules.SectionName}:{path} must be greater than 0");
         }
 
+        void NotNegative(double value, string path)
+        {
+            if (!(value >= 0)) failures.Add($"{GameRules.SectionName}:{path} must be 0 or more");
+        }
+
         void Fraction(double value, string path)
         {
             if (!(value > 0 && value <= 1)) failures.Add($"{GameRules.SectionName}:{path} must be above 0 and at most 1");
@@ -26,7 +31,7 @@ public sealed class GameRulesValidator : IValidateOptions<GameRules>
 
         Positive(rules.Loop.ClosureDistanceMeters, "Loop:ClosureDistanceMeters");
         Positive(rules.Loop.MinPoints, "Loop:MinPoints");
-        Positive(rules.Loop.SkipNeighbors, "Loop:SkipNeighbors");
+        NotNegative(rules.Loop.SkipNeighbors, "Loop:SkipNeighbors");
         Positive(rules.Loop.MinAreaSquareMeters, "Loop:MinAreaSquareMeters");
 
         Positive(rules.Gps.AccuracyThresholdMeters, "Gps:AccuracyThresholdMeters");
