@@ -1,6 +1,6 @@
 ---
 name: state-lifecycle-consistency
-description: Use when adding or changing app state that is kept across launches (saved to disk) or pinned for a walk AND read by more than one place (rules, saved profile, offline queues). Fills a lifecycle matrix (every reader × every app moment), writes one test per cell through the real trigger, and proves each test fails without its fix — so gaps are found by the author, not the user.
+description: Use when adding or changing app state that is kept across launches (saved to disk) or pinned for a walk AND read by more than one place (rules, saved profile, offline queues). Fills a lifecycle matrix (every reader × every app moment), writes one test per cell through the real trigger, and proves each test goes red when the behaviour it guards is removed — so gaps are found by the author, not the user.
 origin: extracted-from-session-2026-09-26 (FR1 rules)
 ---
 
@@ -24,7 +24,8 @@ State that is **kept across launches** (saved to disk) **or pinned for a walk**,
 more than one place**. A provider that just fetches and shows data does not qualify. For disk
 queues and caches, run this alongside `flutter-disk-concurrency-test`.
 
-- **Design time (Gate 2):** build the matrix in the design doc. That is its one home.
+- **Design time (Gate 2):** build the matrix in the design doc. That is its one home (on the bug
+  track: the Bug Report's affected rows).
 - **Each commit:** update the matrix for the readers this commit adds or changes; their cells'
   tests are due in the same commit. Readers a later PR adds get their tests in that PR (fits the
   split server → wiring → app PRs and the 0.x "tests land with the story" rule).
