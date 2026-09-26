@@ -7,7 +7,7 @@ namespace MyLoop.Modules.Rules;
 public static class RulesModuleExtensions
 {
     /// <summary>Registers the Rules module. Invalid or missing rules stop the server at startup.</summary>
-    public static IServiceCollection AddRulesModule(this IServiceCollection services, IConfiguration configuration)
+    public static IServiceCollection AddMyLoopRules(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddOptions<GameRules>()
             .Bind(configuration.GetSection(GameRules.SectionName))

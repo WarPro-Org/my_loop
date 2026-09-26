@@ -1,3 +1,5 @@
+using System.Reflection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
@@ -71,5 +73,14 @@ public class RulesControllerTests
 
         Assert.NotEqual(before.ClientRulesTag, after.ClientRulesTag);
         Assert.IsType<OkObjectResult>(Controller(after, $"\"{before.ClientRulesTag}\"").Get());
+    }
+
+    [Fact]
+    public void Rules_endpoint_requires_sign_in()
+    {
+        var attribute = typeof(RulesController).GetCustomAttribute<AuthorizeAttribute>();
+
+        Assert.NotNull(attribute);
+        Assert.Null(typeof(RulesController).GetMethod(nameof(RulesController.Get))!.GetCustomAttribute<AllowAnonymousAttribute>());
     }
 }
