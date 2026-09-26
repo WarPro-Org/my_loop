@@ -26,8 +26,12 @@ jobs:
         run: dotnet build api/MyLoop.Api/MyLoop.Api.csproj --configuration Release --no-restore
 
       # Old test suites and coverage gates are paused during the 0.x rebuild
-      # (see CLAUDE.md -> Planning Chat & User Stories). Only the 0.1 user-story
-      # tests run: one folder per story in tests/MyLoop.V01.Tests.
+      # (see CLAUDE.md -> Planning Chat & User Stories). The old test project is
+      # still compiled, so a change that breaks it can't reach master. Only the 0.1
+      # user-story tests run: one folder per story in tests/MyLoop.V01.Tests.
+      - name: Build old tests (not run)
+        run: dotnet build tests/MyLoop.Api.Tests/MyLoop.Api.Tests.csproj --configuration Release
+
       - name: Test (0.1 user stories)
         run: dotnet test tests/MyLoop.V01.Tests/MyLoop.V01.Tests.csproj --configuration Release
 
