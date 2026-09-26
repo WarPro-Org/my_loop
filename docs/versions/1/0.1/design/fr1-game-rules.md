@@ -7,7 +7,7 @@ was built, the gaps found while writing it, and the work still to do (PR 5/5). T
 D2; the doc itself is approved by merging its PR, before any more FR1 code merges.
 
 **FR1 PRs (merge in order):** 1/5 #203 server rules module · 2/5 this design doc · 3/5 #204 server uses the rules ·
-4/5 #205 phone uses the rules · 5/5 phone fixes and contract tests from this doc.
+4/5 #205 phone uses the rules · 5/5 phone and server fixes and contract tests from this doc.
 
 ## In one paragraph
 
@@ -22,7 +22,7 @@ them for its GPS filter and live loop estimate. Anti-cheat numbers never leave t
 - Public: `IRuleSettings` (`Current`, `GetClientRules()`, `ClientRulesTag`), `GameRules` and its sections,
   `ClientRules`, and `AddMyLoopRules()`.
 - Meant to be internal: `RuleSettings` (reads the rules once at startup) and `GameRulesValidator` (startup check).
-  Both are public today; see "Tests to add".
+  Both are public today; see "Work still to do".
 - Other code uses only `IRuleSettings`: `HexGridService`, `PathValidationService`, `RulesController`.
 
 **Settings** — `GameRules` in `appsettings.json`:
@@ -114,10 +114,10 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Walk starts while a refresh is running | The walk waits for the running refresh, up to a few seconds (D1), then fixes the rules (R1, R2) | **to add** in 5/5 |
 | First launch, offline, nothing saved | Built-in rules (R3) | first launch with no internet — *to prove* |
 | Offline / server error / 401 | Current rules kept (R3) | offline with a saved copy — *to prove*; 401 then login — red when a refresh asked for mid-request joins it instead of running again |
-| Offline with an expired sign-in token (non-Dio error) | Current rules kept; later refreshes still work (R3) | **Gap:** only Dio and format errors are caught today. Fix and test in the next PR |
-| Server sends 200 with an unreadable body | Current rules kept (R3) | **to add** |
+| Offline with an expired sign-in token (non-Dio error) | Current rules kept; later refreshes still work (R3) | **Gap:** only Dio and format errors are caught today. Fix and test in 5/5 |
+| Server sends 200 with an unreadable body | Current rules kept (R3) | **to add** in 5/5 |
 | Back online / back to the app (signed in) | Rules checked again (R3) | reconnect; resume — red when hydration doesn't call `refresh()` |
-| Login | Rules checked again (R3) | **to add** — must go through the real login hydration, not call `refresh()` by hand |
+| Login | Rules checked again (R3) | **to add** in 5/5 — must go through the real login hydration, not call `refresh()` by hand |
 | Sign out / switch account | Rules kept (R3) | sign-out — red when sign-out invalidates `gameRulesProvider` |
 | Killed mid-save | Old copy intact; next save works (R3) | save cut off — red when the save writes straight to the file (no temp + rename) |
 | Two refreshes at once | One request; none lost (R3) | overlapping refreshes; last-moment refresh — red when calls aren't coalesced / `_inFlight` is cleared late |
