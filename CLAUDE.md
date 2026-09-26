@@ -89,6 +89,16 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - A change of plan updates the task's What / How / Acceptance criteria after the user agrees, together with the spec.
 - Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
 
+**Keep linked items in sync** — one piece of work touches the spec, the design doc, the FR task, the parent version
+task and every PR of that FR. When any of them changes, update all the others in the same turn:
+- A new PR for an FR renumbers all of its PRs to `(k/N)`, in merge order, in every title and in every
+  description's "Part k of N" line and PR list, including merged PRs. For example, 3 PRs become 5 when a design
+  doc and a fix PR are added.
+- New findings (gaps, decisions, extra work) go into the design doc, the FR task's What / How / Decisions /
+  Acceptance criteria, and the Progress table, not only into chat or a PR.
+- A PR's status changes (opened, reviewed, merged, closed) update the FR task and the parent task.
+- Before reporting to the owner, check each linked item says the same thing.
+
 **Stay on the goal**
 - Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
 - Still design for extension (interfaces, modules, versioned data) so later FRs add code instead of rewriting it.
@@ -237,19 +247,18 @@ skill. After a new commit, gates that depend on the code run again.
 |---|---|---|
 | 1 | writing FR code | Requirement agreed (Gate 1); design doc `docs/versions/<release>/<version>/design/frN-<name>.md` merged after the owner approved it (Gate 2) |
 | 2 | each commit | Pre-Check-in skills that apply have run; the lifecycle matrix tests for readers this commit touches are in it |
-| 3 | after each push | Task updated; independent review of **this** commit (foreground, report ends with `REVIEWED <commit>`); findings fixed and the fix reviewed |
-| 4 | opening a PR | Pre-PR skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully |
+| 3 | after each push | Linked items synced (see "Keep linked items in sync"); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
+| 4 | opening a PR | Pre-PR skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
 | 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
 
-**Enforced by machine** — the rest of the checklist still relies on honesty and the owner's review:
-- Claude Code hooks (`.claude/settings.json`) refuse to open, merge or auto-merge a PR unless its pushed head
-  commit has `scripts/verify.sh` passing and a finished independent review naming that commit in the gate log.
-  They also log every skill loaded, and block Bash commands that name the gate log. The log is per container: a
-  new session re-runs these two gates. The hooks catch forgetting, not deliberate bypassing.
-- The "PR rules" check (`.github/workflows/pr-rules.yml`):
-  - Claude-made and FR PRs need the gate section and a filled "Skills run".
-  - FR PRs (branch `vX.Y/frN-…`) need a task link line and FR N's design doc, already merged into the base
-    branch. A docs-only PR that adds the design doc is the exception.
+**Enforced on GitHub** — so a forgotten step shows up as a red check the owner sees. It can't catch a false
+claim; the owner's review and the review records in the PR are what keep claims honest.
+- **CI** proves build, tests and analyze on every commit (`scripts/verify.sh` runs the same steps locally).
+- **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited):
+  - Claude-made and FR PRs need the gate section, a filled "Skills run", and a `REVIEWED <commit>` line
+    for the **latest** commit. Every push turns it red until that commit is reviewed and recorded.
+  - FR PRs (branch `vX.Y/frN-…`) need a task link line, "Part k of N" matching the title's `(k/N)`, and FR N's
+    design doc already merged into master. A docs-only PR that adds the design doc is the exception.
   - Any PR over the size limit needs a `Size exception:` line.
   - Bot PRs are skipped.
 

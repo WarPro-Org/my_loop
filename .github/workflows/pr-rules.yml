@@ -1,7 +1,8 @@
 name: PR rules
 
-# Checks each PR against the CLAUDE.md rules a machine can check: gate section and "Skills run"
-# (Claude-made and FR PRs), task link and an approved design doc on the base branch (FR PRs), size.
+# Checks each PR against the CLAUDE.md rules a machine can check: gate section, "Skills run" and a
+# recorded independent review of the head commit (Claude-made and FR PRs); task link, k/N in sync,
+# and an approved design doc on master (FR PRs); size.
 # Runs on description edits too, so fixing the description re-runs it. Separate from CI so a
 # description edit never re-runs the build.
 on:
@@ -17,11 +18,15 @@ jobs:
         with:
           fetch-depth: 2 # the merge commit and its parents: base (^1) and PR head (^2)
 
+      - name: Fetch master (approved design docs live there)
+        run: git fetch --depth=1 origin master:refs/remotes/origin/master
+
       - name: Check PR against CLAUDE.md rules
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_FILES: ${{ github.event.pull_request.changed_files }}
           PR_ADDED: ${{ github.event.pull_request.additions }}
           PR_DELETED: ${{ github.event.pull_request.deletions }}

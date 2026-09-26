@@ -24,6 +24,10 @@ then check the boxes that apply and note which skills you ran.
 
 <!-- Over ~15 files / ~400 lines? Split the PR, or add a line: "Size exception: <reason, agreed with the owner>" -->
 
+## Independent review
+
+<!-- One line per reviewed commit, newest last: REVIEWED <commit> — <result, and what was fixed>. The latest commit must be listed. -->
+
 ## Testing
 
 <!-- How was this verified? -->
