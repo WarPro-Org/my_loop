@@ -65,6 +65,15 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Stacked PRs (each based on the previous one's branch) are merged **in order with a merge commit, not squash** —
   squashing a parent makes its children conflict. After each merge, retarget the next PR to `master`.
 
+**Keep tasks up to date (no info lost)**
+- Each FR task ends with a `## Progress` section; the parent version task has one row per FR.
+  - A table: PR | what it does (one line) | status.
+  - Under it, a check-in log: `commit — what changed, and why if not obvious`, one line each.
+- Update the task (and the parent when an FR's status changes) in the same turn as every check-in, PR opened,
+  review result and merge — before reporting to the user.
+- A change of plan updates the task's What / How / Acceptance criteria at the same time as the spec.
+- Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
+
 **Stay on the goal**
 - Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
 - Still design for extension (interfaces, modules, versioned data) so later FRs add code instead of rewriting it.
