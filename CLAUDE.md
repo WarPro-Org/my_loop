@@ -64,8 +64,13 @@ Applies when planning versions, discussing requirements, or creating tasks.
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
 - Stacked PRs (each based on the previous one's branch) are merged **in order**. This repo allows only squash merges,
   so after each merge: merge `master` into the next PR's branch, check build and tests, push, then retarget it to
-  `master`. On a conflict, keep the next PR's version for lines it changed, then compare its diff against `master`
-  with its diff before the merge — they must match.
+  `master`.
+  - Keep each next branch up to date: after every check-in on a parent, merge the parent into the next branch.
+    Then the next branch already holds every parent fix, and a conflict with `master` is only the parent's own
+    lines coming back in squashed form.
+  - Before resolving, check `git diff <parent's final commit> <next branch>` shows only the next PR's own changes.
+    If it does, keep the next branch's version; if not, merge the parent's final commit in first. Never drop a line
+    the parent changed.
 
 **Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
 - **FR task** ends with a `## Progress` section:
