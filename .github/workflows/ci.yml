@@ -1,15 +1,38 @@
 name: CI
 
+# Once per PR commit, plus after each merge. A push to a branch with a PR used to run CI twice.
 on:
   push:
-    branches: ["**"]
+    branches: [develop, main, master]
   pull_request:
     branches: [develop, main, master]
   workflow_dispatch: # It unlocks manual terminal and UI execution.
 
 jobs:
+  # Docs (docs/, any *.md) and agent skills/config (.claude/) don't affect the app, so a change that
+  # touches only those skips the jobs below. GitHub counts a skipped job as passed, so required checks
+  # still clear. If this check can't tell (or fails), the jobs run: it never skips by mistake.
+  changes:
+    name: Detect code changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: .github/scripts/code-changed.sh >> "$GITHUB_OUTPUT"
+
   backend:
     name: Backend (.NET API)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +60,8 @@ jobs:
 
   mobile:
     name: Mobile (Flutter)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -61,6 +86,8 @@ jobs:
   # ADD THIS NEW JOB TO UNBLOCK YOUR GITHUB PRs
   security-scan:
     name: Security Code Scanning
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       security-events: write # Required to upload results to the Security tab
