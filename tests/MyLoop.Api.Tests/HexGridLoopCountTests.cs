@@ -11,10 +11,10 @@ namespace MyLoop.Api.Tests;
 /// </summary>
 public class HexGridLoopCountTests
 {
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
 
     // Rough meters-per-degree near the equator — enough to size test loops
-    // relative to GameConstants.MinFillAreaSquareMeters (5,000 m²).
+    // relative to TestRules.Loop.MinAreaSquareMeters (5,000 m²).
     private const double MPerDegLat = 110574.0;
     private const double MPerDegLng = 111320.0;
 

@@ -33,7 +33,7 @@ public class ClaimsControllerAuthTests
     private static ClaimsController BuildWithRealValidator(
         Mock<ITerritoryService> territory, Mock<ICurrentUser> currentUser) =>
         new(territory.Object, Mock.Of<IHexGridService>(), currentUser.Object,
-            new PathValidationService(NullLogger<PathValidationService>.Instance),
+            new PathValidationService(TestRules.Settings, NullLogger<PathValidationService>.Instance),
             NullLogger<ClaimsController>.Instance);
 
     private static BatchStepClaimRequest StraightNorthBatch(int count)

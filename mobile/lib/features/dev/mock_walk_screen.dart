@@ -33,7 +33,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'package:myloop/app/theme.dart';
-import 'package:myloop/features/journey/loop_detector.dart';
+import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
 import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/mock/mock_route_store.dart';
@@ -386,7 +386,7 @@ class _MockWalkScreenState extends ConsumerState<MockWalkScreen> {
         .clamp(AppConstants.movingNoiseFloorMin, AppConstants.movingNoiseFloorMax);
     final closes = config.routeType == MockRouteType.loop ||
         (config.routeType == MockRouteType.multiWaypoint && config.autoCloseLoop);
-    final floor = closes ? LoopDetector.minLoopPoints : AppConstants.minGpsPointsPerClaim;
+    final floor = closes ? ref.read(gameRulesProvider).minLoopPoints : AppConstants.minGpsPointsPerClaim;
     final retainedEstimate = total / noiseFloor;
 
     return Column(

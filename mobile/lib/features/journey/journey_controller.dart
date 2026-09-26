@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:uuid/uuid.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
@@ -523,7 +524,7 @@ class JourneyController extends Notifier<JourneyState> {
     // the displayed count: the server returns the authoritative, area-validated
     // and de-duplicated loopCount, which avoids the over-count this used to
     // show live (issue #21). state.loopCount is set only from the preview.
-    final estimate = LoopDetector.countLoops(path);
+    final estimate = LoopDetector.countLoops(path, ref.read(gameRulesProvider));
     if (estimate != _lastLoopCount) {
       _lastLoopCount = estimate;
       if (estimate > 0) {

@@ -345,7 +345,7 @@ public class ViewportBucketFirstTests : IAsyncLifetime
 /// </summary>
 public class HexGridBboxRegionTests
 {
-    private static HexGridService Service() => new(new GeoService());
+    private static HexGridService Service() => new(new GeoService(), TestRules.Settings);
 
     [Theory]
     // ~200 m viewport (fits deep inside one res-3 parent — polyfill alone finds nothing).

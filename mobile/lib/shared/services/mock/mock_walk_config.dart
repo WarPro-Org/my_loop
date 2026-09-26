@@ -56,7 +56,7 @@ class MockWalkConstants {
   /// Default and bounds for the generated closed loop radius, in metres. The minimum
   /// is held high enough that the loop perimeter, after the client noise-floor dedup
   /// (~one retained point per [reportedAccuracyMeters]), still yields more than
-  /// LoopDetector.minLoopPoints (20) retained points so the loop is actually detected:
+  /// the game rules' minLoopPoints (20 in rules v1) retained points so the loop is actually detected:
   /// min perimeter 2·π·30 ≈ 188 m / 8 m ≈ 23 points.
   static const double defaultLoopRadiusMeters = 45.0;
   static const double minLoopRadiusMeters = 30.0;

@@ -1,4 +1,5 @@
 using MyLoop.Api.Constants;
+using MyLoop.Modules.Rules;
 
 namespace MyLoop.Api.Services;
 
@@ -8,10 +9,12 @@ namespace MyLoop.Api.Services;
 /// </summary>
 public class PathValidationService : IPathValidationService
 {
+    private readonly AntiCheatRules _antiCheat;
     private readonly ILogger<PathValidationService> _logger;
 
-    public PathValidationService(ILogger<PathValidationService> logger)
+    public PathValidationService(IRuleSettings rules, ILogger<PathValidationService> logger)
     {
+        _antiCheat = rules.Current.AntiCheat;
         _logger = logger;
     }
 
@@ -43,7 +46,7 @@ public class PathValidationService : IPathValidationService
             var distanceMeters = HaversineDistance(path[i - 1], path[i]);
             // GPS sampling interval is ~5 seconds. Max plausible speed = 30 km/h (8.33 m/s).
             // Over 5 seconds that's ~42m. Use generous threshold of 60m to account for GPS drift.
-            if (distanceMeters > AntiCheatConstants.MaxDistanceBetweenPointsMeters)
+            if (distanceMeters > _antiCheat.MaxDistanceBetweenPointsMeters)
             {
                 violations++;
             }
@@ -51,7 +54,7 @@ public class PathValidationService : IPathValidationService
 
         // Allow up to 5% violations (GPS can occasionally jump)
         var violationRate = (double)violations / (path.Length - 1);
-        if (violationRate > AntiCheatConstants.MaxSpeedViolationRate)
+        if (violationRate > _antiCheat.MaxSpeedViolationRate)
         {
             _logger.LogWarning(
                 "Path rejected: {Rate:P1} speed violations ({Count}/{Total})",
@@ -70,11 +73,11 @@ public class PathValidationService : IPathValidationService
     {
         var totalDistance = CalculateTotalDistance(path);
         // Minimum time = distance / max speed (30 km/h = 8.33 m/s)
-        var minDurationSeconds = totalDistance / AntiCheatConstants.MaxSpeedMetersPerSecond;
+        var minDurationSeconds = totalDistance / _antiCheat.MaxSpeedMetersPerSecond;
         // Implied duration = number of points * sampling interval (5s)
-        var impliedDurationSeconds = (path.Length - 1) * AntiCheatConstants.GpsSamplingIntervalSeconds;
+        var impliedDurationSeconds = (path.Length - 1) * _antiCheat.GpsSamplingIntervalSeconds;
 
-        if (impliedDurationSeconds < minDurationSeconds * AntiCheatConstants.DurationToleranceFactor)
+        if (impliedDurationSeconds < minDurationSeconds * _antiCheat.DurationToleranceFactor)
         {
             _logger.LogWarning(
                 "Path rejected: distance {Dist:F0}m implies min {Min:F0}s but path only has {Implied:F0}s of points",
@@ -110,7 +113,7 @@ public class PathValidationService : IPathValidationService
         var stdDev = Math.Sqrt(variance);
 
         // Real GPS paths have stdDev > 5° typically. Spoofed linear paths have < 2°.
-        if (stdDev < AntiCheatConstants.MinBearingStdDev)
+        if (stdDev < _antiCheat.MinBearingStdDev)
         {
             _logger.LogWarning("Path rejected: bearing stdDev {StdDev:F2}° — suspiciously smooth", stdDev);
             return "Path rejected — movement pattern is not consistent with walking";
@@ -149,17 +152,17 @@ public class PathValidationService : IPathValidationService
             // Missing/disordered timestamps → fall back to the nominal sampling cadence
             // rather than dividing by zero or trusting a negative interval.
             if (elapsedSeconds <= 0)
-                elapsedSeconds = AntiCheatConstants.GpsSamplingIntervalSeconds;
+                elapsedSeconds = _antiCheat.GpsSamplingIntervalSeconds;
 
             var maxPlausibleMeters =
-                AntiCheatConstants.MaxSpeedMetersPerSecond * elapsedSeconds + gpsDriftMarginMeters;
+                _antiCheat.MaxSpeedMetersPerSecond * elapsedSeconds + gpsDriftMarginMeters;
 
             if (distanceMeters > maxPlausibleMeters)
                 violations++;
         }
 
         var violationRate = (double)violations / (points.Count - 1);
-        if (violationRate > AntiCheatConstants.MaxSpeedViolationRate)
+        if (violationRate > _antiCheat.MaxSpeedViolationRate)
         {
             _logger.LogWarning(
                 "Batch rejected: {Rate:P1} implausible-speed hops ({Count}/{Total})",
@@ -177,7 +180,7 @@ public class PathValidationService : IPathValidationService
         if (totalElapsedSeconds > 0)
         {
             var averageSpeed = totalDistanceMeters / totalElapsedSeconds;
-            if (averageSpeed > AntiCheatConstants.MaxAverageSpeedMetersPerSecond)
+            if (averageSpeed > _antiCheat.MaxAverageSpeedMetersPerSecond)
             {
                 _logger.LogWarning(
                     "Batch rejected: sustained average speed {Speed:F1} m/s over {Seconds:F0}s exceeds limit",

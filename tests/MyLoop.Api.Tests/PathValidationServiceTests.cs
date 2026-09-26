@@ -12,7 +12,7 @@ namespace MyLoop.Api.Tests;
 public class PathValidationServiceTests
 {
     private static PathValidationService Service() =>
-        new(NullLogger<PathValidationService>.Instance);
+        new(TestRules.Settings, NullLogger<PathValidationService>.Instance);
 
     private static (double, double, DateTime) P(double lat, double lng, DateTime t) => (lat, lng, t);
 

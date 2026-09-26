@@ -10,6 +10,9 @@ public static class ApiRoutes
     public const string Privacy = "/privacy";
     public const string Terms = "/terms";
 
+    /// <summary>Game rules the app is allowed to see (FR1).</summary>
+    public const string Rules = "api/rules";
+
     /// <summary>Prefix for all SignalR hub paths (rate-limit and request-logging rules key off it).</summary>
     public const string HubsPrefix = "/hubs";
     public const string TerritoryHub = "/hubs/territory";

@@ -26,8 +26,10 @@ jobs:
         run: dotnet build api/MyLoop.Api/MyLoop.Api.csproj --configuration Release --no-restore
 
       # Old test suites and coverage gates are paused during the 0.x rebuild
-      # (see CLAUDE.md -> Planning Chat & User Stories). Each user story adds
-      # its own tests, and a test step returns here with the first of them.
+      # (see CLAUDE.md -> Planning Chat & User Stories). Only the 0.1 user-story
+      # tests run: one folder per story in tests/MyLoop.V01.Tests.
+      - name: Test (0.1 user stories)
+        run: dotnet test tests/MyLoop.V01.Tests/MyLoop.V01.Tests.csproj --configuration Release
 
   mobile:
     name: Mobile (Flutter)
@@ -50,7 +52,10 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # Tests and coverage paused during the 0.x rebuild (see backend job note).
+      # Old tests and coverage paused during the 0.x rebuild (see backend job note).
+      # Only the 0.1 user-story tests run: one folder per story in test/v0_1.
+      - name: Test (0.1 user stories)
+        run: flutter test test/v0_1
 
   # ADD THIS NEW JOB TO UNBLOCK YOUR GITHUB PRs
   security-scan:

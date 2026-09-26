@@ -1,3 +1,4 @@
+using MyLoop.Modules.Rules;
 using H3;
 using H3.Algorithms;
 using H3.Extensions;
@@ -19,14 +20,16 @@ public class HexGridService : IHexGridService
     private const double PerimeterSampleStepDegrees = 0.4;
 
     private readonly IGeoService _geoService;
+    private readonly LoopRules _loopRules;
     private readonly ILogger<HexGridService> _logger;
     private static readonly GeometryFactory GeomFactory = new();
 
     // The logger is optional so pure-geometry callers (tests, tools) can construct the
     // service directly; DI always supplies one.
-    public HexGridService(IGeoService geoService, ILogger<HexGridService>? logger = null)
+    public HexGridService(IGeoService geoService, IRuleSettings rules, ILogger<HexGridService>? logger = null)
     {
         _geoService = geoService;
+        _loopRules = rules.Current.Loop;
         _logger = logger ?? NullLogger<HexGridService>.Instance;
     }
 
@@ -223,22 +226,22 @@ public class HexGridService : IHexGridService
 
     public bool HasClosedLoop(double[][] path)
     {
-        if (path.Length < GameConstants.MinLoopPoints) return false;
+        if (path.Length < _loopRules.MinPoints) return false;
 
         // Spatial hash instead of the previous O(n²) all-pairs haversine scan (#116): with
         // MaxClaimPathPoints at 50k that admitted ~2.5×10⁹ haversines per request, a pure-CPU
         // DoS on the pre-transaction claim path. The index only surfaces points within the
         // closure radius, and the exact haversine check below preserves the original semantics.
-        var index = ClosureSpatialIndex.Build(path);
-        for (int i = GameConstants.LoopSkipNeighbors; i < path.Length; i++)
+        var index = ClosureSpatialIndex.Build(path, _loopRules.ClosureDistanceMeters);
+        for (int i = _loopRules.SkipNeighbors; i < path.Length; i++)
         {
-            var maxJ = i - GameConstants.MinLoopPoints;
+            var maxJ = i - _loopRules.MinPoints;
             foreach (var j in index.Candidates(path[i][0], path[i][1]))
             {
                 if (j > maxJ) continue;
                 var dist = _geoService.HaversineMeters(
                     path[i][0], path[i][1], path[j][0], path[j][1]);
-                if (dist <= GameConstants.LoopClosureDistanceMeters) return true;
+                if (dist <= _loopRules.ClosureDistanceMeters) return true;
             }
         }
 
@@ -292,7 +295,7 @@ public class HexGridService : IHexGridService
         foreach (var loop in loops)
         {
             var area = _geoService.CalculatePolygonArea(loop);
-            if (area < GameConstants.MinFillAreaSquareMeters) continue;
+            if (area < _loopRules.MinAreaSquareMeters) continue;
 
             var poly = BuildRepairedPolygon(loop);
             if (poly is { IsEmpty: false } && poly.Area > 0)
@@ -327,7 +330,7 @@ public class HexGridService : IHexGridService
 
     private List<double[][]> ExtractLoops(double[][] path)
     {
-        if (path.Length < GameConstants.MinLoopPoints) return [];
+        if (path.Length < _loopRules.MinPoints) return [];
 
         var loops = new List<double[][]>();
         var used = new bool[path.Length];
@@ -354,12 +357,12 @@ public class HexGridService : IHexGridService
         // that exactly by taking the minimum qualifying candidate the index surfaces. The index is
         // a superset of all within-radius points, and the haversine check below is unchanged, so
         // the loop set is identical to the brute-force version (proven by the equivalence test).
-        var index = ClosureSpatialIndex.Build(path);
-        for (int i = GameConstants.LoopSkipNeighbors; i < path.Length; i++)
+        var index = ClosureSpatialIndex.Build(path, _loopRules.ClosureDistanceMeters);
+        for (int i = _loopRules.SkipNeighbors; i < path.Length; i++)
         {
             if (used[i]) continue;
 
-            var maxJ = i - GameConstants.MinLoopPoints;
+            var maxJ = i - _loopRules.MinPoints;
             var bestJ = -1;
             foreach (var j in index.Candidates(path[i][0], path[i][1]))
             {
@@ -369,7 +372,7 @@ public class HexGridService : IHexGridService
                     path[i][0], path[i][1],
                     path[j][0], path[j][1]);
 
-                if (dist <= GameConstants.LoopClosureDistanceMeters)
+                if (dist <= _loopRules.ClosureDistanceMeters)
                     bestJ = j;
             }
 
@@ -387,17 +390,17 @@ public class HexGridService : IHexGridService
 
     private bool IsLoopClosed(double[][] path)
     {
-        if (path.Length < GameConstants.MinLoopPoints) return false;
+        if (path.Length < _loopRules.MinPoints) return false;
         var start = path[0];
         var end = path[^1];
         return _geoService.HaversineMeters(start[0], start[1], end[0], end[1])
-               <= GameConstants.LoopClosureDistanceMeters;
+               <= _loopRules.ClosureDistanceMeters;
     }
 
     /// <summary>
     /// Uniform-grid spatial hash over a GPS path used to find loop-closure candidates without an
     /// O(n²) all-pairs scan (#116). Each grid cell is sized so that BOTH its north-south and
-    /// east-west extent are ≥ <see cref="GameConstants.LoopClosureDistanceMeters"/> everywhere on
+    /// east-west extent are ≥ the loop-closure distance everywhere on
     /// the path: cell height is fixed at the closure distance, and cell width uses the path's
     /// maximum absolute latitude (where a degree of longitude is shortest, so cells are widest in
     /// meters elsewhere). Because the north-south and east-west separations of any two points are
@@ -420,17 +423,17 @@ public class HexGridService : IHexGridService
             _degPerCellLng = degPerCellLng;
         }
 
-        public static ClosureSpatialIndex Build(double[][] path)
+        public static ClosureSpatialIndex Build(double[][] path, double closureDistanceMeters)
         {
             var maxAbsLat = 0.0;
             foreach (var p in path)
                 maxAbsLat = Math.Max(maxAbsLat, Math.Abs(p[0]));
 
-            var degPerCellLat = GameConstants.LoopClosureDistanceMeters / GameConstants.MetersPerDegreeLat;
+            var degPerCellLat = closureDistanceMeters / GameConstants.MetersPerDegreeLat;
             // Clamp cos away from 0 so a (degenerate) near-polar path can't produce an infinite
             // cell width; no real walk occurs there.
             var cosLat = Math.Max(Math.Cos(maxAbsLat * Math.PI / 180.0), 0.01);
-            var degPerCellLng = GameConstants.LoopClosureDistanceMeters / (GameConstants.MetersPerDegreeLat * cosLat);
+            var degPerCellLng = closureDistanceMeters / (GameConstants.MetersPerDegreeLat * cosLat);
 
             var buckets = new Dictionary<(int, int), List<int>>();
             for (var i = 0; i < path.Length; i++)

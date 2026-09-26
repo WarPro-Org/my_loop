@@ -141,6 +141,8 @@ class PreviewResult {
 /// localhost). Each public method maps 1:1 to a backend API endpoint and
 /// returns strongly-typed model objects.
 class ApiService {
+  static const _rulesPath = '/api/rules';
+
   final Dio _dio;
 
   /// [dio] is injectable for tests (e.g. to drive a probe failure); production
@@ -173,6 +175,20 @@ class ApiService {
         handler.next(options);
       },
     ));
+  }
+
+  /// FR1: the game rules when they differ from [knownVersion], or null when the app already
+  /// has the current version (304 Not Modified). The version is the ETag.
+  Future<Map<String, dynamic>?> getRules(int knownVersion) async {
+    final response = await _dio.get<Map<String, dynamic>>(
+      _rulesPath,
+      options: Options(
+        headers: {'If-None-Match': '"$knownVersion"'},
+        validateStatus: (status) =>
+            status == HttpStatus.ok || status == HttpStatus.notModified,
+      ),
+    );
+    return response.statusCode == HttpStatus.notModified ? null : response.data;
   }
 
   /// Returns true if the backend is reachable right now.

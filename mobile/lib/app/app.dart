@@ -3,6 +3,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:myloop/app/theme.dart';
 import 'package:myloop/app/router.dart';
 import 'package:myloop/features/auth/user_session_teardown.dart';
@@ -33,6 +34,8 @@ class _MyLoopAppState extends ConsumerState<MyLoopApp> {
     // realtime event or map tap needs it, and keeps it alive for the session (#195 review).
     // Listened to, not watched: a block-list change must not rebuild the app root.
     ref.listen(blockedUsersProvider, (_, _) {});
+    // Loads the game rules (saved copy, then a server check) as soon as the app opens (FR1).
+    ref.listen(gameRulesProvider, (_, _) {});
     if (!_splashDone) {
       return MaterialApp(
         title: 'MyLoop',
