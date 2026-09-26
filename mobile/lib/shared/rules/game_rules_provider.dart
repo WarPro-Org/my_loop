@@ -66,14 +66,19 @@ class GameRulesNotifier extends Notifier<GameRules> {
       _runAgain = true;
       return running;
     }
-    return _inFlight = _refreshUntilSettled().whenComplete(() => _inFlight = null);
+    return _inFlight = _refreshUntilSettled();
   }
 
   Future<void> _refreshUntilSettled() async {
-    do {
-      _runAgain = false;
-      await _refresh();
-    } while (_runAgain);
+    try {
+      do {
+        _runAgain = false;
+        await _refresh();
+      } while (_runAgain);
+    } finally {
+      // Cleared in the same step as the last _runAgain check, so no call can slip in between.
+      _inFlight = null;
+    }
   }
 
   Future<void> _refresh() async {

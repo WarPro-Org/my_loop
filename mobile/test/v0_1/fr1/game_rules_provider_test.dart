@@ -132,16 +132,22 @@ void main() {
 
   test('overlapping refreshes never fetch in parallel or save twice', () async {
     final store = _MemoryStore();
-    final source = _FakeSource(serverRules: _version(4));
+    final source = _GatedSource();
     final container = _container(store, source);
 
-    container.read(gameRulesProvider);
-    final notifier = container.read(gameRulesProvider.notifier);
-    await Future.wait([notifier.refresh(), notifier.refresh()]);
+    container.read(gameRulesProvider); // app start starts a refresh
+    await pumpEventQueue();
+    final second = container.read(gameRulesProvider.notifier).refresh(); // login, mid-request
 
-    expect(container.read(gameRulesProvider).version, 4);
+    source.answerNext(_version(4)); // first request: new rules
+    await pumpEventQueue();
+    source.answerNext(null); // follow-up request: already up to date
+    await second;
+
+    expect(source.maxOpenAtOnce, 1);
+    expect(source.fetches, 2);
     expect(store.saves, 1);
-    expect(source.fetches, lessThanOrEqualTo(2));
+    expect(container.read(gameRulesProvider).version, 4);
   });
 
   test('a refresh after login is not lost behind a signed-out request that got a 401', () async {
@@ -169,4 +175,28 @@ class _ScriptedSource implements RulesSource {
     fetches++;
     return fetches == 1 ? first.future : Future.value(_version(4));
   }
+}
+
+/// Each request waits until the test answers it; records how many were open at the same time.
+class _GatedSource implements RulesSource {
+  final _pending = <Completer<SavedRules?>>[];
+  int fetches = 0;
+  int _open = 0;
+  int maxOpenAtOnce = 0;
+
+  @override
+  Future<SavedRules?> fetchIfChanged(String? knownTag) async {
+    fetches++;
+    _open++;
+    if (_open > maxOpenAtOnce) maxOpenAtOnce = _open;
+    final answer = Completer<SavedRules?>();
+    _pending.add(answer);
+    try {
+      return await answer.future;
+    } finally {
+      _open--;
+    }
+  }
+
+  void answerNext(SavedRules? rules) => _pending.removeAt(0).complete(rules);
 }
