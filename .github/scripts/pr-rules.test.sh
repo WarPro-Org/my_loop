@@ -116,6 +116,9 @@ expect pass "a migration doesn't force the retry skill; a reason may name code i
 expect fail "a skill named only inside a reason doesn't count" \
   "$(body "$MIGRATION_RUN" "$NA_MIGRATION"$'\n- Not applicable: `state-lifecycle-consistency` — reviewed like `security-review`')" \
   'Gate rows not gone through: `security-review`'
+expect fail "a line with both dash kinds is cut at the first one" \
+  "$(body "$MIGRATION_RUN" "$NA_MIGRATION"$'\n- Not applicable: `state-lifecycle-consistency` - like `security-review` — nothing kept')" \
+  'Gate rows not gone through: `security-review`'
 
 make_pr $'docs/versions/1/0.1/design/fr9-x.md\n.claude/skills/mock-gps-anticheat/SKILL.md\nREADME.md' "docs/old.md"
 expect pass "docs-only PR: no gate rows required" "$(body 'none' '')"
