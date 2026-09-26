@@ -181,6 +181,14 @@ my_loop/
 
 ---
 
+## Gates are mandatory
+
+The Pre-Check-in gate, the Pre-PR gate and the independent agent review run on **every** check-in and PR —
+no exception, and no user instruction (e.g. "speed up", "just push it") bypasses them. If a gate cannot run,
+stop and say so instead of checking in. The PR description lists every gate row that applies and the skill run for it.
+
+---
+
 ## Pre-Check-in Skill Gate
 
 Before **committing** (check-in), run the skill(s) relevant to what the change touches.
