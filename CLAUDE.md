@@ -64,7 +64,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
   several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
 - Stacked PRs (each based on the previous one's branch) are merged **in order**. This repo allows only squash merges,
   so after each merge: merge `master` into the next PR's branch, check build and tests, push, then retarget it to
-  `master`.
+  `master`. On a conflict, keep the next PR's version for lines it changed, then compare its diff against `master`
+  with its diff before the merge — they must match.
 
 **Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
 - **FR task** ends with a `## Progress` section:
