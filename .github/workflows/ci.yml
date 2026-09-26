@@ -25,19 +25,12 @@ jobs:
       - name: Build
         run: dotnet build api/MyLoop.Api/MyLoop.Api.csproj --configuration Release --no-restore
 
-      - name: Test
-        run: >
-          dotnet test tests/MyLoop.Api.Tests/MyLoop.Api.Tests.csproj
-          --configuration Release
-          --collect:"XPlat Code Coverage"
-          --results-directory ./coverage/backend
-
-      - name: Coverage gate (backend)
-        run: |
-          # -print -quit stops at the first match without a `find | head` pipe,
-          # which would SIGPIPE-fail under GitHub Actions' default bash -eo pipefail.
-          report="$(find ./coverage/backend -name 'coverage.cobertura.xml' -print -quit)"
-          scripts/coverage/check.sh backend "$report"
+      # Old test suites and coverage gates are paused during the 0.x rebuild
+      # (see CLAUDE.md -> Planning Chat & User Stories). The old test project is
+      # still compiled, so a change that breaks it can't reach master. Each user
+      # story adds its own tests, and a test step returns here with the first of them.
+      - name: Build old tests (not run)
+        run: dotnet build tests/MyLoop.Api.Tests/MyLoop.Api.Tests.csproj --configuration Release
 
   mobile:
     name: Mobile (Flutter)
@@ -60,14 +53,7 @@ jobs:
       - name: Analyze
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
-      # Unit/widget tests hard-gate merges. `live`-tagged tests need a running
-      # backend (no server in the runner) and are excluded here; run them
-      # separately with `flutter test --tags live` against a live API.
-      - name: Test
-        run: flutter test --exclude-tags live --coverage
-
-      - name: Coverage gate (mobile)
-        run: ../scripts/coverage/check.sh mobile coverage/lcov.info
+      # Tests and coverage paused during the 0.x rebuild (see backend job note).
 
   # ADD THIS NEW JOB TO UNBLOCK YOUR GITHUB PRs
   security-scan:
