@@ -10,7 +10,7 @@ namespace MyLoop.V01.Tests.FR1;
 public class GameRulesTests
 {
     private static IServiceProvider Build(IConfiguration configuration) =>
-        new ServiceCollection().AddRulesModule(configuration).BuildServiceProvider();
+        new ServiceCollection().AddMyLoopRules(configuration).BuildServiceProvider();
 
     private static IConfiguration ShippedConfiguration() =>
         new ConfigurationBuilder()
@@ -76,7 +76,7 @@ public class GameRulesTests
     public async Task Server_refuses_to_start_with_missing_rules()
     {
         var builder = Host.CreateApplicationBuilder();
-        builder.Services.AddRulesModule(new ConfigurationBuilder().Build());
+        builder.Services.AddMyLoopRules(new ConfigurationBuilder().Build());
         using var host = builder.Build();
 
         await Assert.ThrowsAsync<OptionsValidationException>(() => host.StartAsync());
