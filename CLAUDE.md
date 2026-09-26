@@ -42,7 +42,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - The spec is updated first; code follows the spec. Any change of plan updates the spec before the code.
 
 **User stories (GitHub tasks)**
-- One task per requirement (FR). Title format: `0.1 > FR1 > <short title>`.
+- One task per requirement (FR). Task title: `0.1 > FR1 > <short title>`. PR title: `0.1 > FR1 (k/N) > <short title>`,
+  with "Part k of N" in the description.
 - Body is short — readable in under a minute:
   - **Story:** As a …, I want …, so that …
   - **What:** what we will build (2–4 bullets).
@@ -88,6 +89,16 @@ Applies when planning versions, discussing requirements, or creating tasks.
   the parent.
 - A change of plan updates the task's What / How / Acceptance criteria after the user agrees, together with the spec.
 - Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
+
+**Keep linked items in sync** — one piece of work touches the spec, the design doc, the FR task, the parent version
+task and every PR of that FR. When any of them changes, update all the others in the same turn:
+- A new PR for an FR renumbers all of its PRs to `(k/N)`, in merge order, in every title and in every
+  description's "Part k of N" line and PR list, including merged PRs. For example, 3 PRs become 5 when a design
+  doc and a fix PR are added.
+- New findings (gaps, decisions, extra work) go into the design doc, the FR task's What / How / Decisions /
+  Acceptance criteria, and the Progress table, not only into chat or a PR.
+- A PR's status changes (opened, reviewed, merged, closed) update the FR task and the parent task.
+- Before reporting to the owner, check each linked item says the same thing.
 
 **Stay on the goal**
 - Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
@@ -173,7 +184,8 @@ Write a Design Doc only after Gate 1 is approved. Must include:
 - **Lifecycle matrix** (for state covered by `state-lifecycle-consistency`): every reader × every app moment, each with its test or
   an agreed "accepted" — see `state-lifecycle-consistency`.
 
-Do not write implementation code until the user explicitly approves the Design Doc. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.
+Do not write implementation code until the user explicitly approves the Design Doc. The doc lives at
+`docs/versions/<release>/<version>/design/frN-<name>.md`; approval = the owner merges its PR into master. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.
 
 #### Gate 3 — Implementation + Verification
 
@@ -227,6 +239,36 @@ The Pre-Check-in gate, the Pre-PR gate and the independent agent review run on *
 no exception, and no user instruction (e.g. "speed up", "just push it") bypasses them. If a gate cannot run,
 stop and say so instead of checking in. The PR description lists every gate row that applies and the skill run for it.
 
+**Only claim what ran.** A gate counts only if its skill was actually invoked on that exact commit. Never tick a
+box or write "Skills run" from memory or the template. A gate done by hand is written as "by hand", not as the
+skill. After a new commit, gates that depend on the code run again.
+
+**Checklist — go through it every time** (the rules above are spread across this file; this is the one list):
+
+| Step | Before … | Must be true |
+|---|---|---|
+| 1 | writing FR code | Requirement agreed (Gate 1); design doc `docs/versions/<release>/<version>/design/frN-<name>.md` merged after the owner approved it (Gate 2) |
+| 2 | each commit | Pre-Check-in skills that apply have run; the lifecycle matrix tests for readers this commit touches are in it |
+| 3 | after each push | Linked items synced (see "Keep linked items in sync"); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
+| 4 | opening a PR | Pre-PR skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
+| 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
+
+**Enforced on GitHub** — so a forgotten step shows up as a red check the owner sees. It can't catch a false
+claim; the owner's review and the review records in the PR are what keep claims honest.
+- **CI** proves build, tests and analyze on every commit (`scripts/verify.sh` runs the same steps locally).
+- **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited). The script always
+  comes from master (for a stacked PR: as long as its base branch's `pr-rules.yml` is unchanged from master),
+  so a PR can't loosen the check that judges it. A PR stacked on another branch gets the
+  check only once that branch has the workflow, and every PR does once it is retargeted to master. **A missing
+  "PR rules" check counts as not passed.**
+  - Claude-made PRs (session link in the body, or a `claude/` branch) and FR PRs need the gate section, a
+    filled "Skills run", and a line starting `REVIEWED <commit>` for the **latest** commit. Every push turns it red until that commit is reviewed and recorded.
+  - FR PRs (branch `vX.Y/frN-…`) need a task link line, "Part k of N" matching the title's `(k/N)`, and FR N's
+    design doc already merged into master. A docs-only PR that adds the design doc is the exception. When the
+    design doc merges, re-run "PR rules" on the FR's open PRs (a push or a description edit does it).
+  - Any PR over the size limit needs a `Size exception:` line.
+  - Bot PRs are skipped.
+
 ---
 
 ## Pre-Check-in Skill Gate
@@ -272,7 +314,7 @@ chosen from MyLoop's documented failure classes).
 | **iOS-facing change** — auth/sign-in, location, push, permissions, data collected, account deletion, purchases, new SDK, `Info.plist` / `Runner.xcodeproj` / `PrivacyInfo.xcprivacy` | `app-store-compliance` (verify no App Store Review Guideline violation: SiwA 4.8, location 5.1.1/2.5.4, account deletion 5.1.1(v), privacy manifest) |
 | Error/exception handling or offline durability | `error-handling` |
 | **A PR that removes a method / endpoint / DTO / file** | `coordinate-overlapping-pr-removals` (grep open PRs for the deleted symbols — incl. their *tests*; decide + state merge order in both PRs; re-check overlapping PRs' mergeability after merging) |
-| **Always — final gate** | `verification-loop` (tests green — in 0.x, all 0.1 user-story tests plus build and analyze) + the PR-review skill |
+| **Always — final gate** | `verification-loop`, run as `scripts/verify.sh` (build, 0.1 user-story tests, analyze with no new issues, secrets scan) + the independent agent review |
 
 The cross-stack row is a deliberate manual check — contract drift (.NET ↔ Flutter type/field/ID
 mismatches) is MyLoop's #1 bug class and no single skill fully owns it. If a skill surfaces an
