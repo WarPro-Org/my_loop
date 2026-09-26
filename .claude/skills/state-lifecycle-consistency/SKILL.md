@@ -67,5 +67,5 @@ one-line "accepted: <reason>" when the cell is harmless or out of scope (agreed 
 ## Step 4 — Review
 The independent review gets the matrix and the "red when Y is removed" list. It must (a) look for a
 missing reader or moment, (b) re-run at least one "red when" per new test. Breaking code is done
-only in a scratch copy (`git worktree add` or `git stash`) and reverted before reporting; the
+only in a scratch worktree (`git worktree add <tmp> HEAD`), removed before reporting; the
 author's tree is left clean. A review that only reads the diff is not done.

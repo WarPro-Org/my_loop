@@ -78,7 +78,7 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that
     skill's matrix and reports any moment nobody handled;
   - re-runs at least one of the author's "red when Y is removed" checks per new test, breaking code only in a
-    scratch worktree or stash and reverting it before reporting — a test that stays green guards nothing.
+    scratch worktree (`git worktree add <tmp> HEAD`, removed afterwards) — a test that stays green guards nothing.
 
 **Tests during the 0.x rebuild**
 - The old test suites and coverage gates are paused in CI (the old test project is still compiled). CI runs the build,
