@@ -3,8 +3,11 @@
 Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1.
 
 **Status:** written after the code, because Gate 2 was skipped when FR1 was built (see #201). It describes what
-was built, the gaps found while writing it, and the tests still to add. The owner approves it before any more FR1
-code merges.
+was built, the gaps found while writing it, and the work still to do (PR 5/5). The owner approved decisions D1 and
+D2; the doc itself is approved by merging its PR, before any more FR1 code merges.
+
+**FR1 PRs (merge in order):** 1/5 #203 server rules module · 2/5 this design doc · 3/5 #204 server uses the rules ·
+4/5 #205 phone uses the rules · 5/5 phone fixes and contract tests from this doc.
 
 ## In one paragraph
 
@@ -108,7 +111,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Moment | Expected | Test — red when … |
 |---|---|---|
 | Cold start, before the saved copy loads | A walk waits for it (R1, R2) | walk started right after launch — red when `startJourney` doesn't await `ready` |
-| Walk starts while a refresh is running | **Gap — decision needed (D1)** | — |
+| Walk starts while a refresh is running | The walk waits for the running refresh, up to a few seconds (D1), then fixes the rules (R1, R2) | **to add** in 5/5 |
 | First launch, offline, nothing saved | Built-in rules (R3) | first launch with no internet — *to prove* |
 | Offline / server error / 401 | Current rules kept (R3) | offline with a saved copy — *to prove*; 401 then login — red when a refresh asked for mid-request joins it instead of running again |
 | Offline with an expired sign-in token (non-Dio error) | Current rules kept; later refreshes still work (R3) | **Gap:** only Dio and format errors are caught today. Fix and test in the next PR |
@@ -119,7 +122,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Killed mid-save | Old copy intact; next save works (R3) | save cut off — red when the save writes straight to the file (no temp + rename) |
 | Two refreshes at once | One request; none lost (R3) | overlapping refreshes; last-moment refresh — red when calls aren't coalesced / `_inFlight` is cleared late |
 | During a walk | R1 and R2 keep the start rules; the next walk uses new ones | walk keeps GPS rules; walk keeps loop rules — red when they read the live rules |
-| During a walk, server redeployed with new rules | **Accepted until FR9 (D2):** the rest of the walk, and saved points sent later, are judged by the new server rules. This breaks requirement #20 ("future walks only") until walks store their rules version | — |
+| During a walk, server redeployed with new rules | **Accepted by the owner until FR9 (D2):** the rest of the walk, and saved points sent later, are judged by the new server rules. This breaks requirement #20 ("future walks only") until walks store their rules version | — |
 | Killed mid-walk, relaunched | Accepted: a walk doesn't resume; saved points are judged by the server's rules (R4) | — |
 | Corrupt saved copy | Built-in rules, still refreshes (R3) | corrupted / wrong shape; broken storage — red when load errors aren't caught |
 | Server restart or bad config | Bad numbers stop startup (R4) | server refuses to start — red without `ValidateOnStart` |
@@ -133,19 +136,19 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Server and phone disagree on field names or types | Mitigated by hand-written tests. **To add:** one shared JSON sample both sides test against |
 | Phone mishandles the ETag | **To add:** a test of `getRules` covering quotes, 304, a missing ETag and a weak `W/"…"` ETag |
 | Other code uses the module's internal classes | **To add:** make `RuleSettings` and `GameRulesValidator` internal, and a test of the allowed public types |
-| A non-Dio error during refresh | **Fix in the next PR:** catch every error in refresh, log it, keep the current rules |
-| A walk starts on old rules while a refresh is running | **Decision D1** |
-| A redeploy mid-walk changes how the rest of the walk is judged | **Decision D2** (accept until FR9) |
+| A non-Dio error during refresh | **Fix in 5/5:** catch every error in refresh, log it, keep the current rules |
+| A walk starts on old rules while a refresh is running | **Fix in 5/5 (D1):** the walk waits for the running refresh, with a time limit |
+| A redeploy mid-walk changes how the rest of the walk is judged | Accepted by the owner until FR9 (D2) |
 | Speed limit is 30 km/h, not the spec's 20–25 | Accepted: FR5 sets it |
 
-## Decisions needed from the owner
+## Decisions (approved by the owner)
 
-- **D1 — walk starts while a refresh is running.** Proposal: `startJourney` waits for a running refresh for up to
-  a few seconds (a named constant), then starts with whatever rules the app has. A walk can only start online, so
-  this usually finishes in well under a second.
-- **D2 — server rules change mid-walk.** Proposal: accept until FR9, which stores each walk's rules version.
+- **D1 — walk starts while a refresh is running.** `startJourney` waits for a running refresh for up to a few
+  seconds (a named constant), then starts with whatever rules the app has. A walk can only start online, so this
+  usually finishes in well under a second.
+- **D2 — server rules change mid-walk.** Accepted until FR9, which stores each walk's rules version.
 
-## Tests to add (next FR1 PR, after this doc is approved)
+## Work still to do (PR 5/5, after this doc is merged)
 
 1. **Shared contract sample** `tests/contracts/client_rules.json`. The C# test serializes `ClientRules` the way
    the API does and must equal it exactly (same five fields); the Dart test must read it field for field.
@@ -153,8 +156,9 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
    from the tag, and handles a missing ETag and a weak `W/"…"` one.
 3. **Module boundary:** `RuleSettings` and `GameRulesValidator` become internal. The test projects build them
    through `AddMyLoopRules` (preferred) or `InternalsVisibleTo`. A test lists the module's allowed public types.
-4. **Refresh errors:** a source that throws a non-Dio error keeps the current rules, and the next refresh still
+4. **Refresh errors:** catch every error in refresh (fix), and test that a source that throws a non-Dio error keeps the current rules, and the next refresh still
    runs; a 200 with an unreadable body keeps the current rules.
 5. **Login trigger:** the real login hydration path starts a rules refresh.
-6. **D1** (if accepted): a walk started during a running refresh uses the refreshed rules.
+6. **D1:** the walk-start wait, with a test that a walk started during a running refresh uses the refreshed rules,
+   and one that a refresh slower than the limit doesn't block the walk.
 7. **Prove "red when"** for the cells marked *to prove*.
