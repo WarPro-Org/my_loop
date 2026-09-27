@@ -23,8 +23,8 @@ them for its GPS filter and live loop estimate. Anti-cheat numbers never leave t
 **Rules module** — `api/MyLoop.Modules.Rules`, its own project.
 - Public: `IRuleSettings` (`Current`, `GetClientRules()`, `ClientRulesTag`), `GameRules` and its sections,
   `ClientRules`, and `AddMyLoopRules()`.
-- Internal: `RuleSettings` (reads the rules once at startup) and `GameRulesValidator` (startup check). Only the
-  two test projects may build them (`InternalsVisibleTo`), because their tests write rules in code; a test lists
+- Internal: `RuleSettings` (reads the rules once at startup), `GameRulesValidator` (startup check of the values)
+  and `GameRulesPresenceValidator` (startup check that every setting is present). Only the two test projects may build them (`InternalsVisibleTo`), because their tests write rules in code; a test lists
   the module's allowed public types.
 - Other code uses only `IRuleSettings`: `HexGridService`, `PathValidationService`, `RulesController`.
 
@@ -132,8 +132,8 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Killed mid-walk, relaunched | Accepted: a walk doesn't resume; saved points are judged by the server's rules (R4) | — |
 | Corrupt saved copy | Built-in rules, still refreshes (R3) | corrupted / wrong shape; broken storage — red when load errors aren't caught |
 | Server restart or bad config | A bad or missing number stops startup (R4) | server refuses to start — red without `ValidateOnStart`; a test per setting that is missing — red without `GameRulesPresenceValidator` (without it, a missing `SkipNeighbors` starts the server); a test per bad value (all 14 settings and the speed pair) — red when that setting's check is removed |
-| Server updated between walks, app kept open | The next walk starts on the new rules: starting a walk checks for them, waiting up to the D1 limit (R1, R2) | walk start asks the server itself — red when `refreshWithin` doesn't start a refresh |
-| Captive portal (HTML reply) / server error (503) | Current rules kept, saved copy untouched (R3). Both reach refresh as a `DioException` | captive portal; server down — through the real `ApiService`, Dio and parser, with a positive control (real rules through the same setup apply) — red when refresh lets a `DioException` through |
+| Server updated between walks, app kept open | The next walk starts on the new rules: starting a walk checks for them, waiting up to the D1 limit (R1, R2). If that request is slow or fails, the walk starts on the rules it has | walk start asks the server itself — red when `refreshWithin` doesn't start a refresh; its own request is slow — red when `refreshWithin` waits for it without the limit; its own request fails — red when the failure reaches `startJourney` |
+| Captive portal (HTML reply) / server error (503) | Current rules kept, saved copy untouched (R3). Both reach refresh as a `DioException` | captive portal; server down — through the real `ApiService`, Dio and parser, with a positive control (real rules through the same setup apply) — red when refresh lets the exception escape (e.g. rethrows it) |
 | Guest, no sign-in (FR12) | Accepted until FR12: guests don't exist yet, and `GET /api/rules` needs sign-in. FR12 must let a guest get the rules (requirements.md → FR12) | — |
 | Any moment, R5 | Accepted: dev-only screen follows the live rules | — |
 
@@ -174,8 +174,10 @@ classes via `InternalsVisibleTo`, not `AddMyLoopRules`: they write rules in code
 
 1. Starting a walk asks the server for new rules when no refresh is running (`refreshWithin`), and waits up to the
    D1 limit; tested through `startJourney`.
-2. A missing setting stops the server (`GameRulesPresenceValidator`, which checks every property of `GameRules`,
-   so settings added by later FRs are covered too). Tests: each of the 14 settings missing, and a bad value for each.
+2. A missing setting stops the server (`GameRulesPresenceValidator`). It checks every property of `GameRules` and
+   its nested rules classes, so a later number setting is covered without a change. Limit: it treats every class
+   as a group of settings, so a later FR that adds a list or text setting must extend it (and test it). Tests: each
+   of the 14 settings missing, and a bad value for each.
 3. A "changing it changes the result" test for each of the 9 settings the server's loop and anti-cheat code reads
    that had none.
 4. Captive-portal HTML and 503 tests through the real `ApiService` and Dio. The sign-in interceptor is removed in
@@ -183,5 +185,5 @@ classes via `InternalsVisibleTo`, not `AddMyLoopRules`: they write rules in code
 5. Mock-walk tests read the anti-cheat values from `appsettings.json` instead of copies (red when a value there is
    tightened, e.g. the average-speed limit set to 1 m/s).
 
-Every new test was shown red when its behaviour is removed: the walk-start refresh, refresh's catch (captive portal,
-503), the presence check, each of the 9 new value checks, and each of the 9 settings replaced by its fixed value.
+Every new test was shown red when its behaviour is removed: the walk-start refresh and its limit, refresh's catch
+(captive portal, 503), the presence check, each of the 9 new value checks, and each of the 9 settings replaced by its fixed value.

@@ -66,10 +66,14 @@ class _SwitchableSource implements RulesSource {
   /// While set, each request waits for it before answering (a slow network).
   Completer<void>? hold;
 
+  /// While set, each request fails with it (offline, 401, server down).
+  DioException? failure;
+
   @override
   Future<SavedRules?> fetchIfChanged(String? knownTag) async {
     fetches++;
     await hold?.future;
+    if (failure case final error?) throw error;
     return current.tag == knownTag ? null : current;
   }
 }
@@ -268,7 +272,7 @@ void main() {
     journey.stopJourney();
   });
 
-  group('a walk started while a rules refresh is running (D1)', () {
+  group('a walk start gets the newest rules within the D1 limit', () {
     /// App on lenient v1 rules; a refresh bringing strict v2 (e.g. at login) is running, held back.
     Future<(ProviderContainer, _FakeLocation, _SwitchableSource)> heldRefresh() async {
       final source = _SwitchableSource(_rules(1));
@@ -344,6 +348,49 @@ void main() {
       expect(container.read(journeyControllerProvider).path.length, pointsAtStart + 1,
           reason: 'the walk started on the strict v2 rules, so the 30 m fix is ignored');
       journey.stopJourney();
+    });
+
+    /// App on lenient v1 rules, no refresh running; the server now has strict v2 rules.
+    Future<(ProviderContainer, _FakeLocation, _SwitchableSource)> serverChanged() async {
+      final source = _SwitchableSource(_rules(1));
+      final location = _FakeLocation();
+      final container = _container(source, location: location);
+      await _rulesSettled(container);
+      source.current = _rules(2, accuracy: _strictAccuracyMeters);
+      return (container, location, source);
+    }
+
+    Future<void> expectStartedOnLenientRules(ProviderContainer container, _FakeLocation location) async {
+      expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
+      final pointsAtStart = container.read(journeyControllerProvider).path.length;
+      location.gps.add(location.next(accuracy: _fixAccuracyMeters));
+      await pumpEventQueue();
+      expect(container.read(journeyControllerProvider).path.length, pointsAtStart + 1,
+          reason: 'the walk started on the rules it had (lenient v1), so the 30 m fix counts');
+      container.read(journeyControllerProvider.notifier).stopJourney();
+    }
+
+    test('is not held back longer than the limit when its own request is slow', () async {
+      final (container, location, source) = await serverChanged();
+      source.hold = Completer<void>(); // the walk start's request is never answered
+      final fetchesBefore = source.fetches;
+      await container
+          .read(journeyControllerProvider.notifier)
+          .startJourney()
+          .timeout(walkStartRulesWait + const Duration(seconds: 2));
+
+      expect(source.fetches, fetchesBefore + 1, reason: 'the walk start asked the server');
+      await expectStartedOnLenientRules(container, location);
+    });
+
+    test('starts on the rules it has when its own request fails', () async {
+      final (container, location, source) = await serverChanged();
+      source.failure = DioException(requestOptions: RequestOptions(path: '/api/rules'));
+      final fetchesBefore = source.fetches;
+      await container.read(journeyControllerProvider.notifier).startJourney();
+
+      expect(source.fetches, fetchesBefore + 1, reason: 'the walk start asked the server');
+      await expectStartedOnLenientRules(container, location);
     });
 
     test('is not held back longer than the limit by a slow refresh', () async {
