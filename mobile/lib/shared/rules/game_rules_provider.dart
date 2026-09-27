@@ -40,6 +40,10 @@ class GameRulesNotifier extends Notifier<GameRules> {
   Future<void>? _inFlight;
   bool _runAgain = false;
 
+  /// Completes when [_inFlight] ends, never with an error. [settled] waits on this, not on
+  /// [_inFlight]: listening there would hide a bug in the refresh from the error reporter.
+  Completer<void>? _idle;
+
   @override
   GameRules build() {
     _loadSaved = _useSavedCopy();
@@ -52,11 +56,9 @@ class GameRulesNotifier extends Notifier<GameRules> {
   Future<void> get ready => _loadSaved ?? Future.value();
 
   /// Completes when the refresh running now finishes (at once if none is running), or after
-  /// [limit], whichever comes first. Never fails: a refresh that hits a bug reports it itself.
+  /// [limit], whichever comes first. Never fails; a bug in the refresh still reaches the reporter.
   Future<void> settled({required Duration limit}) async {
-    final running = _inFlight;
-    if (running == null) return;
-    await running.timeout(limit, onTimeout: () {}).catchError((Object _) {});
+    await _idle?.future.timeout(limit, onTimeout: () {});
   }
 
   Future<void> _useSavedCopy() async {
@@ -83,6 +85,7 @@ class GameRulesNotifier extends Notifier<GameRules> {
       _runAgain = true;
       return running;
     }
+    _idle = Completer<void>();
     return _inFlight = _refreshUntilSettled();
   }
 
@@ -95,6 +98,8 @@ class GameRulesNotifier extends Notifier<GameRules> {
     } finally {
       // Cleared in the same step as the last _runAgain check, so no call can slip in between.
       _inFlight = null;
+      _idle?.complete();
+      _idle = null;
     }
   }
 

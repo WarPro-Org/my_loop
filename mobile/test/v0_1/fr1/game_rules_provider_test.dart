@@ -201,6 +201,25 @@ void main() {
     expect(container.read(gameRulesProvider).version, 5, reason: 'the refresh after the failure applied');
   });
 
+  test('a bug in a refresh reaches the error reporter even while a walk start waits on it', () async {
+    final reported = <Object>[];
+    int? versionAfterBug;
+    int? versionAfterNextRefresh;
+    await runZonedGuarded(() async {
+      final container = _container(_MemoryStore(_version(3)), _FailsOnceSource(StateError('bug')));
+      container.read(gameRulesProvider); // the app-start refresh hits the bug
+      await container.read(gameRulesProvider.notifier).settled(limit: const Duration(seconds: 1));
+      await pumpEventQueue();
+      versionAfterBug = container.read(gameRulesProvider).version;
+      await container.read(gameRulesProvider.notifier).refresh();
+      versionAfterNextRefresh = container.read(gameRulesProvider).version;
+    }, (error, _) => reported.add(error));
+
+    expect(reported, [isA<StateError>()]);
+    expect(versionAfterBug, 3, reason: 'the rules the app had are kept');
+    expect(versionAfterNextRefresh, 5, reason: 'the next refresh still runs');
+  });
+
   test('a server reply the app cannot read keeps the current rules and the saved copy', () async {
     final store = _MemoryStore(_version(3));
     final container = ProviderContainer(overrides: [
