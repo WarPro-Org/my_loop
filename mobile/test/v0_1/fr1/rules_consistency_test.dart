@@ -142,8 +142,13 @@ class _FakeLocation extends LocationService {
     );
   }
 
+  /// While set, the permission dialog stays open until it completes.
+  Completer<void>? permissionDialog;
   @override
-  Future<bool> requestPermission() async => true;
+  Future<bool> requestPermission() async {
+    await permissionDialog?.future;
+    return true;
+  }
   @override
   Future<Position> getCurrentPosition() async => startAt ?? next();
   @override
@@ -292,6 +297,28 @@ void main() {
       expect(container.read(journeyControllerProvider).path.length, pointsAtStart,
           reason: 'the walk waited for the refresh, so the strict v2 rules apply to the 30 m fix');
       journey.stopJourney();
+    });
+
+    test('uses rules a refresh brought while the permission dialog was open', () async {
+      final source = _SwitchableSource(_rules(1));
+      final location = _FakeLocation()..permissionDialog = Completer<void>();
+      final container = _container(source, location: location);
+      await _rulesSettled(container);
+      final starting = container.read(journeyControllerProvider.notifier).startJourney();
+      await pumpEventQueue();
+
+      source.current = _rules(2, accuracy: _strictAccuracyMeters); // e.g. the refresh on resume
+      await container.read(gameRulesProvider.notifier).refresh();
+      location.permissionDialog!.complete();
+      await starting;
+
+      expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
+      final pointsAtStart = container.read(journeyControllerProvider).path.length;
+      location.gps.add(location.next(accuracy: _fixAccuracyMeters));
+      await pumpEventQueue();
+      expect(container.read(journeyControllerProvider).path.length, pointsAtStart,
+          reason: 'the walk pinned its rules after the dialog, so strict v2 applies');
+      container.read(journeyControllerProvider.notifier).stopJourney();
     });
 
     test('is not held back longer than the limit by a slow refresh', () async {
