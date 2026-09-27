@@ -112,7 +112,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Moment | Expected | Test — red when … |
 |---|---|---|
 | Cold start, before the saved copy loads | A walk waits for it (R1, R2) | walk started right after launch — red when `startJourney` doesn't await `ready` |
-| Walk starts while a refresh is running | The walk waits for the running refresh, up to a few seconds (D1), then fixes the rules (R1, R2) | walk started during a refresh, or one started while the permission dialog is open — red when `startJourney` doesn't wait, or pins the rules before the permission dialog or first GPS fix; slow refresh — red when the wait has no limit |
+| Walk starts while a refresh is running | The walk waits for the running refresh, up to a few seconds (D1), then fixes the rules (R1, R2) | walk started during a refresh, or one started while the permission dialog is open — red when `startJourney` doesn't wait, or pins the rules before the permission dialog; slow refresh — red when the wait has no limit |
 | First launch, offline, nothing saved | Built-in rules (R3) | first launch with no internet — red when refresh doesn't catch the network error |
 | Offline / server error / 401 | Current rules kept (R3) | offline with a saved copy — red when the saved copy isn't applied; 401 then login — red when a refresh asked for mid-request joins it instead of running again |
 | Offline with an expired sign-in token (non-Dio error) | Current rules kept; later refreshes still work (R3) | failure that isn't a network error — red when refresh doesn't catch every exception |
