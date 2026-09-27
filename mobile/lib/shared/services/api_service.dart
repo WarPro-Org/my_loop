@@ -196,7 +196,8 @@ class ApiService {
     final etag = response.headers.value(HttpHeaders.etagHeader);
     // Keep only the fingerprint. The server compares weakly, so sending it back quoted still
     // matches after a proxy made it weak; kept with its `W/`, it would never match again.
-    final tag = etag?.replaceFirst(_weakEtagPrefix, '').replaceAll('"', '');
+    final strong = etag != null && etag.startsWith(_weakEtagPrefix) ? etag.substring(_weakEtagPrefix.length) : etag;
+    final tag = strong?.replaceAll('"', '');
     return (json: body, tag: tag);
   }
 

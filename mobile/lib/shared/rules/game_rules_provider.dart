@@ -52,11 +52,11 @@ class GameRulesNotifier extends Notifier<GameRules> {
   Future<void> get ready => _loadSaved ?? Future.value();
 
   /// Completes when the refresh running now finishes (at once if none is running), or after
-  /// [limit], whichever comes first. Never fails: [refresh] handles its own errors.
+  /// [limit], whichever comes first. Never fails: a refresh that hits a bug reports it itself.
   Future<void> settled({required Duration limit}) async {
     final running = _inFlight;
     if (running == null) return;
-    await running.timeout(limit, onTimeout: () {});
+    await running.timeout(limit, onTimeout: () {}).catchError((Object _) {});
   }
 
   Future<void> _useSavedCopy() async {
@@ -114,9 +114,9 @@ class GameRulesNotifier extends Notifier<GameRules> {
     } on FormatException catch (e, stack) {
       // The server sent rules the app can't read: keep the current rules but surface it.
       _log.warning('Game rules response unreadable; keeping version ${state.version}', e, stack);
-    } catch (e, stack) {
-      // Anything else (an expired sign-in token, or a bug): a background refresh must never
-      // stop later refreshes, so keep the current rules and log it loudly with its stack.
+    } on Exception catch (e, stack) {
+      // Any other failure (e.g. an expired sign-in token): keep the current rules. A bug (an Error)
+      // reaches the crash reporter; the rules are kept and later refreshes run (finally below).
       _log.severe('Game rules refresh failed; keeping version ${state.version}', e, stack);
     }
   }

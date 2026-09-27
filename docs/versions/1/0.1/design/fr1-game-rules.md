@@ -114,7 +114,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Walk starts while a refresh is running | The walk waits for the running refresh, up to a few seconds (D1), then fixes the rules (R1, R2) | walk started during a refresh — red when `startJourney` doesn't wait for it; slow refresh — red when the wait has no limit |
 | First launch, offline, nothing saved | Built-in rules (R3) | first launch with no internet — red when refresh doesn't catch the network error |
 | Offline / server error / 401 | Current rules kept (R3) | offline with a saved copy — red when the saved copy isn't applied; 401 then login — red when a refresh asked for mid-request joins it instead of running again |
-| Offline with an expired sign-in token (non-Dio error) | Current rules kept; later refreshes still work (R3) | failure that isn't a network error — red when refresh doesn't catch every error |
+| Offline with an expired sign-in token (non-Dio error) | Current rules kept; later refreshes still work (R3) | failure that isn't a network error — red when refresh doesn't catch every exception |
 | Server sends 200 with an unreadable body | Current rules kept (R3) | unreadable reply through the real parser — red when refresh doesn't catch it |
 | Back online / back to the app (signed in) | Rules checked again (R3) | reconnect; resume — red when hydration doesn't call `refresh()` |
 | Login | Rules checked again (R3) | logging in, through `hydrateAndSyncProfileRank` as the login screen calls it — red when hydration doesn't call `refresh()` |
@@ -136,7 +136,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Server and phone disagree on field names or types | Mitigated: one shared sample, `tests/contracts/client_rules.json`, tested on both sides |
 | Phone mishandles the ETag | Mitigated: `getRules` tests for quotes, 304, a missing ETag and a weak `W/"…"` one (a weak one was kept with its `W/` and never matched again; fixed) |
 | Other code uses the module's internal classes | Mitigated: `RuleSettings` and `GameRulesValidator` are internal; a test lists the allowed public types |
-| A non-Dio error during refresh | Mitigated: refresh catches every error; ones that aren't network or format errors are logged as severe with their stack |
+| A non-Dio error during refresh | Mitigated: refresh catches every exception and logs the unexpected ones as severe. A bug (a Dart `Error`) still reaches the crash reporter; the rules are kept and later refreshes still run |
 | A walk starts on old rules while a refresh is running | Mitigated (D1): the walk waits for the running refresh, at most `walkStartRulesWait` (3 s) |
 | A redeploy mid-walk changes how the rest of the walk is judged | Accepted by the owner until FR9 (D2) |
 | Speed limit is 30 km/h, not the spec's 20–25 | Accepted: FR5 sets it |
