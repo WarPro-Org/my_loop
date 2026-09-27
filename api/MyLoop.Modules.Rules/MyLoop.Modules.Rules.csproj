@@ -7,6 +7,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Other modules use only IRuleSettings; the implementation classes are internal. Only the
+         test projects may build them directly, from rules written in code. -->
+    <InternalsVisibleTo Include="MyLoop.V01.Tests" />
+    <InternalsVisibleTo Include="MyLoop.Api.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Options, configuration binding and DI abstractions. -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>

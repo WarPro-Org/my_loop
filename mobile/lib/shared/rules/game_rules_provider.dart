@@ -26,6 +26,11 @@ final rulesSourceProvider =
 
 final gameRulesProvider = NotifierProvider<GameRulesNotifier, GameRules>(GameRulesNotifier.new);
 
+/// How long a walk start waits for a rules refresh that is already running (decision D1). A walk
+/// can only start online, so a refresh normally finishes well within this; a slow network must
+/// not hold the walk back longer.
+const walkStartRulesWait = Duration(seconds: 3);
+
 class GameRulesNotifier extends Notifier<GameRules> {
   Future<void>? _loadSaved;
 
@@ -45,6 +50,14 @@ class GameRulesNotifier extends Notifier<GameRules> {
   /// Completes once the saved copy has been read (or found missing), so a caller that must not
   /// start on the built-in copy — e.g. a walk started right after launch — can wait for it.
   Future<void> get ready => _loadSaved ?? Future.value();
+
+  /// Completes when the refresh running now finishes (at once if none is running), or after
+  /// [limit], whichever comes first. Never fails: [refresh] handles its own errors.
+  Future<void> settled({required Duration limit}) async {
+    final running = _inFlight;
+    if (running == null) return;
+    await running.timeout(limit, onTimeout: () {});
+  }
 
   Future<void> _useSavedCopy() async {
     try {
@@ -101,6 +114,10 @@ class GameRulesNotifier extends Notifier<GameRules> {
     } on FormatException catch (e, stack) {
       // The server sent rules the app can't read: keep the current rules but surface it.
       _log.warning('Game rules response unreadable; keeping version ${state.version}', e, stack);
+    } catch (e, stack) {
+      // Anything else (an expired sign-in token, or a bug): a background refresh must never
+      // stop later refreshes, so keep the current rules and log it loudly with its stack.
+      _log.severe('Game rules refresh failed; keeping version ${state.version}', e, stack);
     }
   }
 

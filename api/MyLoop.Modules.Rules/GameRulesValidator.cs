@@ -6,7 +6,7 @@ namespace MyLoop.Modules.Rules;
 /// Refuses to start the server when any rule is missing or nonsensical. A missing value binds to
 /// 0, so "must be positive" also catches every setting left out of appsettings.json.
 /// </summary>
-public sealed class GameRulesValidator : IValidateOptions<GameRules>
+internal sealed class GameRulesValidator : IValidateOptions<GameRules>
 {
     public ValidateOptionsResult Validate(string? name, GameRules rules)
     {

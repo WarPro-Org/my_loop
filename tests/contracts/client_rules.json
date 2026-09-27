@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "loopClosureDistanceMeters": 42.5,
+  "minLoopPoints": 21,
+  "loopSkipNeighbors": 7,
+  "gpsAccuracyThresholdMeters": 33.5
+}

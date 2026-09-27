@@ -143,6 +143,9 @@ class PreviewResult {
 class ApiService {
   static const _rulesPath = '/api/rules';
 
+  /// Marks a weak ETag (`W/"…"`); a proxy that compresses the response may add it.
+  static const _weakEtagPrefix = 'W/';
+
   final Dio _dio;
 
   /// [dio] is injectable for tests (e.g. to drive a probe failure); production
@@ -191,7 +194,10 @@ class ApiService {
     final body = response.data;
     if (response.statusCode == HttpStatus.notModified || body == null) return null;
     final etag = response.headers.value(HttpHeaders.etagHeader);
-    return (json: body, tag: etag?.replaceAll('"', ''));
+    // Keep only the fingerprint. The server compares weakly, so sending it back quoted still
+    // matches after a proxy made it weak; kept with its `W/`, it would never match again.
+    final tag = etag?.replaceFirst(_weakEtagPrefix, '').replaceAll('"', '');
+    return (json: body, tag: tag);
   }
 
   /// Returns true if the backend is reachable right now.

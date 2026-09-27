@@ -190,9 +190,12 @@ class JourneyController extends Notifier<JourneyState> {
     // awaits below bumps the generation, and each re-check then aborts (#110).
     final generation = _sessionGeneration;
     if (!_isCurrentSession(generation)) return;
-    // Right after launch the saved rules may still be loading; a walk pinned to the built-in
-    // copy would use older rules for its whole length.
-    await ref.read(gameRulesProvider.notifier).ready;
+    // Right after launch the saved rules may still be loading, and a refresh may be bringing
+    // newer ones: a walk pinned now would use older rules for its whole length. Wait for both,
+    // but a slow refresh only up to walkStartRulesWait (D1).
+    final rules = ref.read(gameRulesProvider.notifier);
+    await rules.ready;
+    await rules.settled(limit: walkStartRulesWait);
     if (!_isCurrentSession(generation)) return;
     _walkRules = ref.read(gameRulesProvider);
     final locationService = ref.read(locationServiceProvider);
