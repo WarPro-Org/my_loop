@@ -140,7 +140,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 |---|---|
 | Anti-cheat numbers leak to the phone | Mitigated: the server's reply must equal the shared five-field sample exactly. Limit: the test uses ASP.NET's default JSON settings, not the real HTTP pipeline; custom JSON options added to the API later would not be caught |
 | Server and phone disagree on field names or types | Mitigated: one shared sample, `tests/contracts/client_rules.json`, tested on both sides (same limit as above) |
-| A fixed number comes back in the server's loop or anti-cheat code | **Gap:** only 3 of the 13 server settings have a test proving the code reads them. Fix in 7/7: a "changing it changes the result" test for each |
+| A fixed number comes back in the server's loop or anti-cheat code | **Gap:** only 3 of the 12 settings the server reads have a test proving it. Fix in 7/7: a "changing it changes the result" test for each of the other 9. (The GPS accuracy threshold is read only by the phone; its server test comes with FR3.) |
 | Dev mock walks stop passing anti-cheat after tuning | **Gap:** the mock-walk tests hard-code the anti-cheat values. Fix in 7/7: read them from `appsettings.json` |
 | Phone mishandles the ETag | Mitigated: `getRules` tests for quotes, 304, a missing ETag and a weak `W/"…"` one (a weak one was kept with its `W/` and never matched again; fixed) |
 | Other code uses the module's internal classes | Mitigated: `RuleSettings` and `GameRulesValidator` are internal; a test lists the allowed public types |
@@ -171,6 +171,6 @@ classes via `InternalsVisibleTo`, not `AddMyLoopRules`: they write rules in code
 1. Starting a walk asks the server for new rules when no refresh is running, and waits up to the D1 limit; test
    through `startJourney`.
 2. A missing setting stops the server (e.g. `SkipNeighbors`, whose 0 is valid); a test for each of the 14 checks.
-3. A "changing it changes the result" test for each server setting not yet covered (10 of 13).
+3. A "changing it changes the result" test for each of the 9 settings the server reads that have none yet.
 4. `getRules` tests for a captive-portal HTML reply and a 503.
 5. Mock-walk tests read the anti-cheat values from `appsettings.json` instead of copies.

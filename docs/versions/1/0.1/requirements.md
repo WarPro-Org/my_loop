@@ -68,7 +68,7 @@ Every tunable number lives in one place so the rules can be tuned from real test
   delay (FR4), speed checks over gaps (FR5), guest inactivity period (FR12).
 - The old claim limits (e.g. 10 GPS points, 200 m walked, 20 walks a day) stay in code until FR6 replaces the old
   claim code.
-- A walk starts on the newest rules the server has, if the app can fetch them within a few seconds; otherwise on the
+- A walk starts on the newest rules the server has, if the app can fetch them within 3 seconds; otherwise on the
   rules the app already has. The phone keeps a walk's rules for the whole walk.
 - Left to later FRs (agreed with the owner):
   - Until FR9 stores each walk's rules version, the server judges a walk's points by the rules it has when they
