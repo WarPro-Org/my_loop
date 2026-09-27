@@ -96,7 +96,8 @@ time.
 **Readers**
 - **R1** GPS accuracy filter during a walk.
 - **R2** live loop estimate during a walk.
-- R1 and R2 use the rules `JourneyController` fixed at walk start, after `ready`.
+- R1 and R2 use the rules `JourneyController` pins just before the walk goes live (after the permission dialog and
+  first GPS fix), after `ready` and `settled(limit: walkStartRulesWait)`.
 - **R3** the rules the app holds (provider and saved file).
 - **R4** server loop and anti-cheat code.
 - **R5** mock-walk dev screen (watches the live rules).
@@ -144,8 +145,9 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 ## Decisions (approved by the owner)
 
 - **D1 — walk starts while a refresh is running.** `startJourney` waits for a running refresh for up to a few
-  seconds (a named constant), then starts with whatever rules the app has. A walk can only start online, so this
-  usually finishes in well under a second.
+  seconds (`walkStartRulesWait`, 3 s), then starts with whatever rules the app has. The rules are pinned just before
+  the walk goes live, after the permission dialog and first GPS fix, so a refresh during those is not missed. A walk
+  can only start online, so the wait usually ends well within a second.
 - **D2 — server rules change mid-walk.** Accepted until FR9, which stores each walk's rules version.
 
 ## Work done in PR 5/5
