@@ -4,8 +4,8 @@ Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1.
 
 **Status:** written after the code, because Gate 2 was skipped when FR1 was built (see #201). It describes what
 was built and the gaps found while writing it; PR 5/8 closed those gaps. An independent audit of all of FR1 then found
-more gaps; PR 6/8 recorded them, PR 7/8 closed the server ones (see "Work done in PR 7/8") and PR 8/8 closes the app
-ones. The owner approved decisions D1 and D2.
+more gaps; PR 6/8 recorded them, and PRs 7/8 (server) and 8/8 (app) closed them (see "Work done in PR 7/8" and
+"Work done in PR 8/8"). The owner approved decisions D1 and D2.
 
 **FR1 PRs (merge in order):** 1/8 #203 server rules module · 2/8 #210 this design doc · 3/8 #204 server uses the
 rules · 4/8 #205 phone uses the rules · 5/8 #214 fixes and contract tests from this doc · 6/8 #215 spec and design updates
@@ -87,11 +87,12 @@ or wrongly typed field instead of half-applying it.
 - `rulesStoreProvider` → `FileRulesStore` (saved copy). `rulesSourceProvider` → `ApiRulesSource` (server).
   Tests replace both.
 - `ready` completes once the saved copy has been read.
+- `refreshWithin(limit)` starts a refresh unless one is running, then waits for it, at most `limit` (never fails).
 - `refresh()` asks the server with the saved tag. Only one request runs at a time; a refresh asked for during one
   runs once more afterwards. New rules are applied first, then saved. If saving fails, they still apply for this
   session.
 
-**When it refreshes:** app start (always), and through hydration when signed in: login, onboarding (avatar
+**When it refreshes:** app start (always), walk start (D1), and through hydration when signed in: login, onboarding (avatar
 picker, set home), after each walk, app resume, and reconnect.
 
 **Saved copy:** `game_rules.json` in the app documents folder. Write a temp file, then rename. One save at a
@@ -101,7 +102,7 @@ time.
 - **R1** GPS accuracy filter during a walk.
 - **R2** live loop estimate during a walk.
 - R1 and R2 use the rules `JourneyController` pins just before the walk goes live (after the permission dialog and
-  first GPS fix), after `ready` and `settled(limit: walkStartRulesWait)`.
+  first GPS fix), after `ready` and `refreshWithin(walkStartRulesWait)`.
 - **R3** the rules the app holds (provider and saved file).
 - **R4** server loop and anti-cheat code.
 - **R5** mock-walk dev screen (watches the live rules).
@@ -131,8 +132,8 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Killed mid-walk, relaunched | Accepted: a walk doesn't resume; saved points are judged by the server's rules (R4) | — |
 | Corrupt saved copy | Built-in rules, still refreshes (R3) | corrupted / wrong shape; broken storage — red when load errors aren't caught |
 | Server restart or bad config | A bad or missing number stops startup (R4) | server refuses to start — red without `ValidateOnStart`; a test per setting that is missing — red without `GameRulesPresenceValidator` (without it, a missing `SkipNeighbors` starts the server); a test per bad value (all 14 settings and the speed pair) — red when that setting's check is removed |
-| Server updated between walks, app kept open | The next walk starts on the new rules: starting a walk checks for them, waiting up to the D1 limit (R1, R2) | **to add** in 8/8 (today a walk only waits for a refresh that is already running) |
-| Captive portal (HTML reply) / server error (503) | Current rules kept (R3) | right today (checked by hand); **to add** in 8/8: tests through the real `getRules` |
+| Server updated between walks, app kept open | The next walk starts on the new rules: starting a walk checks for them, waiting up to the D1 limit (R1, R2). If that request is slow or fails, the walk starts on the rules it has | walk start asks the server itself — red when `refreshWithin` doesn't start a refresh; its own request is slow — red when `refreshWithin` waits for it without the limit; its own request fails — red when the failure reaches `startJourney` |
+| Captive portal (HTML reply) / server error (503) | Current rules kept, saved copy untouched (R3). Both reach refresh as a `DioException` | captive portal; server down — through the real `ApiService`, Dio and parser, with a positive control (real rules through the same setup apply) — red when refresh lets the exception escape (e.g. rethrows it) |
 | Guest, no sign-in (FR12) | Accepted until FR12: guests don't exist yet, and `GET /api/rules` needs sign-in. FR12 must let a guest get the rules (requirements.md → FR12) | — |
 | Any moment, R5 | Accepted: dev-only screen follows the live rules | — |
 
@@ -143,11 +144,11 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Anti-cheat numbers leak to the phone | Mitigated: the server's reply must equal the shared five-field sample exactly. Limit: the test uses ASP.NET's default JSON settings, not the real HTTP pipeline; custom JSON options added to the API later would not be caught |
 | Server and phone disagree on field names or types | Mitigated: one shared sample, `tests/contracts/client_rules.json`, tested on both sides (same limit as above) |
 | A fixed number comes back in the server's loop or anti-cheat code | Mitigated: each of the 12 settings the server's loop and anti-cheat code reads has a "changing it changes the result" test (`ServicesUseRulesTests`, 3 from 3/8 and 9 from 7/8). (The GPS accuracy threshold is checked at startup and passed on to the phone, but no server check uses it yet; its server test comes with FR3.) |
-| Dev mock walks stop passing anti-cheat after tuning | **Gap:** the mock-walk tests hard-code the anti-cheat values. Fix in 8/8: read them from `appsettings.json` |
+| Dev mock walks stop passing anti-cheat after tuning | Mitigated: the mock-walk tests read the anti-cheat values from `appsettings.json`. Limit: those tests are in the old suite, which CI doesn't run during the 0.x rebuild |
 | Phone mishandles the ETag | Mitigated: `getRules` tests for quotes, 304, a missing ETag and a weak `W/"…"` one (a weak one was kept with its `W/` and never matched again; fixed) |
 | Other code uses the module's internal classes | Mitigated: `RuleSettings` and both validators are internal; a test lists the allowed public types |
 | A non-Dio error during refresh | Mitigated: refresh catches every exception and logs the unexpected ones as severe. A bug (a Dart `Error`) still reaches the crash reporter; the rules are kept and later refreshes still run |
-| A walk starts on old rules while a refresh is running | Mitigated (D1): the walk waits for the running refresh, at most `walkStartRulesWait` (3 s). **Gap:** a server update with no refresh running is missed; fix in 8/8 |
+| A walk starts on old rules | Mitigated (D1): starting a walk asks the server (or waits for a refresh already running), at most `walkStartRulesWait` (3 s) |
 | A redeploy mid-walk changes how the rest of the walk is judged | Accepted by the owner until FR9 (D2) |
 | Speed limit is 30 km/h, not the spec's 20–25 | Accepted: FR5 sets it |
 
@@ -157,7 +158,8 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
   seconds (`walkStartRulesWait`, 3 s), then starts with whatever rules the app has. The rules are pinned just before
   the walk goes live, after the permission dialog and first GPS fix, so a refresh during those is not missed. A walk
   can only start online, so the wait usually ends well within a second.
-  From 8/8, starting a walk also asks the server for new rules when no refresh is running, and waits the same way.
+  From 8/8, starting a walk also asks the server for new rules when no refresh is running, and waits the same way
+  (`refreshWithin`). Cost: one small request per walk start; the reply is usually "not modified".
 - **D2 — server rules change mid-walk.** Accepted until FR9, which stores each walk's rules version
   (requirements.md → FR9).
 - **Server GPS-accuracy check:** only the phone drops points below the threshold; the server check comes with FR3
@@ -180,9 +182,14 @@ classes via `InternalsVisibleTo`, not `AddMyLoopRules`: they write rules in code
 Every new test was shown red when its behaviour is removed: the presence check, each of the 9 new value checks, and
 each of the 9 settings replaced by its fixed value.
 
-## Work to do in PR 8/8 (app, from the FR1 audit)
+## Work done in PR 8/8 (app, from the FR1 audit)
 
-1. Starting a walk asks the server for new rules when no refresh is running, and waits up to the D1 limit; test
-   through `startJourney`.
-2. `getRules` tests for a captive-portal HTML reply and a 503.
-3. Mock-walk tests read the anti-cheat values from `appsettings.json` instead of copies.
+1. Starting a walk asks the server for new rules when no refresh is running (`refreshWithin`), and waits up to the
+   D1 limit; tested through `startJourney`, including when that request is slow or fails.
+2. Captive-portal HTML and 503 tests through the real `ApiService` and Dio. The sign-in interceptor is removed in
+   these tests: it needs Firebase, and would otherwise fail the request before it reaches the fake network.
+3. Mock-walk tests read the anti-cheat values from `appsettings.json` instead of copies (red when a value there is
+   tightened, e.g. the average-speed limit set to 1 m/s).
+
+Every new test was shown red when its behaviour is removed: the walk-start refresh, its limit and its error
+handling, and refresh's catch (captive portal, 503).
