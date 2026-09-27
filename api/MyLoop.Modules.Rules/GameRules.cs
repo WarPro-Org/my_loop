@@ -7,8 +7,8 @@ namespace MyLoop.Modules.Rules;
 /// rules decided it and past results never change silently.
 /// </summary>
 /// <remarks>
-/// Unset values bind to 0, which <see cref="GameRulesValidator"/> rejects, so a missing
-/// setting stops the server at startup instead of silently running with a zero.
+/// A missing setting stops the server at startup (<see cref="GameRulesPresenceValidator"/>)
+/// instead of silently running with a zero; <see cref="GameRulesValidator"/> rejects bad values.
 /// </remarks>
 public sealed class GameRules
 {

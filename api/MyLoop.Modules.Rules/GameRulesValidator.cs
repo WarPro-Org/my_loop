@@ -3,8 +3,8 @@ using Microsoft.Extensions.Options;
 namespace MyLoop.Modules.Rules;
 
 /// <summary>
-/// Refuses to start the server when any rule is missing or nonsensical. A missing value binds to
-/// 0, so "must be positive" also catches every setting left out of appsettings.json.
+/// Refuses to start the server when any rule is nonsensical. A missing setting is caught by
+/// <see cref="GameRulesPresenceValidator"/>.
 /// </summary>
 internal sealed class GameRulesValidator : IValidateOptions<GameRules>
 {

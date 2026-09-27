@@ -2,6 +2,9 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -67,6 +70,37 @@ ProviderContainer _container(RulesStore store, RulesSource source) {
   ]);
   addTearDown(container.dispose);
   return container;
+}
+
+/// The network under a real Dio: every request gets the same status, content type and body.
+class _FixedReply implements HttpClientAdapter {
+  _FixedReply(this.status, this.contentType, this.body);
+  final int status;
+  final String contentType;
+  final String body;
+  int requests = 0;
+
+  @override
+  Future<ResponseBody> fetch(
+      RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+    requests++;
+    return ResponseBody.fromString(body, status, headers: {
+      Headers.contentTypeHeader: [contentType],
+    });
+  }
+
+  @override
+  void close({bool force = false}) {}
+}
+
+/// The real ApiService, Dio and parser, answered by [reply].
+RulesSource _realSource(_FixedReply reply) {
+  final dio = Dio(BaseOptions(baseUrl: 'http://test.local'))..httpClientAdapter = reply;
+  final api = ApiService(dio: dio);
+  // The sign-in interceptor needs Firebase, which tests don't have; left in, it would fail every
+  // request before it reaches [reply], and the tests below would pass for that reason instead.
+  dio.interceptors.clear();
+  return ApiRulesSource(api);
 }
 
 void main() {
@@ -234,6 +268,41 @@ void main() {
     expect(rules.version, 3);
     expect(store.saved?.tag, 'tag-3');
     expect(store.saves, 0);
+  });
+
+  group('a reply that is not rules keeps the current rules and the saved copy', () {
+    final newRules = jsonEncode({...defaultGameRules.toJson(), 'version': 2});
+
+    test('positive control: real rules through the same setup are applied', () async {
+      final reply = _FixedReply(HttpStatus.ok, ContentType.json.mimeType, newRules);
+      final store = _MemoryStore(_version(1));
+      final container = _container(store, _realSource(reply));
+
+      expect((await _settle(container)).version, 2);
+      expect(reply.requests, isPositive);
+    });
+
+    test('a captive portal (Wi-Fi sign-in page sent as HTML)', () async {
+      final reply = _FixedReply(HttpStatus.ok, ContentType.html.mimeType, '<html>Sign in to Wi-Fi</html>');
+      final store = _MemoryStore(_version(1));
+      final container = _container(store, _realSource(reply));
+
+      expect((await _settle(container)).version, 1);
+      expect(reply.requests, isPositive, reason: 'the request reached the network');
+      expect(store.saved?.rules.version, 1);
+      expect(store.saves, 0);
+    });
+
+    test('the server is down (503)', () async {
+      final reply = _FixedReply(HttpStatus.serviceUnavailable, ContentType.text.mimeType, 'Service Unavailable');
+      final store = _MemoryStore(_version(1));
+      final container = _container(store, _realSource(reply));
+
+      expect((await _settle(container)).version, 1);
+      expect(reply.requests, isPositive, reason: 'the request reached the network');
+      expect(store.saved?.rules.version, 1);
+      expect(store.saves, 0);
+    });
   });
 }
 

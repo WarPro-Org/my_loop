@@ -321,6 +321,31 @@ void main() {
       container.read(journeyControllerProvider.notifier).stopJourney();
     });
 
+    test('asks the server itself when no refresh is running', () async {
+      final source = _SwitchableSource(_rules(1));
+      final location = _FakeLocation();
+      final container = _container(source, location: location);
+      await _rulesSettled(container);
+      // The server changed its rules while the app stayed open: no login, resume or reconnect.
+      source.current = _rules(2, accuracy: _strictAccuracyMeters);
+      final fetchesBefore = source.fetches;
+      final journey = container.read(journeyControllerProvider.notifier);
+      await journey.startJourney();
+
+      expect(source.fetches, fetchesBefore + 1, reason: 'starting the walk asked the server once');
+      expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
+      final pointsAtStart = container.read(journeyControllerProvider).path.length;
+      location.gps.add(location.next());
+      await pumpEventQueue();
+      expect(container.read(journeyControllerProvider).path.length, pointsAtStart + 1,
+          reason: 'the walk is recording');
+      location.gps.add(location.next(accuracy: _fixAccuracyMeters));
+      await pumpEventQueue();
+      expect(container.read(journeyControllerProvider).path.length, pointsAtStart + 1,
+          reason: 'the walk started on the strict v2 rules, so the 30 m fix is ignored');
+      journey.stopJourney();
+    });
+
     test('is not held back longer than the limit by a slow refresh', () async {
       final (container, location, _) = await heldRefresh(); // the refresh is never answered
       final journey = container.read(journeyControllerProvider.notifier);
