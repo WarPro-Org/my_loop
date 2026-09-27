@@ -1,7 +1,10 @@
 /// Game state hydration — loads all slices from single API call on login/resume.
 library;
 
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:logging/logging.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/game_state_cache.dart';
@@ -30,6 +33,7 @@ const _logDroppedForChangedUser =
 /// other state must only do so on `true`, or they would copy defaults.
 Future<bool> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
+      rules: ref.read(gameRulesProvider.notifier),
       user: ref.read(userProfileProvider.notifier),
       profile: ref.read(profileSliceProvider.notifier),
       xp: ref.read(xpSliceProvider.notifier),
@@ -41,6 +45,7 @@ Future<bool> hydrateAllSlices(WidgetRef ref) => _hydrateAll(
 /// Same as [hydrateAllSlices] but accepts a [Ref], for use outside widgets.
 Future<bool> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
       api: ref.read(apiServiceProvider),
+      rules: ref.read(gameRulesProvider.notifier),
       user: ref.read(userProfileProvider.notifier),
       profile: ref.read(profileSliceProvider.notifier),
       xp: ref.read(xpSliceProvider.notifier),
@@ -72,6 +77,7 @@ Future<bool> hydrateAllSlicesFromRef(Ref ref) => _hydrateAll(
 /// `hydrateAndSyncProfileRank` do not copy stale slice values onward.
 Future<bool> _hydrateAll({
   required ApiService api,
+  required GameRulesNotifier rules,
   required UserProfileNotifier user,
   required ProfileSlice profile,
   required XpSlice xp,
@@ -81,6 +87,8 @@ Future<bool> _hydrateAll({
 }) async {
   final userId = user.currentUserId;
   if (userId == null) return false;
+  // Login and resume are "app opened" moments: check for changed game rules (FR1).
+  unawaited(rules.refresh());
   bool stillSignedIn() => user.currentUserId == userId;
 
   final data = await api.getGameState(userId);
