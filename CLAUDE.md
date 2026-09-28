@@ -44,7 +44,8 @@ Applies when planning versions, discussing requirements, or creating tasks.
 **User stories (GitHub tasks)**
 - One task per requirement (FR). Task title: `0.1 > FR1 > <short title>`. PR title: `0.1 > FR1 (k/N) > <short title>`,
   with "Part k of N" in the description.
-- Body is short — readable in under a minute:
+- Body is short — readable in under a minute. At creation it has the sections below; while the work runs it grows
+  the later sections in the order set under "Task sections" (Keep tasks up to date):
   - **Story:** As a …, I want …, so that …
   - **What:** what we will build (2–4 bullets).
   - **Why:** the reason, with requirement IDs (e.g. `#20`).
@@ -77,21 +78,66 @@ Applies when planning versions, discussing requirements, or creating tasks.
 
 **Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
 - **FR task** ends with a `## Progress` section:
-  - a table: PR | what it does (one line) | status;
+  - a table: PR | what it does (one line) | status (merge commit once merged);
   - under it, a check-in log grouped by PR: `commit — what changed and why`, one line each, clear without the chat.
+    Every check-in is in the log; commits with the same purpose may share a line (`a1b2c3d, e4f5a6b — …`).
+- **Every check-in is attached to its task:** each commit message ends with a `Task: #N` line, so GitHub lists it on
+  the task's timeline, and the PR that carries it links the task. Every commit has a task: the FR task, or a
+  process or bug task created before the first commit (the parent version task for a one-off small fix). Rules that
+  come out of closing an FR may ride on its close-out PR under the FR task; the parent task gets a "—" row for
+  them.
+- **Task sections, in this order:** Summary (once the FR is done) · Story · What · Why · How · Decisions · Left to
+  later FRs · Acceptance criteria · Process notes · Progress. Decisions hold only what shapes the app (behaviour, data,
+  contracts, limits) with the reason. Process mishaps and record gaps go in Process notes, one line each.
 - **Parent version task** ends with a `## Progress` table: FR | task | what it does (one line) | status — no commit log.
   Work not tied to an FR (process, bug fix) gets a row there with FR "—"; if it has its own task, that task gets
   the FR-task format.
 - A PR closed without merging, or split, keeps its row: "Closed — replaced by #… because …".
-- Decisions and deviations (a value kept, work moved to a later FR) go in How or the log, with the reason.
+- Decisions and deviations (a value kept, work moved to a later FR) go in Decisions or Left to later FRs, with the
+  reason; process mishaps go in Process notes.
 - When: in the same turn as every check-in, PR opened or closed, review result and merge — before reporting to
   the user. When a PR merges, tick the criteria it meets; after the last merge, close the task and mark it done in
   the parent.
 - A change of plan updates the task's What / How / Acceptance criteria after the user agrees, together with the spec.
 - Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
 
+**Closing an FR** — after its last PR merges, before telling the user it's done. The goal: someone (human or AI)
+working on the app years later, e.g. in version 100.2, can find this FR and understand its scope, what it built and
+what must stay true, in a few minutes.
+1. **Final audit on master:** an independent agent checks every spec line, acceptance criterion, design-doc matrix
+   cell, user situation and linked item (task, parent task, every PR, spec, design doc), re-running a "red when" per
+   test group. Findings are fixed in a new PR of the FR (or accepted by the owner) before the FR is closed.
+2. **FR record:** `docs/versions/<release>/<version>/records/frN-<name>.md`, one page, for humans and AI agents:
+   - **Status** line with the task, spec, design doc and every PR;
+   - **Scope:** in and out;
+   - **What shapes the app:** a table of area → what exists → where (modules, endpoints, data and contracts,
+     settings, app state, key files);
+   - **Decisions that must stay true**, each with its reason;
+   - **Left to later FRs**, each naming the FR;
+   - **Known limits**;
+   - **How to change it** (e.g. tune a setting);
+   - **Tests that guard it**.
+
+   Facts only, no history. The design doc keeps the full matrix, risks and history, and points to the record.
+3. **Spec and design doc:** the FR's section in `requirements.md` gets `**Status:** done (task #N)` and the record's
+   path; the design doc's first lines point to the record.
+   Steps 2–3 go in one docs-only **close-out PR**: title `<version> > FRN > Close-out record`, a branch that is not
+   `vX.Y/frN-…` (it is not a numbered part, so the FR's PRs are not renumbered), a `Task: #N` line, and the usual
+   gates, independent review and owner merge. The record's Status line lists it. Steps 4–7 happen after it merges.
+4. **Task:** a Summary at the top (3–6 lines and the record's path), every criterion ticked with the PR that met it,
+   the Progress table with each merge commit, the check-in log complete; then close it.
+5. **Parent version task:** the FR row says done, with the record's path.
+6. **Branches:** delete the FR's merged branches, the close-out branch included. If the session can't delete them,
+   list them for the owner.
+7. **Report** to the user only after steps 1–6 hold.
+
+**Keeping records true later:** an FR record is a linked item for as long as the app exists. A later FR that
+changes something an earlier record states (a value, a behaviour, a limit, a deferred item it now builds) updates
+that record in the same PR, and its own record names the change.
+
 **Keep linked items in sync** — one piece of work touches the spec, the design doc, the FR task, the parent version
 task and every PR of that FR. When any of them changes, update all the others in the same turn:
+- The FR record (once the FR is closed) is one of these items.
 - A new PR for an FR renumbers all of its PRs to `(k/N)`, in merge order, in every title and in every
   description's "Part k of N" line and PR list, including merged PRs. For example, 3 PRs become 5 when a design
   doc and a fix PR are added.
@@ -110,6 +156,7 @@ task and every PR of that FR. When any of them changes, update all the others in
 - For each problem: **what is wrong**, **how it affects the app for the user**, and **what to change** — a few lines each.
 - Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
 - Reading the diff is not enough. The reviewer also:
+  - checks every commit in the PR ends with a `Task: #N` line, and reports any that doesn't;
   - checks the PR's gate section against the changed files and every row of both gate tables, and reports a row
     that applies but wasn't run, or a "Not applicable" whose reason is wrong, as a finding;
   - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that
@@ -254,6 +301,7 @@ skill. After a new commit, gates that depend on the code run again.
 | 3 | after each push | Linked items synced (see "Keep linked items in sync"); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
 | 4 | opening a PR | Gate rows gone through **one by one** (below); the skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
 | 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
+| 6 | calling an FR done | "Closing an FR" steps 1–7 hold (final audit, record merged, spec, design doc, task, parent task, branches) |
 
 **Going through the gate rows.** Never pick rows by what the PR is "about": a one-line comment edit in a Dart file
 or a test still triggers the Dart and test rows. List the changed files (`git diff --name-only master...HEAD`), then
