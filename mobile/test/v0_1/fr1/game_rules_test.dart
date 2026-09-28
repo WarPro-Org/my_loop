@@ -28,6 +28,13 @@ void main() {
     expect(() => GameRules.fromJson(json), throwsFormatException);
   });
 
+  test('accepts a response with a field it does not know (a newer server)', () {
+    final json = {...defaultGameRules.toJson(), 'fieldFromANewerServer': 7};
+
+    expect(GameRules.fromJson(json).toJson(), defaultGameRules.toJson(),
+        reason: 'old phones must keep working when the server adds a field');
+  });
+
   test('built-in copy matches the server rules in appsettings.json', () {
     // Test runs from mobile/, so the API settings are one folder up.
     final settings = jsonDecode(

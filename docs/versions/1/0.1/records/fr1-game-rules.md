@@ -32,7 +32,7 @@ This page is the short version: what FR1 put into the app and what a later chang
 - Rules are not tied to a user: sign-out keeps them (the provider is never reset), so the next user never falls back
   to older built-in rules.
 - Every phone field is required: a reply missing one, or with a wrong type, is rejected whole and the phone keeps its
-  current rules. Old phones ignore fields they don't know. So deploy the server before an app release that adds a
+  current rules. Old phones ignore fields they don't know (tested). So deploy the server before an app release that adds a
   field; until then new phones keep their current rules.
 - The server is the judge: after an app update the phone keeps the last rules the server sent, not newer built-in ones
   (owner decision; newer built-in rules go wrong when the server is behind the app).
