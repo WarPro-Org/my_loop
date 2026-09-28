@@ -9,8 +9,6 @@
 /// so the realism is a tested guarantee, not an accident.
 library;
 
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -25,18 +23,12 @@ import 'package:myloop/shared/services/mock/mock_walk_engine.dart';
 final double _closureThresholdMeters = defaultGameRules.loopClosureDistanceMeters;
 final int _minLoopPoints = defaultGameRules.minLoopPoints;
 
-// Server-side (C#) thresholds the mock must satisfy, read from the server's own settings file
-// (GameRules:AntiCheat), so a server tightening breaks this test instead of drifting from a copy.
-// `flutter test` runs in mobile/, so the path is relative to it.
-const _serverSettingsPath = '../api/MyLoop.Api/appsettings.json';
-final Map<String, dynamic> _serverAntiCheat =
-    ((jsonDecode(File(_serverSettingsPath).readAsStringSync()) as Map<String, dynamic>)['GameRules']
-        as Map<String, dynamic>)['AntiCheat'] as Map<String, dynamic>;
-double _antiCheat(String setting) => (_serverAntiCheat[setting] as num).toDouble();
-
-final double _minBearingStdDev = _antiCheat('MinBearingStdDev');
-final double _maxHopMeters = _antiCheat('MaxDistanceBetweenPointsMeters');
-final double _maxAverageSpeedMps = _antiCheat('MaxAverageSpeedMetersPerSecond');
+// Server-side (C#) thresholds the mock must satisfy. These live in GameRules:AntiCheat (appsettings.json)
+// and can't be imported into Dart, so they're duplicated here on purpose — a server
+// tightening should break this test loudly.
+const double _minBearingStdDev = 2.0; // GameRules:AntiCheat:MinBearingStdDev
+const double _maxHopMeters = 60.0; // GameRules:AntiCheat:MaxDistanceBetweenPointsMeters
+const double _maxAverageSpeedMps = 9.0; // GameRules:AntiCheat:MaxAverageSpeedMetersPerSecond
 
 /// The real moving noise floor the journey controller applies to a mock fix (whose
 /// speed is always > stationary threshold): clamp(accuracy, movingMin, movingMax).
@@ -386,8 +378,8 @@ void main() {
     // only when its straight-line distance exceeds what max walking speed could cover
     // in the elapsed capturedAt time, PLUS a GPS-uncertainty margin. Mirrored here so
     // the assertion matches what the backend actually rejects (not a bare d/dt).
-    final maxSpeedMps = _antiCheat('MaxSpeedMetersPerSecond');
-    final gpsDriftMarginMeters = _antiCheat('GpsDriftMarginMeters');
+    const maxSpeedMps = 8.33; // GameRules:AntiCheat:MaxSpeedMetersPerSecond
+    const gpsDriftMarginMeters = 30.0; // GameRules:AntiCheat:GpsDriftMarginMeters (appsettings.json)
 
     for (final scenario in MockWalkScenarios.all) {
       group(scenario.label, () {

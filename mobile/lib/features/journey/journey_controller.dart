@@ -213,11 +213,11 @@ class JourneyController extends Notifier<JourneyState> {
       }
 
       final pos = await locationService.getCurrentPosition();
-      // Pin the rules only now, as the walk goes live: the saved copy may still be loading, and the
-      // server may have newer rules (asked now, or by a refresh already running). D1 limits the wait.
+      // Pin the rules only now, as the walk goes live: the saved copy may still be loading, or a
+      // refresh (even one started during the awaits above) bringing newer ones. D1 limits the wait.
       final rules = ref.read(gameRulesProvider.notifier);
       await rules.ready;
-      await rules.refreshWithin(walkStartRulesWait);
+      await rules.settled(limit: walkStartRulesWait);
       if (!_isCurrentSession(generation)) return;
       _walkRules = ref.read(gameRulesProvider);
       _startTime = DateTime.now();

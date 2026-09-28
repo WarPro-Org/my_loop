@@ -28,8 +28,7 @@ class MockWalkConstants {
 
   /// Default and bounds for walking speed. The upper bound is a brisk jog, so a
   /// tester can shorten a desk run; [jitterSigmaMeters] is what keeps the measured
-  /// path under the server's sustained-average speed gate
-  /// (`GameRules:AntiCheat:MaxAverageSpeedMetersPerSecond`) at this bound.
+  /// path under the server's 9.0 m/s sustained-average gate at this bound.
   static const double defaultSpeedMps = 1.4; // average human walk
   static const double minSpeedMps = 0.5;
   static const double maxSpeedMps = 4.0; // brisk jog
@@ -37,10 +36,10 @@ class MockWalkConstants {
   /// Stationary std-dev of the positional jitter, per axis, in metres.
   ///
   /// Calibrated against BOTH server gates, which pull in opposite directions:
-  /// too little jitter and a straight route falls under the bearing-std-dev
-  /// smoothness floor (`GameRules:AntiCheat:MinBearingStdDev`); too much and the noise
-  /// itself dominates displacement, inflating the measured path until it trips the
-  /// sustained-average speed gate (`MaxAverageSpeedMetersPerSecond`). Asserted in `mock_walk_engine_test.dart`.
+  /// too little jitter and a straight route falls under the 2° bearing-std-dev
+  /// smoothness floor; too much and the noise itself dominates displacement,
+  /// inflating the measured path until it trips the 9.0 m/s sustained-average
+  /// speed gate. Asserted in `mock_walk_engine_test.dart`.
   static const double jitterSigmaMeters = 2.5;
 
   /// Fix-to-fix correlation of the jitter (AR(1) coefficient per axis).
@@ -48,8 +47,8 @@ class MockWalkConstants {
   /// Real GPS error drifts slowly; it does not re-roll every second. Independent
   /// per-fix jitter made the 8 m client noise floor keep mostly the fixes noise
   /// had pushed far, so the short 2–5 point batches the drain sends showed
-  /// phantom speed and ~30% of default walks had a batch rejected by the server's
-  /// per-batch average speed gate (`MaxAverageSpeedMetersPerSecond`). At 0.9 consecutive fixes differ by only
+  /// phantom speed and ~30% of default walks had a batch rejected by the 9.0 m/s
+  /// per-batch average. At 0.9 consecutive fixes differ by only
   /// σ·√(2·(1−ρ)) ≈ 1.1 m per axis while the spread over a walk stays σ, which
   /// keeps every drain batch under the gate and bearing std-dev above 2°.
   static const double jitterCorrelation = 0.9;
