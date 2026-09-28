@@ -2,8 +2,9 @@
 ///
 /// Always synchronous and always usable: it starts with the built-in copy, switches to the
 /// saved copy once read from disk, and then to the server's rules when a refresh finds they changed.
-/// A walk never waits on the network for rules, and a running walk keeps the rules it started
-/// with (see JourneyController), so a mid-walk update only affects the next walk (#20).
+/// A walk start waits at most [walkStartRulesWait] for the server's rules, and a running walk keeps
+/// the rules it started with (see JourneyController), so a mid-walk update only affects the next
+/// walk (#20).
 library;
 
 import 'dart:async';
@@ -26,9 +27,8 @@ final rulesSourceProvider =
 
 final gameRulesProvider = NotifierProvider<GameRulesNotifier, GameRules>(GameRulesNotifier.new);
 
-/// How long a walk start waits for a rules refresh that is already running (decision D1). A walk
-/// can only start online, so a refresh normally finishes well within this; a slow network must
-/// not hold the walk back longer.
+/// How long a walk start waits for a rules refresh (decision D1). A walk can only start online, so
+/// a refresh normally finishes well within this; a slow network must not hold the walk back longer.
 const walkStartRulesWait = Duration(seconds: 3);
 
 class GameRulesNotifier extends Notifier<GameRules> {
@@ -59,6 +59,13 @@ class GameRulesNotifier extends Notifier<GameRules> {
   /// [limit], whichever comes first. Never fails; a bug in the refresh still reaches the reporter.
   Future<void> settled({required Duration limit}) async {
     await _idle?.future.timeout(limit, onTimeout: () {});
+  }
+
+  /// Starts a refresh unless one is running, then waits for it like [settled]. Used at walk start,
+  /// so a walk picks up rules the server changed while the app stayed open (D1).
+  Future<void> refreshWithin(Duration limit) {
+    if (_inFlight == null) unawaited(refresh());
+    return settled(limit: limit);
   }
 
   Future<void> _useSavedCopy() async {
