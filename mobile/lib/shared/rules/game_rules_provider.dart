@@ -26,6 +26,11 @@ final rulesSourceProvider =
 
 final gameRulesProvider = NotifierProvider<GameRulesNotifier, GameRules>(GameRulesNotifier.new);
 
+/// How long a walk start waits for a rules refresh that is already running (decision D1). A walk
+/// can only start online, so a refresh normally finishes well within this; a slow network must
+/// not hold the walk back longer.
+const walkStartRulesWait = Duration(seconds: 3);
+
 class GameRulesNotifier extends Notifier<GameRules> {
   Future<void>? _loadSaved;
 
@@ -34,6 +39,10 @@ class GameRulesNotifier extends Notifier<GameRules> {
 
   Future<void>? _inFlight;
   bool _runAgain = false;
+
+  /// Completes when [_inFlight] ends, never with an error. [settled] waits on this, not on
+  /// [_inFlight]: listening there would hide a bug in the refresh from the error reporter.
+  Completer<void>? _idle;
 
   @override
   GameRules build() {
@@ -45,6 +54,12 @@ class GameRulesNotifier extends Notifier<GameRules> {
   /// Completes once the saved copy has been read (or found missing), so a caller that must not
   /// start on the built-in copy — e.g. a walk started right after launch — can wait for it.
   Future<void> get ready => _loadSaved ?? Future.value();
+
+  /// Completes when the refresh running now finishes (at once if none is running), or after
+  /// [limit], whichever comes first. Never fails; a bug in the refresh still reaches the reporter.
+  Future<void> settled({required Duration limit}) async {
+    await _idle?.future.timeout(limit, onTimeout: () {});
+  }
 
   Future<void> _useSavedCopy() async {
     try {
@@ -70,6 +85,7 @@ class GameRulesNotifier extends Notifier<GameRules> {
       _runAgain = true;
       return running;
     }
+    _idle = Completer<void>();
     return _inFlight = _refreshUntilSettled();
   }
 
@@ -82,6 +98,8 @@ class GameRulesNotifier extends Notifier<GameRules> {
     } finally {
       // Cleared in the same step as the last _runAgain check, so no call can slip in between.
       _inFlight = null;
+      _idle?.complete();
+      _idle = null;
     }
   }
 
@@ -101,6 +119,10 @@ class GameRulesNotifier extends Notifier<GameRules> {
     } on FormatException catch (e, stack) {
       // The server sent rules the app can't read: keep the current rules but surface it.
       _log.warning('Game rules response unreadable; keeping version ${state.version}', e, stack);
+    } on Exception catch (e, stack) {
+      // Any other failure (e.g. an expired sign-in token): keep the current rules. A bug (an Error)
+      // reaches the crash reporter; the rules are kept and later refreshes run (finally below).
+      _log.severe('Game rules refresh failed; keeping version ${state.version}', e, stack);
     }
   }
 

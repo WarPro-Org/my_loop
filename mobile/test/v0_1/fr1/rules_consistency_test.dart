@@ -22,6 +22,7 @@ import 'package:myloop/shared/services/location_service.dart';
 import 'package:myloop/shared/services/realtime_resync.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
+import 'package:myloop/shared/state/profile_rank_sync.dart';
 import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
@@ -61,9 +62,14 @@ class _SwitchableSource implements RulesSource {
   _SwitchableSource(this.current);
   SavedRules current;
   int fetches = 0;
+
+  /// While set, each request waits for it before answering (a slow network).
+  Completer<void>? hold;
+
   @override
   Future<SavedRules?> fetchIfChanged(String? knownTag) async {
     fetches++;
+    await hold?.future;
     return current.tag == knownTag ? null : current;
   }
 }
@@ -136,8 +142,13 @@ class _FakeLocation extends LocationService {
     );
   }
 
+  /// While set, the permission dialog stays open until it completes.
+  Completer<void>? permissionDialog;
   @override
-  Future<bool> requestPermission() async => true;
+  Future<bool> requestPermission() async {
+    await permissionDialog?.future;
+    return true;
+  }
   @override
   Future<Position> getCurrentPosition() async => startAt ?? next();
   @override
@@ -257,6 +268,74 @@ void main() {
     journey.stopJourney();
   });
 
+  group('a walk started while a rules refresh is running (D1)', () {
+    /// App on lenient v1 rules; a refresh bringing strict v2 (e.g. at login) is running, held back.
+    Future<(ProviderContainer, _FakeLocation, _SwitchableSource)> heldRefresh() async {
+      final source = _SwitchableSource(_rules(1));
+      final location = _FakeLocation();
+      final container = _container(source, location: location);
+      await _rulesSettled(container);
+      source
+        ..current = _rules(2, accuracy: _strictAccuracyMeters)
+        ..hold = Completer<void>();
+      unawaited(container.read(gameRulesProvider.notifier).refresh());
+      return (container, location, source);
+    }
+
+    test('starts on the rules that refresh brings', () async {
+      final (container, location, source) = await heldRefresh();
+      final journey = container.read(journeyControllerProvider.notifier);
+      final starting = journey.startJourney();
+      await pumpEventQueue();
+      source.hold!.complete();
+      await starting;
+
+      expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
+      final pointsAtStart = container.read(journeyControllerProvider).path.length;
+      location.gps.add(location.next(accuracy: _fixAccuracyMeters));
+      await pumpEventQueue();
+      expect(container.read(journeyControllerProvider).path.length, pointsAtStart,
+          reason: 'the walk waited for the refresh, so the strict v2 rules apply to the 30 m fix');
+      journey.stopJourney();
+    });
+
+    test('uses rules a refresh brought while the permission dialog was open', () async {
+      final source = _SwitchableSource(_rules(1));
+      final location = _FakeLocation()..permissionDialog = Completer<void>();
+      final container = _container(source, location: location);
+      await _rulesSettled(container);
+      final starting = container.read(journeyControllerProvider.notifier).startJourney();
+      await pumpEventQueue();
+
+      source.current = _rules(2, accuracy: _strictAccuracyMeters); // e.g. the refresh on resume
+      await container.read(gameRulesProvider.notifier).refresh();
+      location.permissionDialog!.complete();
+      await starting;
+
+      expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
+      final pointsAtStart = container.read(journeyControllerProvider).path.length;
+      location.gps.add(location.next(accuracy: _fixAccuracyMeters));
+      await pumpEventQueue();
+      expect(container.read(journeyControllerProvider).path.length, pointsAtStart,
+          reason: 'the walk pinned its rules after the dialog, so strict v2 applies');
+      container.read(journeyControllerProvider.notifier).stopJourney();
+    });
+
+    test('is not held back longer than the limit by a slow refresh', () async {
+      final (container, location, _) = await heldRefresh(); // the refresh is never answered
+      final journey = container.read(journeyControllerProvider.notifier);
+      await journey.startJourney().timeout(walkStartRulesWait + const Duration(seconds: 2));
+
+      expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
+      final pointsAtStart = container.read(journeyControllerProvider).path.length;
+      location.gps.add(location.next(accuracy: _fixAccuracyMeters));
+      await pumpEventQueue();
+      expect(container.read(journeyControllerProvider).path.length, pointsAtStart + 1,
+          reason: 'the walk started on the rules it had (lenient v1), so the 30 m fix counts');
+      journey.stopJourney();
+    });
+  });
+
   group('coming back online', () {
     ProviderContainer signedIn(_SwitchableSource source) {
       final container = _container(source);
@@ -279,6 +358,37 @@ void main() {
       source.current = _rules(2);
       await container.read(territoryRealtimeProvider).handleReconnected();
       await pumpEventQueue();
+
+      expect(source.fetches, greaterThan(before));
+      expect(container.read(gameRulesProvider).version, 2);
+    });
+
+    testWidgets('logging in checks the rules again', (tester) async {
+      final source = _SwitchableSource(_rules(1));
+      final container = _container(source);
+      await tester.runAsync(() => _rulesSettled(container));
+      late WidgetRef widgetRef;
+      await tester.pumpWidget(UncontrolledProviderScope(
+        container: container,
+        child: Consumer(builder: (context, ref, _) {
+          widgetRef = ref;
+          return const SizedBox();
+        }),
+      ));
+      final before = source.fetches;
+
+      // What the login screen does once the server knows the user (login_screen.dart).
+      source.current = _rules(2);
+      container.read(userProfileProvider.notifier).setFromApi(
+            userId: 'user-1',
+            avatarId: 0,
+            color: '#000000',
+            displayName: 'Player',
+          );
+      await tester.runAsync(() async {
+        await hydrateAndSyncProfileRank(widgetRef, isMounted: () => true);
+        await pumpEventQueue();
+      });
 
       expect(source.fetches, greaterThan(before));
       expect(container.read(gameRulesProvider).version, 2);

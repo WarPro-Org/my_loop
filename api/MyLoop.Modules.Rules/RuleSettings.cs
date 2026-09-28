@@ -8,7 +8,7 @@ namespace MyLoop.Modules.Rules;
 /// Serves the rules validated at startup. Rules change only by redeploying with an edited
 /// appsettings.json, so a single snapshot for the process lifetime is correct.
 /// </summary>
-public sealed class RuleSettings : IRuleSettings
+internal sealed class RuleSettings : IRuleSettings
 {
     private readonly ClientRules _clientRules;
 

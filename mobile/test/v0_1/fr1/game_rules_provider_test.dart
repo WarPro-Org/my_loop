@@ -10,6 +10,7 @@ import 'package:myloop/shared/rules/game_rules.dart';
 import 'package:myloop/shared/rules/game_rules_provider.dart';
 import 'package:myloop/shared/rules/rules_source.dart';
 import 'package:myloop/shared/rules/rules_store.dart';
+import 'package:myloop/shared/services/api_service.dart';
 
 SavedRules _version(int v) =>
     SavedRules(GameRules.fromJson({...defaultGameRules.toJson(), 'version': v}), 'tag-$v');
@@ -185,6 +186,82 @@ void main() {
     expect(source.fetches, 2);
     expect(container.read(gameRulesProvider).version, 4);
   });
+
+  test('a failure that is not a network error keeps the current rules, and later refreshes still work',
+      () async {
+    final source = _FailsOnceSource(_TokenExpired());
+    final container = _container(_MemoryStore(_version(3)), source);
+
+    container.read(gameRulesProvider); // app start: its refresh is the one that fails
+    await pumpEventQueue();
+    expect(source.fetches, 1, reason: 'positive control: the failing request ran');
+    expect(container.read(gameRulesProvider).version, 3);
+
+    await container.read(gameRulesProvider.notifier).refresh();
+    expect(container.read(gameRulesProvider).version, 5, reason: 'the refresh after the failure applied');
+  });
+
+  test('a bug in a refresh reaches the error reporter even while a walk start waits on it', () async {
+    final reported = <Object>[];
+    int? versionAfterBug;
+    int? versionAfterNextRefresh;
+    await runZonedGuarded(() async {
+      final container = _container(_MemoryStore(_version(3)), _FailsOnceSource(StateError('bug')));
+      container.read(gameRulesProvider); // the app-start refresh hits the bug
+      await container.read(gameRulesProvider.notifier).settled(limit: const Duration(seconds: 1));
+      await pumpEventQueue();
+      versionAfterBug = container.read(gameRulesProvider).version;
+      await container.read(gameRulesProvider.notifier).refresh();
+      versionAfterNextRefresh = container.read(gameRulesProvider).version;
+    }, (error, _) => reported.add(error));
+
+    expect(reported, [isA<StateError>()]);
+    expect(versionAfterBug, 3, reason: 'the rules the app had are kept');
+    expect(versionAfterNextRefresh, 5, reason: 'the next refresh still runs');
+  });
+
+  test('a server reply the app cannot read keeps the current rules and the saved copy', () async {
+    final store = _MemoryStore(_version(3));
+    final container = ProviderContainer(overrides: [
+      rulesStoreProvider.overrideWithValue(store),
+      rulesSourceProvider.overrideWithValue(ApiRulesSource(_UnreadableRulesApi())),
+    ]);
+    addTearDown(container.dispose);
+
+    final rules = await _settle(container);
+
+    expect(_UnreadableRulesApi.calls, greaterThan(0), reason: 'positive control: the server was asked');
+    expect(rules.version, 3);
+    expect(store.saved?.tag, 'tag-3');
+    expect(store.saves, 0);
+  });
+}
+
+/// A sign-in token that expired while offline fails before any request is sent.
+class _TokenExpired implements Exception {}
+
+/// Fails the first request with [failure]; later requests return rules version 5.
+class _FailsOnceSource implements RulesSource {
+  _FailsOnceSource(this.failure);
+  final Object failure;
+  int fetches = 0;
+  @override
+  Future<SavedRules?> fetchIfChanged(String? knownTag) async {
+    fetches++;
+    if (fetches == 1) throw failure;
+    return _version(5);
+  }
+}
+
+/// A server that answers 200 with a body missing the loop fields.
+class _UnreadableRulesApi extends ApiService {
+  _UnreadableRulesApi() : super(baseUrl: 'http://localhost');
+  static int calls = 0;
+  @override
+  Future<({Map<String, dynamic> json, String? tag})?> getRules(String? knownTag) async {
+    calls++;
+    return (json: <String, dynamic>{'version': 9}, tag: '9-broken');
+  }
 }
 
 /// First call waits on [first] (the signed-out request); later calls return rules version 4.

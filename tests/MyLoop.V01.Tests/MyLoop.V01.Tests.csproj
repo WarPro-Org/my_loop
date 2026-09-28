@@ -24,6 +24,8 @@
   <ItemGroup>
     <!-- The real appsettings.json, so a test proves the shipped rules pass validation. -->
     <None Include="../../api/MyLoop.Api/appsettings.json" Link="shipped-appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Server ↔ phone contract samples; the Flutter tests read the same files. -->
+    <None Include="../contracts/*.json" LinkBase="contracts" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
