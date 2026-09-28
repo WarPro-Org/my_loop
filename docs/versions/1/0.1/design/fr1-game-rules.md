@@ -3,10 +3,12 @@
 Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1.
 
 **Status:** written after the code, because Gate 2 was skipped when FR1 was built (see #201). It describes what
-was built and the gaps found while writing it; PR 5/5 closed those gaps. The owner approved decisions D1 and D2.
+was built and the gaps found while writing it; PR 5/8 closed those gaps. An independent audit of all of FR1 then found
+the gaps listed under "Work to do in PRs 7/8 and 8/8". The owner approved decisions D1 and D2.
 
-**FR1 PRs (merge in order):** 1/5 #203 server rules module · 2/5 this design doc · 3/5 #204 server uses the rules ·
-4/5 #205 phone uses the rules · 5/5 phone and server fixes and contract tests from this doc.
+**FR1 PRs (merge in order):** 1/8 #203 server rules module · 2/8 #210 this design doc · 3/8 #204 server uses the
+rules · 4/8 #205 phone uses the rules · 5/8 #214 fixes and contract tests from this doc · 6/8 #215 spec and design updates
+from the FR1 audit · 7/8 the audit's server gaps · 8/8 the audit's app gaps.
 
 ## In one paragraph
 
@@ -126,19 +128,24 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | During a walk, server redeployed with new rules | **Accepted by the owner until FR9 (D2):** the rest of the walk, and saved points sent later, are judged by the new server rules. This breaks requirement #20 ("future walks only") until walks store their rules version | — |
 | Killed mid-walk, relaunched | Accepted: a walk doesn't resume; saved points are judged by the server's rules (R4) | — |
 | Corrupt saved copy | Built-in rules, still refreshes (R3) | corrupted / wrong shape; broken storage — red when load errors aren't caught |
-| Server restart or bad config | Bad numbers stop startup (R4) | server refuses to start — red without `ValidateOnStart` |
+| Server restart or bad config | A bad or missing number stops startup (R4) | server refuses to start — red without `ValidateOnStart`. **Gap:** a missing `SkipNeighbors` reads as 0, which is allowed; only 6 of the 14 checks have a test. Fix and test in 7/8 |
+| Server updated between walks, app kept open | The next walk starts on the new rules: starting a walk checks for them, waiting up to the D1 limit (R1, R2) | **to add** in 8/8 (today a walk only waits for a refresh that is already running) |
+| Captive portal (HTML reply) / server error (503) | Current rules kept (R3) | right today (checked by hand); **to add** in 8/8: tests through the real `getRules` |
+| Guest, no sign-in (FR12) | Accepted until FR12: guests don't exist yet, and `GET /api/rules` needs sign-in. FR12 must let a guest get the rules (requirements.md → FR12) | — |
 | Any moment, R5 | Accepted: dev-only screen follows the live rules | — |
 
 ## Risks
 
 | Risk | Status |
 |---|---|
-| Anti-cheat numbers leak to the phone | Mitigated: the server's reply must equal the shared five-field sample exactly |
-| Server and phone disagree on field names or types | Mitigated: one shared sample, `tests/contracts/client_rules.json`, tested on both sides |
+| Anti-cheat numbers leak to the phone | Mitigated: the server's reply must equal the shared five-field sample exactly. Limit: the test uses ASP.NET's default JSON settings, not the real HTTP pipeline; custom JSON options added to the API later would not be caught |
+| Server and phone disagree on field names or types | Mitigated: one shared sample, `tests/contracts/client_rules.json`, tested on both sides (same limit as above) |
+| A fixed number comes back in the server's loop or anti-cheat code | **Gap:** only 3 of the 12 settings the server's loop and anti-cheat code reads have a test proving it. Fix in 7/8: a "changing it changes the result" test for each of the other 9. (The GPS accuracy threshold is checked at startup and passed on to the phone, but no server check uses it yet; its server test comes with FR3.) |
+| Dev mock walks stop passing anti-cheat after tuning | **Gap:** the mock-walk tests hard-code the anti-cheat values. Fix in 8/8: read them from `appsettings.json` |
 | Phone mishandles the ETag | Mitigated: `getRules` tests for quotes, 304, a missing ETag and a weak `W/"…"` one (a weak one was kept with its `W/` and never matched again; fixed) |
 | Other code uses the module's internal classes | Mitigated: `RuleSettings` and `GameRulesValidator` are internal; a test lists the allowed public types |
 | A non-Dio error during refresh | Mitigated: refresh catches every exception and logs the unexpected ones as severe. A bug (a Dart `Error`) still reaches the crash reporter; the rules are kept and later refreshes still run |
-| A walk starts on old rules while a refresh is running | Mitigated (D1): the walk waits for the running refresh, at most `walkStartRulesWait` (3 s) |
+| A walk starts on old rules while a refresh is running | Mitigated (D1): the walk waits for the running refresh, at most `walkStartRulesWait` (3 s). **Gap:** a server update with no refresh running is missed; fix in 8/8 |
 | A redeploy mid-walk changes how the rest of the walk is judged | Accepted by the owner until FR9 (D2) |
 | Speed limit is 30 km/h, not the spec's 20–25 | Accepted: FR5 sets it |
 
@@ -148,9 +155,25 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
   seconds (`walkStartRulesWait`, 3 s), then starts with whatever rules the app has. The rules are pinned just before
   the walk goes live, after the permission dialog and first GPS fix, so a refresh during those is not missed. A walk
   can only start online, so the wait usually ends well within a second.
-- **D2 — server rules change mid-walk.** Accepted until FR9, which stores each walk's rules version.
+  From 8/8, starting a walk also asks the server for new rules when no refresh is running, and waits the same way.
+- **D2 — server rules change mid-walk.** Accepted until FR9, which stores each walk's rules version
+  (requirements.md → FR9).
+- **Server GPS-accuracy check:** only the phone drops points below the threshold; the server check comes with FR3
+  (requirements.md → FR3).
 
-## Work done in PR 5/5
+## Work done in PR 5/8
 
 The six gaps in the matrix and risks above, each with a test proven red when its behaviour is removed. Deviation: tests build the internal
 classes via `InternalsVisibleTo`, not `AddMyLoopRules`: they write rules in code; it only reads settings.
+
+## Work to do in PRs 7/8 and 8/8 (from the FR1 audit)
+
+**7/8 — server**
+1. A missing setting stops the server (e.g. `SkipNeighbors`, whose 0 is valid); a test for each of the 14 checks.
+2. A "changing it changes the result" test for each of the 9 settings the server's loop and anti-cheat code reads that have none yet.
+
+**8/8 — app**
+1. Starting a walk asks the server for new rules when no refresh is running, and waits up to the D1 limit; test
+   through `startJourney`.
+2. `getRules` tests for a captive-portal HTML reply and a 503.
+3. Mock-walk tests read the anti-cheat values from `appsettings.json` instead of copies.

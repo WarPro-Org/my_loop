@@ -68,6 +68,13 @@ Every tunable number lives in one place so the rules can be tuned from real test
   delay (FR4), speed checks over gaps (FR5), guest inactivity period (FR12).
 - The old claim limits (e.g. 10 GPS points, 200 m walked, 20 walks a day) stay in code until FR6 replaces the old
   claim code.
+- A walk starts on the newest rules the server has, if the app can fetch them within 3 seconds; otherwise on the
+  rules the app already has. The phone keeps a walk's rules for the whole walk.
+- Left to later FRs (agreed with the owner):
+  - Until FR9 stores each walk's rules version, the server judges a walk's points by the rules it has when they
+    arrive, so a server update in the middle of a walk changes how the rest of that walk is judged.
+  - Only the phone drops GPS points below the accuracy threshold; the server check comes with FR3.
+  - Guests (FR12) must be able to get the rules too; today `GET /api/rules` needs a signed-in user.
 
 Depends on: nothing.
 
@@ -96,7 +103,8 @@ Depends on: FR1.
   server decides what you captured, not the phone.
   - Until the server has confirmed a walk (e.g. it was recorded offline), its result is shown as a clearly labelled
     estimate ("Waiting to sync").
-- **[#7]** (recording part) GPS points below the accuracy threshold are ignored. Capturing needs precise location: if
+- **[#7]** (recording part) GPS points below the accuracy threshold are ignored — by the server too, not only the
+  phone (left open by FR1). Capturing needs precise location: if
   the user has only allowed approximate location, the app explains why and asks for precise location before a walk
   can start.
 - **[#12]** Weak GPS is flagged at that moment — as a message on screen, or in the tracking notification when the app is
@@ -185,6 +193,8 @@ Depends on: FR5, FR6, FR7.
   at the time and which version of the rules decided it. Any future rule (e.g. land strength) can be calculated from
   this history.
   - Walks are kept for as long as the account exists and are deleted with it (see FR12).
+  - A walk is judged by the rules version it started with, also on the server, so a server update in the middle of a
+    walk doesn't change how that walk is judged (#20; left open by FR1).
 - **[#39]** Opening a past walk from walk history shows the same result screen as when it ended: the path, what was
   captured, what was explored, and any "you were X m from closing" hint.
 
@@ -226,6 +236,7 @@ Depends on: FR9, FR10.
   - Unlinked guests are deleted after a period of inactivity.
   - If the Apple or Google account a guest links already belongs to a MyLoop user, the two are merged: the guest's
     walks, explored hexes and land move into the existing account, and the guest account is deleted.
+- Guests get the game rules like signed-in users (`GET /api/rules` must accept a guest; left open by FR1).
 - **[#22]** Guests can walk, explore and capture. When rivals arrive, a guest's land stays private and can't take anyone
   else's until they sign in.
 - **[#40]** Deleting an account deletes everything — walks, captured land, explored hexes and the passport. Nothing is
@@ -278,7 +289,7 @@ No 0.1 work beyond FR9.
 | #3 | FR6 | #17 | FR15 | #31 | FR2 |
 | #4 | FR6 | #18 | FR15 | #32 | FR2 |
 | #5 | FR7 | #19 | FR9 | #33 | FR2 |
-| #6 | FR6 | #20 | FR1 | #34 | FR2 |
+| #6 | FR6 | #20 | FR1 + FR9 | #34 | FR2 |
 | #7 | FR3 + FR6 | #21 | FR12 | #35 | FR2 |
 | #8 | FR8 | #22 | FR12 | #36 | FR8 |
 | #9 | FR3 | #23 | FR13 | #37 | FR11 |
