@@ -1,8 +1,8 @@
 # FR1 — Game rules: record
 
 **Status:** done (2026-09-28). Task #201 · spec `requirements.md` → FR1 · design `design/fr1-game-rules.md`
-(full matrix, risks and history) · PRs #203 #210 #204 #205 #214 #215 #216 #218 #219, and the close-out PR that
-added this record.
+(full matrix, risks and history) · PRs #203 #210 #204 #205 #214 #215 #216 #218 #219, and close-out PR #220
+(this record).
 
 This page is the short version: what FR1 put into the app and what a later change must keep true.
 
@@ -31,8 +31,9 @@ This page is the short version: what FR1 put into the app and what a later chang
 - A running walk never changes rules on the phone; the next walk uses new ones (#20).
 - Rules are not tied to a user: sign-out keeps them (the provider is never reset), so the next user never falls back
   to older built-in rules.
-- A server reply with a missing or wrongly typed field is rejected whole; a new `ClientRules` field must be required
-  on both sides, or old phones would half-apply rules.
+- Every phone field is required: a reply missing one, or with a wrong type, is rejected whole and the phone keeps its
+  current rules. Old phones ignore fields they don't know. So deploy the server before an app release that adds a
+  field; until then new phones keep their current rules.
 - The server is the judge: after an app update the phone keeps the last rules the server sent, not newer built-in ones
   (owner decision; newer built-in rules go wrong when the server is behind the app).
 - Any refresh failure keeps the current rules; a bug (Dart `Error`) still reaches the crash reporter.
@@ -53,12 +54,13 @@ This page is the short version: what FR1 put into the app and what a later chang
 - The contract test serializes with ASP.NET's default JSON settings, not the real HTTP pipeline.
 - The presence check covers number settings and nested rules classes; a list or text setting needs it extended.
 - A walk killed mid-way doesn't resume; its saved points are judged by the server's rules when they arrive (FR9
-  changes this).
+  makes them be judged by the rules the walk started with).
 
 ## How to change a rule
 
 Edit `GameRules` in `appsettings.json` (or a production override), bump `Version`, redeploy. Allowed values: every
-number above 0 (`SkipNeighbors` may be 0), rates above 0 and at most 1, and the average-speed limit not below the
+number above 0 (`SkipNeighbors` may be 0), `MaxSpeedViolationRate` and `DurationToleranceFactor` above 0 and at
+most 1, and the average-speed limit not below the
 per-point limit; otherwise the server won't start. The server checks the values at startup; phones pick the change up on their next refresh or walk start. If the built-in phone copy must
 change too, update `defaultGameRules` — a test fails when it drifts from `appsettings.json`.
 
