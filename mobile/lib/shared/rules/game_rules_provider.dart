@@ -72,6 +72,13 @@ class GameRulesNotifier extends Notifier<GameRules> {
     try {
       final saved = await ref.read(rulesStoreProvider).load();
       if (saved == null) return;
+      if (saved.rules.version < defaultGameRules.version) {
+        // Saved before an app update that ships newer rules: the built-in copy is newer, and the
+        // next refresh asks without a fingerprint so the server sends its rules in full.
+        _log.info('Saved game rules v${saved.rules.version} are older than the built-in '
+            'v${defaultGameRules.version}; using the built-in copy');
+        return;
+      }
       _tag = saved.tag;
       state = saved.rules;
     } on Exception catch (e, stack) {
