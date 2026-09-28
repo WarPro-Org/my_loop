@@ -77,8 +77,14 @@ Applies when planning versions, discussing requirements, or creating tasks.
 
 **Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
 - **FR task** ends with a `## Progress` section:
-  - a table: PR | what it does (one line) | status;
+  - a table: PR | what it does (one line) | status (merge commit once merged);
   - under it, a check-in log grouped by PR: `commit — what changed and why`, one line each, clear without the chat.
+    Every check-in is in the log; commits with the same purpose may share a line (`a1b2c3d, e4f5a6b — …`).
+- **Every check-in is attached to its task:** each commit message ends with a `Task: #N` line (the FR task, or the
+  process task), so GitHub lists it on the task's timeline, and the PR that carries it links the task.
+- **Task sections, in this order:** Summary (once the FR is done) · Story · What · Why · How · Decisions · Left to
+  later FRs · Acceptance criteria · Process notes · Progress. Decisions hold only what shapes the app (behaviour, data,
+  contracts, limits) with the reason. Process mishaps and record gaps go in Process notes, one line each.
 - **Parent version task** ends with a `## Progress` table: FR | task | what it does (one line) | status — no commit log.
   Work not tied to an FR (process, bug fix) gets a row there with FR "—"; if it has its own task, that task gets
   the FR-task format.
@@ -89,6 +95,32 @@ Applies when planning versions, discussing requirements, or creating tasks.
   the parent.
 - A change of plan updates the task's What / How / Acceptance criteria after the user agrees, together with the spec.
 - Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
+
+**Closing an FR** — after its last PR merges, before telling the user it's done. The goal: someone (human or AI)
+working on the app years later, e.g. in version 100.2, can find this FR and understand its scope, what it built and
+what must stay true, in a few minutes.
+1. **Final audit on master:** an independent agent checks every spec line, acceptance criterion, design-doc matrix
+   cell, user situation and linked item (task, parent task, every PR, spec, design doc), re-running a "red when" per
+   test group. Findings are fixed in a new PR of the FR (or accepted by the owner) before the FR is closed.
+2. **FR record:** `docs/versions/<release>/<version>/records/frN-<name>.md`, one page, for humans and AI agents:
+   - **Status** line with the task, spec, design doc and every PR;
+   - **Scope:** in and out;
+   - **What shapes the app:** a table of area → what exists → where (modules, endpoints, data and contracts,
+     settings, app state, key files);
+   - **Decisions that must stay true**, each with its reason;
+   - **Left to later FRs**, each naming the FR;
+   - **Known limits**;
+   - **How to change it** (e.g. tune a setting);
+   - **Tests that guard it**.
+
+   Facts only, no history. The design doc keeps the full matrix, risks and history, and points to the record.
+3. **Spec and design doc:** the FR's section in `requirements.md` gets `**Status:** done (task #N)` and the record's
+   path; the design doc's first lines point to the record.
+4. **Task:** a Summary at the top (3–6 lines and the record's path), every criterion ticked with the PR that met it,
+   the Progress table with each merge commit, the check-in log complete; then close it.
+5. **Parent version task:** the FR row says done, with the record's path.
+6. **Branches:** delete the FR's merged branches. If the session can't delete them, list them for the owner.
+7. **Report** to the user only after steps 1–6 hold.
 
 **Keep linked items in sync** — one piece of work touches the spec, the design doc, the FR task, the parent version
 task and every PR of that FR. When any of them changes, update all the others in the same turn:
@@ -110,6 +142,7 @@ task and every PR of that FR. When any of them changes, update all the others in
 - For each problem: **what is wrong**, **how it affects the app for the user**, and **what to change** — a few lines each.
 - Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
 - Reading the diff is not enough. The reviewer also:
+  - checks every commit in the PR ends with a `Task: #N` line, and reports any that doesn't;
   - checks the PR's gate section against the changed files and every row of both gate tables, and reports a row
     that applies but wasn't run, or a "Not applicable" whose reason is wrong, as a finding;
   - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that

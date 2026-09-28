@@ -1,6 +1,7 @@
 # FR1 — Game rules: design
 
-Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1.
+Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1. FR1 is done; the one-page summary is
+`docs/versions/1/0.1/records/fr1-game-rules.md` — read that first.
 
 **Status:** written after the code, because Gate 2 was skipped when FR1 was built (see #201). It describes what
 was built and the gaps found while writing it; PR 5/9 closed those gaps. An independent audit of all of FR1 then found
