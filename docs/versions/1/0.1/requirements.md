@@ -71,7 +71,7 @@ Every tunable number lives in one place so the rules can be tuned from real test
 - A walk starts on the newest rules the server has, if the app can fetch them within 3 seconds; otherwise on the
   rules the app already has. The phone keeps a walk's rules for the whole walk.
 - Left to later FRs (agreed with the owner):
-  - Until FR9 stores each walk's rules version, the server judges a walk's points by the rules it has when they
+  - Until FR9 stores each walk's rules (version and fingerprint), the server judges a walk's points by the rules it has when they
     arrive, so a server update in the middle of a walk changes how the rest of that walk is judged.
   - Only the phone drops GPS points below the accuracy threshold; the server check comes with FR3.
   - Guests (FR12) must be able to get the rules too; today `GET /api/rules` needs a signed-in user.
@@ -195,6 +195,9 @@ Depends on: FR5, FR6, FR7.
   - Walks are kept for as long as the account exists and are deleted with it (see FR12).
   - A walk is judged by the rules version it started with, also on the server, so a server update in the middle of a
     walk doesn't change how that walk is judged (#20; left open by FR1).
+  - Each walk stores a fingerprint of the full rule set that judged it (every setting, including the server-only
+    anti-cheat ones), not only the version number: a setting can change without a version bump, and FR1's fingerprint
+    covers only the settings sent to the phone (#20; left open by FR1).
 - **[#39]** Opening a past walk from walk history shows the same result screen as when it ended: the path, what was
   captured, what was explored, and any "you were X m from closing" hint.
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # MyLoop's verification-loop for the 0.x rebuild, on the current commit: build, the 0.1 user-story
-# tests, flutter analyze (no new issues), the "PR rules" script tests and a secrets scan of the changed
+# tests (plus the mock-walk tests, which check dev walks against the server's anti-cheat settings),
+# flutter analyze (no new issues), the "PR rules" script tests and a secrets scan of the changed
 # files. Exits 0 only if every step passed; any step that couldn't run counts as failed.
 set -uo pipefail
 
@@ -39,7 +40,7 @@ fi
 
 step "0.1 user-story tests (Flutter)"
 if [[ -d mobile/test/v0_1 ]]; then
-  if (cd mobile && flutter test test/v0_1 >"$logs/flutter" 2>&1); then
+  if (cd mobile && flutter test test/v0_1 test/mock_walk_engine_test.dart >"$logs/flutter" 2>&1); then
     tail -1 "$logs/flutter"
   else
     tail -30 "$logs/flutter"; failures+=("flutter-tests")

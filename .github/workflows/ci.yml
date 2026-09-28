@@ -93,9 +93,10 @@ jobs:
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       # Old tests and coverage paused during the 0.x rebuild (see backend job note).
-      # Only the 0.1 user-story tests run: one folder per story in test/v0_1.
+      # Only the 0.1 user-story tests run: one folder per story in test/v0_1, plus the mock-walk tests,
+      # which FR1 made read the server's anti-cheat settings (a tightened setting must turn CI red).
       - name: Test (0.1 user stories)
-        run: flutter test test/v0_1
+        run: flutter test test/v0_1 test/mock_walk_engine_test.dart
 
   # ADD THIS NEW JOB TO UNBLOCK YOUR GITHUB PRs
   security-scan:
