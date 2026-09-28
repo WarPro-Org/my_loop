@@ -132,7 +132,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | During a walk, server redeployed with new rules | **Accepted by the owner until FR9 (D2):** the rest of the walk, and saved points sent later, are judged by the new server rules. This breaks requirement #20 ("future walks only") until walks store their rules version | — |
 | Killed mid-walk, relaunched | Accepted: a walk doesn't resume; saved points are judged by the server's rules (R4) | — |
 | Corrupt saved copy | Built-in rules, still refreshes (R3) | corrupted / wrong shape; broken storage — red when load errors aren't caught |
-| App updated with newer built-in rules | The newer built-in rules are used, not the older saved copy, and the next refresh asks without a fingerprint (R1–R3) | saved copy older than the built-in one — red when loading doesn't compare versions |
+| App updated with newer built-in rules | **Accepted by the owner:** the app keeps the saved copy, the last rules the server sent, because the server judges the walk; the walk-start refresh fetches newer ones (D1). Preferring newer built-in rules would go wrong whenever the server is behind the app (an app release before the server deploy, or a server rollback) | — |
 | Server restart or bad config | A bad or missing number stops startup (R4) | server refuses to start — red without `ValidateOnStart`; a test per setting that is missing — red without `GameRulesPresenceValidator` (without it, a missing `SkipNeighbors` starts the server); a test per bad value (all 14 settings and the speed pair) — red when that setting's check is removed |
 | Server updated between walks, app kept open | The next walk starts on the new rules: starting a walk checks for them, waiting up to the D1 limit (R1, R2). If that request is slow or fails, the walk starts on the rules it has | walk start asks the server itself — red when `refreshWithin` doesn't start a refresh; its own request is slow — red when `refreshWithin` waits for it without the limit; its own request fails — red when the failure reaches `startJourney` |
 | Captive portal (HTML reply) / server error (503) | Current rules kept, saved copy untouched (R3). Both reach refresh as a `DioException` | captive portal; server down — through the real `ApiService`, Dio and parser, with a positive control (real rules through the same setup apply) — red when refresh lets the exception escape (e.g. rethrows it) |
@@ -147,7 +147,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Server and phone disagree on field names or types | Mitigated: one shared sample, `tests/contracts/client_rules.json`, tested on both sides (same limit as above) |
 | A fixed number comes back in the server's loop or anti-cheat code | Mitigated: each of the 12 settings the server's loop and anti-cheat code reads has a "changing it changes the result" test (`ServicesUseRulesTests`, 3 from 3/9 and 9 from 7/9). (The GPS accuracy threshold is checked at startup and passed on to the phone, but no server check uses it yet; its server test comes with FR3.) |
 | Dev mock walks stop passing anti-cheat after tuning | Mitigated: the mock-walk tests read the anti-cheat values from `appsettings.json`, and CI and `verify.sh` run them (from 9/9) |
-| A rules version doesn't identify one rule set | A setting can change without a version bump (the app still notices through the fingerprint), and the fingerprint covers only the five settings sent to the phone. Deferred to FR9: each walk stores a fingerprint of the full rule set, not only the version (requirements.md → FR9) |
+| A rules version doesn't identify one rule set | A setting can change without a version bump (the app still notices through the fingerprint), and the fingerprint covers only the four settings sent to the phone (plus the version). Deferred to FR9: each walk stores a fingerprint of the full rule set, not only the version (requirements.md → FR9) |
 | Phone mishandles the ETag | Mitigated: `getRules` tests for quotes, 304, a missing ETag and a weak `W/"…"` one (a weak one was kept with its `W/` and never matched again; fixed) |
 | Other code uses the module's internal classes | Mitigated: `RuleSettings` and both validators are internal; a test lists the allowed public types |
 | A non-Dio error during refresh | Mitigated: refresh catches every exception and logs the unexpected ones as severe. A bug (a Dart `Error`) still reaches the crash reporter; the rules are kept and later refreshes still run |
@@ -201,8 +201,9 @@ handling, and refresh's catch (captive portal, 503).
 
 ## Work done in PR 9/9 (from the final audit on master)
 
-1. After an app update, a saved copy older than the built-in rules is ignored: the app uses the built-in rules and
-   its next refresh asks without a fingerprint (test: saved copy older than the built-in one).
+1. The "app updated with newer built-in rules" moment is in the matrix, accepted by the owner: the app keeps the
+   last rules the server sent. (Preferring the newer built-in rules was tried and dropped in review: it goes wrong
+   whenever the server is behind the app.)
 2. CI and `scripts/verify.sh` run `mobile/test/mock_walk_engine_test.dart` too, so the mock-walk check against
    `appsettings.json` guards every change.
 3. Spec: FR9 stores a fingerprint of the full rule set per walk, because a version number alone doesn't identify one.

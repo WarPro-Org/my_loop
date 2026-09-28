@@ -70,7 +70,6 @@ Every tunable number lives in one place so the rules can be tuned from real test
   claim code.
 - A walk starts on the newest rules the server has, if the app can fetch them within 3 seconds; otherwise on the
   rules the app already has. The phone keeps a walk's rules for the whole walk.
-- After an app update, the app uses its new built-in rules if they are newer than the copy it saved earlier.
 - Left to later FRs (agreed with the owner):
   - Until FR9 stores each walk's rules (version and fingerprint), the server judges a walk's points by the rules it has when they
     arrive, so a server update in the middle of a walk changes how the rest of that walk is judged.

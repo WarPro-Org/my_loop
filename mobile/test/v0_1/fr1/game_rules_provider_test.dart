@@ -125,17 +125,6 @@ void main() {
     expect((await _settle(container)).version, 5);
   });
 
-  test('after an app update with newer built-in rules, an older saved copy is not used', () async {
-    final older = defaultGameRules.version - 1;
-    final source = _FakeSource(offline: true);
-    final container = _container(_MemoryStore(_version(older)), source);
-
-    expect((await _settle(container)).version, defaultGameRules.version,
-        reason: 'the built-in rules are newer than the saved copy');
-    expect(source.askedWithTags.first, isNull,
-        reason: 'the refresh asks without the old fingerprint, so the server sends its rules in full');
-  });
-
   test('changed server rules replace the current ones and are saved', () async {
     final store = _MemoryStore(_version(5));
     final source = _FakeSource(serverRules: _version(6));
