@@ -139,7 +139,8 @@ make_scenarios() {
   mkdir -p .github .claude/skills docs/versions/1/0.1/design tests/Fr9
   cp "$root/CLAUDE.md" . && cp "$root/.github/gate-rows.tsv" .github/
   for dir in "$root"/.claude/skills/*/; do mkdir -p ".claude/skills/$(basename "$dir")" && touch ".claude/skills/$(basename "$dir")/SKILL.md"; done
-  echo 'public void Foo_works() {}' >tests/Fr9/ATests.cs
+  printf '[Fact]\npublic void Foo_works() {}\nprivate void Helper() {}\n' >tests/Fr9/ATests.cs
+  printf "test(\n    'a long name', () {});\ntest('it\\\\'s done', () {});\nexpect(1);\n" >tests/Fr9/a_test.dart
   catalogue "$1" >docs/scenarios.md
   design_doc "$(for id in $1; do echo "$id|n/a|not in this area"; done)" >docs/versions/1/0.1/design/fr9-x.md
   g add -A && g commit -qm base
@@ -170,11 +171,21 @@ expect fail "n/a without a reason" "$(body 'none' '')" "NET-2 is 'n/a' with no r
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/FR5 owns it/later}"
 expect fail "open without an owner" "$(body 'none' '')" "NET-3 is 'open' with no owner"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/Bar_works}"
-expect fail "covered names a test that isn't in the file" "$(body 'none' '')" 'names the test "Bar_works", which isn'"'"'t a test'
+expect fail "covered names a test that isn't in the file" "$(body 'none' '')" 'names the test "Bar_works", which isn'"'"'t the full name'
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/works}"
-expect fail "a quoted name that is only part of a test's name" "$(body 'none' '')" 'names the test "works", which isn'"'"'t a test'
+expect fail "a quoted name that is only part of a test's name" "$(body 'none' '')" 'names the test "works", which isn'"'"'t the full name'
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/public void}"
 expect fail "a quoted name that isn't a test declaration" "$(body 'none' '')" 'names the test "public void"'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/Helper}"
+expect fail "a quoted C# helper that isn't a test" "$(body 'none' '')" 'names the test "Helper"'
+OTHER_ROWS=${GOOD_ROWS#*$'\n'}
+dart_row() { printf 'NET-1|covered|`tests/Fr9/a_test.dart` %s\n%s' "$1" "$OTHER_ROWS"; }
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"a long name", "it'"'"'s done"')"
+expect pass "Dart names on the next line and with an apostrophe" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"a long"')"
+expect fail "a prefix of a Dart test name" "$(body 'none' '')" 'names the test "a long"'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"expect"')"
+expect fail "a Dart call that isn't a test" "$(body 'none' '')" 'names the test "expect"'
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ \"Foo_works\"/}"
 expect fail "covered without a quoted test name" "$(body 'none' '')" "NET-1 is 'covered' but names no test in double quotes"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/tests\/Fr9\/ATests.cs/tests\/Fr9}"

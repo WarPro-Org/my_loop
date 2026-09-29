@@ -122,8 +122,17 @@ check_gate_rows() {
 # the PR's merge commit, so a PR that adds an ID must answer it everywhere in the same PR.
 catalogue_ids() { git show "$1:$SCENARIOS" 2>/dev/null | grep -oE '^\| [A-Z]+-[0-9]+ \|' | grep -oE '[A-Z]+-[0-9]+'; }
 
+# The test names a file declares, one per line: Dart test('…') / testWidgets("…") (the name may start on
+# the next line; \' inside the name is read as '), or C# [Fact]/[Theory] methods.
+test_names() {
+  case "$1" in
+    *.dart) perl -0ne 'while (/\b(?:test|testWidgets)\(\s*(?:(\x27)((?:[^\x27\\]|\\.)*)\x27|"((?:[^"\\]|\\.)*)")/g) { my $n = defined $2 ? $2 : $3; $n =~ s/\\(.)/$1/g; print "$n\n" }' ;;
+    *.cs) perl -0ne 'print "$1\n" while /\[(?:Fact|Theory)\b[^\]]*\](?:\s*\[[^\]]*\])*\s*public\s+(?:async\s+)?(?:void|Task)\s+(\w+)\s*\(/g' ;;
+  esac
+}
+
 check_design_doc_scenarios() {
-  local doc=$1 ids=$2 table id status evidence path paths names name contents seen="" missing=()
+  local doc=$1 ids=$2 table id status evidence path paths names name tests seen="" missing=()
   # Only the '## Scenarios' section counts; rows inside a code fence or an HTML comment don't.
   table=$(git show "$merge:$doc" 2>/dev/null | perl -0pe 's/<!--.*?-->//gs' \
     | awk '/^```/{fence = !fence; next} fence{next} /^## /{on = ($0 ~ /^## Scenarios[[:space:]]*$/); next} on')
@@ -144,19 +153,18 @@ check_design_doc_scenarios() {
         names=$(grep -oE '"[^"]+"' <<<"$evidence" | tr -d '"' || true)
         [[ -n "$paths" ]] || problems+=("$doc: $id is 'covered' but names no test file in backticks.")
         [[ -n "$names" ]] || problems+=("$doc: $id is 'covered' but names no test in double quotes.")
-        contents=""
+        # Each named file must exist; each quoted name must be exactly the name of a test in one of them.
+        tests=""
         for path in $paths; do
           if [[ "$(git cat-file -t "$merge:$path" 2>/dev/null)" == blob ]]; then
-            contents+=$(git show "$merge:$path")$'\n'
+            tests+=$(git show "$merge:$path" | test_names "$path")$'\n'
           else
             problems+=("$doc: $id names $path, which isn't a file.")
           fi
         done
         while IFS= read -r name; do
-          [[ -z "$name" || -z "$contents" ]] && continue
-          # The name must start a test declaration: Dart test('<name>…') / testWidgets, or a C# method <name>(.
-          grep -qF -e "test('$name" -e "test(\"$name" -e "testWidgets('$name" -e "testWidgets(\"$name" -e " $name(" <<<"$contents" \
-            || problems+=("$doc: $id names the test \"$name\", which isn't a test in its test file(s).")
+          [[ -z "$name" || -z "${tests//$'\n'/}" ]] && continue
+          grep -qxF -- "$name" <<<"$tests" || problems+=("$doc: $id names the test \"$name\", which isn't the full name of a test in its test file(s).")
         done <<<"$names" ;;
       n/a|accepted)
         grep -qE '[A-Za-z]{3,}' <<<"$evidence" || problems+=("$doc: $id is '$status' with no reason.") ;;
