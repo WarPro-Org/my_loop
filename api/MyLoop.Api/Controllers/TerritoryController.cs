@@ -46,13 +46,14 @@ public class TerritoryController : ControllerBase
         [FromQuery] double maxLat,
         [FromQuery] double maxLng)
     {
+        // Resolve the caller first, so no request value decides whether the check runs (CodeQL).
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
         // The double binder accepts NaN/Infinity/huge values; reject them before they reach
         // the region-set computation, which must only ever see a real, bounded bbox (#114).
         if (!ViewportBounds.IsValid(minLat, minLng, maxLat, maxLng))
             return BadRequest(InvalidViewportMessage);
-
-        var callerId = await _currentUser.TryGetUserIdAsync();
-        if (callerId is null) return Unauthorized();
 
         var viewport = await _territoryService.GetTerritoriesInViewport(callerId.Value, minLat, minLng, maxLat, maxLng);
         // The body stays the bare cell array the mobile client already parses; truncation is
