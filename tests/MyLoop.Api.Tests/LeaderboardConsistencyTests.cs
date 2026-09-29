@@ -88,8 +88,9 @@ public class LeaderboardConsistencyTests : IAsyncLifetime
         await using var db = NewDb();
         var board = await NewService(db).GetLeaderboard(0, 0, tied, "global");
 
-        // Competition ranking: 100, 100, 90 → ranks 1, 1, 3 — not positional 1, 2, 3.
-        Assert.Equal([1, 1, 3], board.Top.Select(e => e.Rank));
+        // Competition ranking: 100, 100, 90 → ranks 1, 1, 3 — not positional 1, 2, 3. Single-player
+        // 0.1 (bug B1): the board holds only the caller, shown with that same competition rank.
+        Assert.Equal([1], board.Top.Select(e => e.Rank));
         // The tied player's own rank matches what the board displays for them.
         Assert.Equal(1, board.MyRank!.Rank);
 
@@ -112,7 +113,7 @@ public class LeaderboardConsistencyTests : IAsyncLifetime
 
         // Scoped to city X: 100, 100, 60 → ranks 1, 1, 3 (dense positional re-ranking gave
         // the second tied player rank 2, disagreeing with the count-of-higher MyRank rule).
-        Assert.Equal([1, 1, 3], board.Top.Select(e => e.Rank));
+        Assert.Equal([3], board.Top.Select(e => e.Rank));
         Assert.DoesNotContain(board.Top, e => e.UserId == cityRival);
         Assert.Equal(3, board.MyRank!.Rank);
     }
@@ -128,7 +129,7 @@ public class LeaderboardConsistencyTests : IAsyncLifetime
         await using var db = NewDb();
         var board = await NewService(db).GetLeaderboard(0, 0, me, "global");
 
-        Assert.Equal(2, board.Top.Count);
+        Assert.Single(board.Top, e => e.UserId == me);
         Assert.NotNull(board.MyRank);
         Assert.Equal(2, board.MyRank!.Rank);
     }
@@ -208,11 +209,12 @@ public class LeaderboardConsistencyTests : IAsyncLifetime
         await using var check = NewDb();
         var board = await NewService(check).GetLeaderboard(0, 0, veteran, "global");
 
-        // The full snapshot is still served, with the newcomer appended to it.
-        Assert.Equal(3, board.Top.Count);
-        Assert.Contains(board.Top, e => e.UserId == veteran);
-        Assert.Contains(board.Top, e => e.UserId == newcomer);
+        // The latest snapshot is still served, with the newcomer appended to it. Single-player
+        // 0.1 (bug B1): each caller sees only their own row of it.
+        Assert.Single(board.Top, e => e.UserId == veteran);
         Assert.Equal(1, board.MyRank!.Rank);
+        var newcomerBoard = await NewService(check).GetLeaderboard(0, 0, newcomer, "global");
+        Assert.Single(newcomerBoard.Top, e => e.UserId == newcomer);
     }
 
     [Fact]

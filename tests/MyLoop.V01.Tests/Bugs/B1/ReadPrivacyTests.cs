@@ -159,9 +159,9 @@ public class ReadPrivacyTests
             .ReturnsAsync([]);
 
         await new PushNotificationService(db, fcm.Object, NullLogger<PushNotificationService>.Instance)
-            .NotifyHexStolen(Me, stolenCount: 2);
+            .NotifyHexStolen(Me);
 
-        Assert.Equal(["A player captured 2 of your hexes!"], bodies);
+        Assert.Equal(["Some of your hexes were captured."], bodies);
     }
 
     [Fact]
@@ -171,5 +171,25 @@ public class ReadPrivacyTests
 
         Assert.True(result.WasStolen);
         Assert.Null(result.PreviousOwnerName);
+    }
+
+    [Fact]
+    public async Task Lost_hexes_list_says_nothing_about_who_took_them()
+    {
+        await using var db = NewDb();
+        var takerClaim = Guid.NewGuid();
+        db.CellTransfers.Add(new CellTransfer
+        {
+            Id = Guid.NewGuid(), CellId = 1001, FromUserId = Me, ToUserId = Other, ClaimId = takerClaim,
+            TransferredAt = DateTime.UtcNow, Reason = TransferReason.Capture,
+        });
+        await db.SaveChangesAsync();
+
+        var lost = await Territory(db).GetStolenCells(Me, days: 7);
+
+        Assert.Equal(1, lost.TotalStolen);
+        var json = System.Text.Json.JsonSerializer.Serialize(lost);
+        Assert.DoesNotContain(Other.ToString(), json);
+        Assert.DoesNotContain(takerClaim.ToString(), json);
     }
 }

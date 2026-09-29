@@ -84,7 +84,7 @@ public class TerritoryHubAuthTests
     }
 
     [Fact]
-    public async Task JoinRegion_with_valid_region_id_subscribes()
+    public async Task JoinRegion_with_valid_region_id_joins_nothing()
     {
         const string regionId = "590686918550487039"; // a res-3 H3 cell id
         var groups = new Mock<IGroupManager>();
@@ -94,7 +94,8 @@ public class TerritoryHubAuthTests
 
         await hub.JoinRegion(regionId);
 
-        groups.Verify(g => g.AddToGroupAsync("conn-1", regionId, It.IsAny<CancellationToken>()), Times.Once);
+        // Single-player 0.1 (bug B1): no region broadcast exists, so nothing is joined.
+        groups.Verify(g => g.AddToGroupAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

@@ -181,6 +181,12 @@ public static class GameConstants
     /// that someone was blocked (DR-002b §7.1).
     /// </summary>
     public const string BlockedActorLabel = "A player";
+
+    /// <summary>
+    /// Body of the push sent when a player loses hexes. Single-player 0.1 (bug B1): it names no
+    /// one and gives no count that could hint at another player.
+    /// </summary>
+    public const string HexesCapturedPushBody = "Some of your hexes were captured.";
     /// <summary>Users loaded per page by the moderator rescan.</summary>
     public const int NameRescanPageSize = 500;
     /// <summary>Column size for stored name snapshots — above MaxDisplayNameLength so legacy names fit.</summary>

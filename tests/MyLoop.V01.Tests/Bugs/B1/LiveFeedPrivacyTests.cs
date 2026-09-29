@@ -65,6 +65,7 @@ public class LiveFeedPrivacyTests
         Assert.DoesNotContain(sent.All, m => m.Group == Region.ToString());
         var taker = Assert.Single(sent.All, m => m.Group == $"user_{Taker}");
         Assert.Equal("HexOwnershipChanged", taker.Method);
+        Assert.DoesNotContain(Loser.ToString(), taker.Json);
     }
 
     [Fact]

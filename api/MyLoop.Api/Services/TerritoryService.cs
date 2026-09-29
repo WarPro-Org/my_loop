@@ -680,26 +680,13 @@ public class TerritoryService : ITerritoryService
             .Where(t => t.FromUserId == userId && t.Reason != TransferReason.Decay
                      && t.TransferredAt >= since)
             .OrderByDescending(t => t.TransferredAt)
-            .Select(t => new StolenCellDetail
-            {
-                CellId = t.CellId,
-                ToUserId = t.ToUserId,
-                TransferredAt = t.TransferredAt,
-                ClaimId = t.ClaimId,
-            })
+            .Select(t => new StolenCellDetail { CellId = t.CellId, TransferredAt = t.TransferredAt })
             .ToListAsync();
-
-        var byStealer = stolen
-            .GroupBy(s => s.ToUserId)
-            .Select(g => new StealerSummary { UserId = g.Key, CellsStolen = g.Count() })
-            .OrderByDescending(g => g.CellsStolen)
-            .ToList();
 
         return new StolenCellsResponse
         {
             TotalStolen = stolen.Count,
             Since = since,
-            ByStealer = byStealer,
             Cells = stolen.Take(GameConstants.MaxStolenCellsResponse).ToList(),
         };
     }
@@ -1331,7 +1318,7 @@ public class TerritoryService : ITerritoryService
 
             foreach (var group in victimGroups)
             {
-                await _pushService.NotifyHexStolen(group.Key, group.Count());
+                await _pushService.NotifyHexStolen(group.Key);
             }
         }
         catch (Exception ex)

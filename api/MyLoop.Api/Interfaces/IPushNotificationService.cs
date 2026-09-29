@@ -9,7 +9,7 @@ public interface IPushNotificationService
     /// Notifies a user that their hexes were stolen. Single-player 0.1: the other player is
     /// never named (bug B1).
     /// </summary>
-    Task NotifyHexStolen(Guid victimUserId, int stolenCount);
+    Task NotifyHexStolen(Guid victimUserId);
 
     /// <summary>
     /// Registers or updates a device token for a user.
