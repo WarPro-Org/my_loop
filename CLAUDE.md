@@ -251,8 +251,8 @@ Write a Design Doc only after Gate 1 is approved. Must include:
 - **Known risk checklist:** Race conditions, offline edge cases, anti-cheat gaps — each either mitigated or explicitly accepted.
 - **Lifecycle matrix** (for state covered by `state-lifecycle-consistency`): every reader × every app moment, each with its test or
   an agreed "accepted" — see `state-lifecycle-consistency`.
-- **`## Scenarios` table:** every ID in `docs/scenarios.md`, each `covered` (test file), `n/a` (reason), `open` (owner FR
-  or task) or `accepted` (where the owner approved it). "PR rules" fails when an ID is missing.
+- **`## Scenarios` table:** every ID in `docs/scenarios.md`, each `covered` (test file in backticks and the test's
+  name in double quotes), `n/a` (reason), `open` (owner FR or task) or `accepted` (where the owner approved it). "PR rules" fails when an ID is missing.
 
 Do not write implementation code until the user explicitly approves the Design Doc. The doc lives at
 `docs/versions/<release>/<version>/design/frN-<name>.md`; approval = the owner merges its PR into master. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.

@@ -154,7 +154,9 @@ check_design_doc_scenarios() {
         done
         while IFS= read -r name; do
           [[ -z "$name" || -z "$contents" ]] && continue
-          grep -qF -- "$name" <<<"$contents" || problems+=("$doc: $id names the test \"$name\", which isn't in its test file(s).")
+          # The name must start a test declaration: Dart test('<name>…') / testWidgets, or a C# method <name>(.
+          grep -qF -e "test('$name" -e "test(\"$name" -e "testWidgets('$name" -e "testWidgets(\"$name" -e " $name(" <<<"$contents" \
+            || problems+=("$doc: $id names the test \"$name\", which isn't a test in its test file(s).")
         done <<<"$names" ;;
       n/a|accepted)
         grep -qE '[A-Za-z]{3,}' <<<"$evidence" || problems+=("$doc: $id is '$status' with no reason.") ;;

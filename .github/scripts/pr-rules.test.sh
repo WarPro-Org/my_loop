@@ -170,7 +170,11 @@ expect fail "n/a without a reason" "$(body 'none' '')" "NET-2 is 'n/a' with no r
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/FR5 owns it/later}"
 expect fail "open without an owner" "$(body 'none' '')" "NET-3 is 'open' with no owner"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/Bar_works}"
-expect fail "covered names a test that isn't in the file" "$(body 'none' '')" 'names the test "Bar_works", which isn'"'"'t in'
+expect fail "covered names a test that isn't in the file" "$(body 'none' '')" 'names the test "Bar_works", which isn'"'"'t a test'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/works}"
+expect fail "a quoted name that is only part of a test's name" "$(body 'none' '')" 'names the test "works", which isn'"'"'t a test'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/public void}"
+expect fail "a quoted name that isn't a test declaration" "$(body 'none' '')" 'names the test "public void"'
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ \"Foo_works\"/}"
 expect fail "covered without a quoted test name" "$(body 'none' '')" "NET-1 is 'covered' but names no test in double quotes"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/tests\/Fr9\/ATests.cs/tests\/Fr9}"

@@ -217,7 +217,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | ID | Status | Evidence |
 |---|---|---|
 | LIFE-1 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "a walk started right after launch waits for the saved rules" |
-| LIFE-2 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "first launch with no internet uses the built-in copy" |
+| LIFE-2 | open | #201: the built-in copy is used offline on first launch (`game_rules_provider_test.dart`), but no test checks that the next refresh still runs |
 | LIFE-3 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "a save cut off before it finishes never replaces the saved copy" |
 | LIFE-4 | open | FR9: the walk's pinned rules live only in memory and are lost when the app is killed |
 | LIFE-5 | n/a | Rules have no background work; they refresh only on app events |
@@ -228,7 +228,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | LIFE-10 | open | #201: an expired token offline makes a request hang in the sign-in interceptor, and the stuck refresh blocks all later ones |
 | LIFE-11 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "starts on the rules it has when its own request fails" |
 | NET-1 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "offline with a saved copy uses the saved copy" |
-| NET-2 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "the server is down (503)" |
+| NET-2 | open | #201: the 503 case keeps the rules (`game_rules_provider_test.dart`), but no test checks that a later refresh runs |
 | NET-3 | open | #201: walk start waits on a refresh already running, which may be stuck on a dead socket |
 | NET-4 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a captive portal (Wi-Fi sign-in page sent as HTML)" |
 | NET-5 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "a reconnect after being offline checks the rules again" |
@@ -236,7 +236,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | NET-7 | open | #201: same interceptor hang as LIFE-10 (the 401 after login is covered in `game_rules_provider_test.dart`) |
 | NET-8 | open | #201: no test sends a 403 or 404; the catalogue also asks for no endless retry |
 | NET-9 | open | #201: no test sends a 429 or checks that it is retried later |
-| NET-10 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a server reply the app cannot read keeps the current rules and the saved copy" |
+| NET-10 | open | #201: no test sends a 4xx (only a 200 with a broken body) to prove the rules and saved copy are kept and a later refresh asks again |
 | NET-11 | n/a | Rules show the user no rejection message |
 | AUTH-1 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "signing out keeps the rules the app already has" |
 | AUTH-2 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "logging in checks the rules again" |
@@ -253,7 +253,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | DEV-2 | n/a | FR1 asks for no permission |
 | DEV-3 | n/a | FR1 asks for no permission |
 | DEV-4 | n/a | FR1 asks for no permission |
-| DEV-5 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "broken phone storage still falls back to built-in rules and checks the server" |
+| DEV-5 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "broken phone storage still falls back to built-in rules and checks the server". "Shown" doesn't apply to rules: a storage failure falls back without a message, by design (logged as a warning) |
 | DEV-6 | n/a | Rules carry no timestamps |
 | DEV-7 | n/a | Rules have no background work |
 | DEV-8 | n/a | Rules run no timers |
@@ -262,7 +262,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | IN-1 | open | #201: `Infinity` passes `GameRulesValidator` |
 | IN-2 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Invalid_value_stops_startup_and_names_the_setting" |
 | IN-3 | open | #201: rule values have no upper bounds |
-| IN-4 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Missing_setting_stops_startup_and_names_it"; `mobile/test/v0_1/fr1/game_rules_test.dart` "rejects a response with a missing field" |
+| IN-4 | open | #201: a missing field is rejected on both sides (`GameRulesTests.cs`, `game_rules_test.dart`); null and wrong-type fields have no test |
 | IN-5 | covered | `mobile/test/v0_1/fr1/game_rules_test.dart` "accepts a response with a field it does not know" |
 | IN-6 | open | #201: `Loop:SkipNeighbors` has no effect from 0 to `MinPoints`; its test uses 40 |
 | IN-7 | open | #201: `MaxDistanceBetweenPoints` isn't checked against speed × interval + drift |
