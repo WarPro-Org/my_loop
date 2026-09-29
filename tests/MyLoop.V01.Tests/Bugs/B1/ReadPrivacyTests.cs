@@ -110,6 +110,19 @@ public class ReadPrivacyTests
     }
 
     [Fact]
+    public async Task Map_area_checks_the_caller_before_any_request_value()
+    {
+        var territory = new Mock<ITerritoryService>();
+        var signedOut = Mock.Of<ICurrentUser>(u => u.TryGetUserIdAsync() == Task.FromResult<Guid?>(null));
+        var controller = WithHttp(new TerritoryController(territory.Object, signedOut,
+            NullLogger<TerritoryController>.Instance));
+
+        // An invalid box must not decide whether the caller check runs (CodeQL).
+        Assert.IsType<UnauthorizedResult>(await controller.GetTerritoriesInViewport(double.NaN, 77.0, 13.0, 78.0));
+        territory.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task Another_players_hexes_are_refused_and_the_callers_own_are_served()
     {
         var territory = new Mock<ITerritoryService> { DefaultValue = DefaultValue.Empty };
