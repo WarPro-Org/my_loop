@@ -140,7 +140,9 @@ make_scenarios() {
   cp "$root/CLAUDE.md" . && cp "$root/.github/gate-rows.tsv" .github/
   for dir in "$root"/.claude/skills/*/; do mkdir -p ".claude/skills/$(basename "$dir")" && touch ".claude/skills/$(basename "$dir")/SKILL.md"; done
   printf '[Fact]\npublic void Foo_works() {}\nprivate void Helper() {}\n' >tests/Fr9/ATests.cs
-  printf "test(\n    'a long name', () {});\ntest('it\\\\'s done', () {});\nexpect(1);\n" >tests/Fr9/a_test.dart
+  printf "test(\n    'a long name', () {});\ntest('it\\\\'s done', () {});\ngroup('a group', () {});\ntest('split ' \"across \"\n  'lines', () {});\n" >tests/Fr9/a_test.dart
+  printf '[Theory]\n[InlineData(1)] // one\n[InlineData(2)]\npublic void With_comment(int x) {}\n' >tests/Fr9/BTests.cs
+  printf 'global using Xunit;\n' >tests/Fr9/GlobalUsings.cs
   catalogue "$1" >docs/scenarios.md
   design_doc "$(for id in $1; do echo "$id|n/a|not in this area"; done)" >docs/versions/1/0.1/design/fr9-x.md
   g add -A && g commit -qm base
@@ -184,8 +186,16 @@ make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '
 expect pass "Dart names on the next line and with an apostrophe" "$(body 'none' '')"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"a long"')"
 expect fail "a prefix of a Dart test name" "$(body 'none' '')" 'names the test "a long"'
-make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"expect"')"
-expect fail "a Dart call that isn't a test" "$(body 'none' '')" 'names the test "expect"'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"a group"')"
+expect fail "a Dart group that isn't a test" "$(body 'none' '')" 'names the test "a group"'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"split across lines"')"
+expect pass "a Dart name split into adjacent literals" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"split "')"
+expect fail "the first part of a split Dart name" "$(body 'none' '')" 'names the test "split "'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/BTests.cs\` \"With_comment}"
+expect pass "a C# Theory with a comment between its attributes" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/GlobalUsings.cs\` \"Anything_at_all}"
+expect fail "a file with no tests" "$(body 'none' '')" "NET-1 names no file that declares a test"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ \"Foo_works\"/}"
 expect fail "covered without a quoted test name" "$(body 'none' '')" "NET-1 is 'covered' but names no test in double quotes"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/tests\/Fr9\/ATests.cs/tests\/Fr9}"

@@ -223,7 +223,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | LIFE-5 | n/a | Rules have no background work; they refresh only on app events |
 | LIFE-6 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "returning to the app checks the rules again" |
 | LIFE-7 | accepted | "App updated with newer built-in rules": the saved copy wins; approved by the owner in #219 |
-| LIFE-8 | covered | `mobile/test/v0_1/fr1/rules_store_test.dart` "a corrupted saved copy is ignored instead of crashing", "a saved copy with an unexpected shape is ignored instead of crashing" |
+| LIFE-8 | covered | `mobile/test/v0_1/fr1/rules_store_test.dart` "a corrupted saved copy is ignored instead of crashing", "a saved copy with an unexpected shape is ignored instead of crashing"; `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "first launch with no internet uses the built-in copy" (nothing loaded falls back to the built-in copy) |
 | LIFE-9 | open | #201: one request at a time and no lost refresh are tested (`game_rules_provider_test.dart`, `rules_store_test.dart`), but nothing proves `RulesStore` is the only writer of the saved file |
 | LIFE-10 | open | #201: an expired token offline makes a request hang in the sign-in interceptor, and the stuck refresh blocks all later ones |
 | LIFE-11 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "starts on the rules it has when its own request fails" |

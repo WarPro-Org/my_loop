@@ -123,11 +123,18 @@ check_gate_rows() {
 catalogue_ids() { git show "$1:$SCENARIOS" 2>/dev/null | grep -oE '^\| [A-Z]+-[0-9]+ \|' | grep -oE '[A-Z]+-[0-9]+'; }
 
 # The test names a file declares, one per line: Dart test('…') / testWidgets("…") (the name may start on
-# the next line; \' inside the name is read as '), or C# [Fact]/[Theory] methods.
+# the next line, may be split into adjacent literals, and \' is read as '), or C# [Fact]/[Theory] methods
+# (comments may sit between their attributes).
 test_names() {
   case "$1" in
-    *.dart) perl -0ne 'while (/\b(?:test|testWidgets)\(\s*(?:(\x27)((?:[^\x27\\]|\\.)*)\x27|"((?:[^"\\]|\\.)*)")/g) { my $n = defined $2 ? $2 : $3; $n =~ s/\\(.)/$1/g; print "$n\n" }' ;;
-    *.cs) perl -0ne 'print "$1\n" while /\[(?:Fact|Theory)\b[^\]]*\](?:\s*\[[^\]]*\])*\s*public\s+(?:async\s+)?(?:void|Task)\s+(\w+)\s*\(/g' ;;
+    *.dart) perl -0ne '
+      my $lit = qr/\x27(?:[^\x27\\]|\\.)*\x27|"(?:[^"\\]|\\.)*"/;
+      while (/\b(?:test|testWidgets)\(\s*((?:$lit)(?:\s*(?:$lit))*)/g) {
+        my $all = $1; my $n = "";
+        while ($all =~ /\x27((?:[^\x27\\]|\\.)*)\x27|"((?:[^"\\]|\\.)*)"/g) { $n .= defined $1 ? $1 : $2 }
+        $n =~ s/\\(.)/$1/g; print "$n\n";
+      }' ;;
+    *.cs) perl -0ne 'print "$1\n" while /\[(?:Fact|Theory)\b[^\]]*\](?:\s*(?:\[[^\]]*\]|\/\/[^\n]*))*\s*public\s+(?:async\s+)?(?:void|Task)\s+(\w+)\s*\(/g' ;;
   esac
 }
 
@@ -162,6 +169,7 @@ check_design_doc_scenarios() {
             problems+=("$doc: $id names $path, which isn't a file.")
           fi
         done
+        [[ -n "$paths" && -z "${tests//$'\n'/}" ]] && problems+=("$doc: $id names no file that declares a test.")
         while IFS= read -r name; do
           [[ -z "$name" || -z "${tests//$'\n'/}" ]] && continue
           grep -qxF -- "$name" <<<"$tests" || problems+=("$doc: $id names the test \"$name\", which isn't the full name of a test in its test file(s).")
