@@ -80,7 +80,7 @@ checked by a machine.
 | PRIV-3 | Personal data in logs (coordinates, home, names) | Not logged, or coarsened | audit E4 |
 | PRIV-4 | Delete account | No row with the user's id is left in any table, cache or identity provider (Firebase, Apple token revoked) | audit A4, E3 |
 | PRIV-5 | Delete runs while a write for the same user is running | The write can't land after the delete (same lock) | audit A4 |
-| PRIV-6 | A reply that hints another player exists or owns a place (a "stolen" flag, a cooldown skip, an id-existence 404) | Replies say nothing about other players in 0.x | B1 review |
+| PRIV-6 | A reply that hints another player exists or owns a place (a "stolen" flag, a cooldown skip, an id-existence 404, a rank or player count) | Replies say nothing about other players in 0.x | B1 review |
 
 ## DEV — the phone
 
