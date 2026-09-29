@@ -133,9 +133,11 @@ public class UsersController : ControllerBase
     [HttpGet("{id:guid}")]
     public async Task<IActionResult> GetById([FromRoute] Guid id)
     {
+        // Single-player 0.1: a caller may read only their own account (bug B1).
+        if (await DenySelf(id) is { } deny) return deny;
+
         var user = await _userService.GetById(id);
         if (user == null) return NotFound();
-        // Any authenticated user can call this for any id → public projection only.
         return Ok(UserResponse.FromUser(user));
     }
 
@@ -197,11 +199,13 @@ public class UsersController : ControllerBase
     }
 
     /// <summary>
-    /// Get a user's rich public profile (includes rank, stats, etc.)
+    /// Get the caller's rich profile (includes rank, stats, etc.). Private in single-player 0.1 (bug B1).
     /// </summary>
     [HttpGet("{id:guid}/profile")]
     public async Task<IActionResult> GetProfile([FromRoute] Guid id)
     {
+        if (await DenySelf(id) is { } deny) return deny;
+
         var profile = await _userService.GetRichProfile(id);
         if (profile == null) return NotFound();
         return Ok(profile);

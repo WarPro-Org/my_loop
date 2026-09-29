@@ -101,8 +101,10 @@ public class HexGridBboxValidationTests
 
 public class TerritoryControllerViewportValidationTests
 {
+    private static readonly Guid Caller = Guid.NewGuid();
+
     private static TerritoryController Build(Mock<ITerritoryService> territory) =>
-        new(territory.Object, Mock.Of<ICurrentUser>(), NullLogger<TerritoryController>.Instance)
+        new(territory.Object, Mock.Of<ICurrentUser>(u => u.TryGetUserIdAsync() == Task.FromResult<Guid?>(Caller)), NullLogger<TerritoryController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -118,7 +120,7 @@ public class TerritoryControllerViewportValidationTests
 
         Assert.IsType<BadRequestObjectResult>(result);
         territory.Verify(t => t.GetTerritoriesInViewport(
-            It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()), Times.Never);
+            It.IsAny<Guid>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>(), It.IsAny<double>()), Times.Never);
     }
 
     [Theory]
@@ -130,7 +132,7 @@ public class TerritoryControllerViewportValidationTests
         double minLat, double minLng, double maxLat, double maxLng)
     {
         var territory = new Mock<ITerritoryService>();
-        territory.Setup(t => t.GetTerritoriesInViewport(minLat, minLng, maxLat, maxLng))
+        territory.Setup(t => t.GetTerritoriesInViewport(Caller, minLat, minLng, maxLat, maxLng))
             .ReturnsAsync(new TerritoryViewportResult { Cells = [], Truncated = false });
         var controller = Build(territory);
 

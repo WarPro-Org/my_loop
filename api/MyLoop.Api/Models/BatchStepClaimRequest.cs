@@ -71,6 +71,7 @@ public class BatchStepResult
     public long? CellId { get; set; }
     public double[][]? Boundary { get; set; }
     public bool WasStolen { get; set; }
+    /// <summary>Always null in single-player 0.1 (bug B1); kept so older apps still parse the reply.</summary>
     public string? PreviousOwnerName { get; set; }
     /// <summary>Reason if not claimed: "owned" | "cooldown" | "duplicate".</summary>
     public string? SkipReason { get; set; }

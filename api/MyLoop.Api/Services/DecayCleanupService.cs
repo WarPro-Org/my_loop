@@ -223,7 +223,7 @@ public class DecayCleanupService : BackgroundService
     }
 
     internal static List<HexReleasedEvent> ToReleaseEvents(IEnumerable<DecayedCellRow> released) =>
-        released.Select(r => new HexReleasedEvent(r.CellId.ToString(), r.ParentCellId)).ToList();
+        released.Select(r => new HexReleasedEvent(r.CellId.ToString(), r.ParentCellId, r.OwnerId)).ToList();
 }
 
 /// <summary>A cell released by the decay reaper (see ReleaseDecayedCellsAsync).</summary>

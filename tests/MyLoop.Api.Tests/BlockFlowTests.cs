@@ -194,8 +194,8 @@ public class BlockFlowTests : IAsyncLifetime
         await using (var db = NewDb())
         {
             var push = new PushNotificationService(db, sender, NullLogger<PushNotificationService>.Instance);
-            await push.NotifyHexStolen(victim, blockedThief, "Rude Name", 2);
-            await push.NotifyHexStolen(victim, otherThief, "Kai", 1);
+            await push.NotifyHexStolen(victim, 2);
+            await push.NotifyHexStolen(victim, 1);
         }
 
         Assert.Equal($"{GameConstants.BlockedActorLabel} captured 2 of your hexes!", sender.Bodies[0]);

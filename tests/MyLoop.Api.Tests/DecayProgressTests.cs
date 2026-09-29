@@ -97,7 +97,7 @@ public class DecayProgressTests : IAsyncLifetime
         var userId = await SeedUserWithTwoCells();
 
         await using var db = NewDb();
-        var cells = (await NewService(db).GetTerritoriesInViewport(12.0, 77.0, 13.0, 78.0)).Cells;
+        var cells = (await NewService(db).GetTerritoriesInViewport(userId, 12.0, 77.0, 13.0, 78.0)).Cells;
 
         var slow = cells.Single(c => c.CellId == SlowDecayCellId);
         var local = cells.Single(c => c.CellId == LocalCellId);

@@ -122,8 +122,8 @@ public class ViewportBucketFirstTests : IAsyncLifetime
         await using var db = NewDb();
         var service = NewService(db, 1L);
 
-        var first = await service.GetTerritoriesInViewport(12.0, 77.0, 13.0, 78.0);
-        var second = await service.GetTerritoriesInViewport(12.0, 77.0, 13.0, 78.0);
+        var first = await service.GetTerritoriesInViewport(owner, 12.0, 77.0, 13.0, 78.0);
+        var second = await service.GetTerritoriesInViewport(owner, 12.0, 77.0, 13.0, 78.0);
 
         var expected = ids.OrderBy(id => id).Take(GameConstants.MaxViewportCells).ToList();
         Assert.Equal(expected, first.Cells.Select(c => c.CellId).ToList());
@@ -139,7 +139,7 @@ public class ViewportBucketFirstTests : IAsyncLifetime
         await SeedCells(owner, parentCellId: 7L, ids, centerLat: 30.5);
 
         await using var db = NewDb();
-        var result = await NewService(db, 7L).GetTerritoriesInViewport(30.0, 77.0, 31.0, 78.0);
+        var result = await NewService(db, 7L).GetTerritoriesInViewport(owner, 30.0, 77.0, 31.0, 78.0);
 
         // Take(cap + 1) comes back with exactly cap rows: every cell is served, nothing was cut.
         Assert.Equal(ids, result.Cells.Select(c => c.CellId).ToList());
@@ -185,7 +185,7 @@ public class ViewportBucketFirstTests : IAsyncLifetime
         await using (var db = NewDb(capture))
         {
             var result = await NewService(db, targetParent)
-                .GetTerritoriesInViewport(targetLat, 77.0, targetLat + 0.01, 78.0);
+                .GetTerritoriesInViewport(owner, targetLat, 77.0, targetLat + 0.01, 78.0);
             Assert.NotEmpty(result.Cells);
             Assert.False(result.Truncated);
         }
@@ -314,7 +314,7 @@ public class ViewportBucketFirstTests : IAsyncLifetime
         // Zoomed-out viewports get an empty region set ("too wide to prune") — every
         // in-bbox cell must still be served, deterministically ordered.
         await using var db = NewDb();
-        var result = await NewService(db /* no region ids */).GetTerritoriesInViewport(20.0, 77.0, 21.0, 78.0);
+        var result = await NewService(db /* no region ids */).GetTerritoriesInViewport(owner, 20.0, 77.0, 21.0, 78.0);
 
         Assert.Equal([3001L, 3002L], result.Cells.Select(c => c.CellId).ToList());
         Assert.False(result.Truncated);
@@ -330,7 +330,7 @@ public class ViewportBucketFirstTests : IAsyncLifetime
         await SeedCells(owner, parentCellId: 99L, [2004L]);
 
         await using var db = NewDb();
-        var result = await NewService(db, 11L, 12L).GetTerritoriesInViewport(12.0, 77.0, 13.0, 78.0);
+        var result = await NewService(db, 11L, 12L).GetTerritoriesInViewport(owner, 12.0, 77.0, 13.0, 78.0);
 
         Assert.Equal([2001L, 2002L, 2003L], result.Cells.Select(c => c.CellId).ToList());
         Assert.False(result.Truncated);

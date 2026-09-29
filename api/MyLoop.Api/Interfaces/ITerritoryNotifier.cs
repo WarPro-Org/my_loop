@@ -7,13 +7,15 @@ namespace MyLoop.Api.Interfaces;
 public interface ITerritoryNotifier
 {
     /// <summary>
-    /// Notifies all clients subscribed to affected regions that hex ownership changed.
+    /// Tells each owner about their own hexes' ownership changes: the new owner gets
+    /// HexOwnershipChanged and the previous owner gets HexesReleased. Nobody hears about another
+    /// player's hexes (single-player 0.1, bug B1).
     /// </summary>
     Task NotifyHexOwnershipChanged(IReadOnlyList<HexChangeEvent> changes);
 
     /// <summary>
-    /// Notifies region subscribers that the decay reaper released hexes — clients must
-    /// remove them or keep rendering ghost territory until their next viewport poll (#104).
+    /// Tells each former owner that the decay reaper released their hexes — the client must
+    /// remove them or keep rendering ghost territory until its next viewport poll (#104).
     /// </summary>
     Task NotifyHexesReleasedAsync(IReadOnlyList<HexReleasedEvent> released);
 
@@ -47,7 +49,7 @@ public interface ITerritoryNotifier
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Represents a single hex ownership change for real-time broadcast (public, region-scoped).
+/// A single hex ownership change, sent only to the players it belongs to (bug B1).
 /// </summary>
 public record HexChangeEvent(
     string H3Index,
@@ -61,13 +63,13 @@ public record HexChangeEvent(
 );
 
 /// <summary>
-/// A hex released by decay, for the region-scoped HexesReleased broadcast.
-/// Ids travel as strings: H3 ids exceed 2^53, and the region group key is
-/// already the stringified parent id (see TerritoryHub.JoinRegion).
+/// A hex released by decay, sent as HexesReleased to its former owner only (bug B1).
+/// Ids travel as strings: H3 ids exceed 2^53.
 /// </summary>
 public record HexReleasedEvent(
     string H3Index,
-    long ParentCellId
+    long ParentCellId,
+    Guid OwnerId
 );
 
 /// <summary>

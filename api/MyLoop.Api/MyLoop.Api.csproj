@@ -11,6 +11,7 @@
     <!-- Expose internal (test-only) helpers on background services to the test assembly, so
          decay/streak/reconciliation SQL can be exercised directly without widening the public API. -->
     <InternalsVisibleTo Include="MyLoop.Api.Tests" />
+    <InternalsVisibleTo Include="MyLoop.V01.Tests" />
   </ItemGroup>
 
   <ItemGroup>
