@@ -253,7 +253,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | DEV-2 | n/a | FR1 asks for no permission |
 | DEV-3 | n/a | FR1 asks for no permission |
 | DEV-4 | n/a | FR1 asks for no permission |
-| DEV-5 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "broken phone storage still falls back to built-in rules and checks the server". "Shown" doesn't apply to rules: a storage failure falls back without a message, by design (logged as a warning) |
+| DEV-5 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "broken phone storage still falls back to built-in rules and checks the server". The 'is shown' part doesn't apply to rules: a storage failure falls back without a message, by design (logged as a warning) |
 | DEV-6 | n/a | Rules carry no timestamps |
 | DEV-7 | n/a | Rules have no background work |
 | DEV-8 | n/a | Rules run no timers |
