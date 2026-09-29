@@ -27,22 +27,17 @@ public class StolenCellsResponse
 {
     public int TotalStolen { get; set; }
     public DateTime Since { get; set; }
-    public List<StealerSummary> ByStealer { get; set; } = [];
     public List<StolenCellDetail> Cells { get; set; } = [];
 }
 
-public class StealerSummary
-{
-    public Guid UserId { get; set; }
-    public int CellsStolen { get; set; }
-}
-
+/// <summary>
+/// A hex the caller lost. Single-player 0.1 (bug B1): nothing about the player who took it
+/// (id, claim, per-player totals) leaves the server.
+/// </summary>
 public class StolenCellDetail
 {
     public long CellId { get; set; }
-    public Guid ToUserId { get; set; }
     public DateTime TransferredAt { get; set; }
-    public Guid ClaimId { get; set; }
 }
 
 public class CellHistoryResponse

@@ -164,7 +164,8 @@ public class DecayReleaseAuditTests : IAsyncLifetime
 
         // Losing a hex to the reaper is not a theft: only the real steal is listed.
         Assert.Equal(1, revenge.TotalStolen);
-        Assert.Equal(attacker, Assert.Single(revenge.Cells).ToUserId);
+        Assert.Equal(5001L, Assert.Single(revenge.Cells).CellId);
+        _ = attacker;
     }
 
     [Fact]

@@ -1,7 +1,7 @@
 # Bug B1 — Other players' land, names and activity are visible (breaks single-player 0.1)
 
 **Status:** approved by the owner 2026-09-29 (Bug Gate 1); task #223. Found by the 2026-09-29 blind audit (A1).
-**Scenarios:** PRIV-1, PRIV-2, LEG-1 (`docs/scenarios.md`).
+**Scenarios:** PRIV-1, PRIV-2, PRIV-6, LEG-1 (`docs/scenarios.md`).
 
 ## Symptom
 
@@ -38,6 +38,7 @@ The code is the multiplayer beta, which was built so everyone sees everyone. The
 - **Live updates:** the phone gets only its own changes. It still receives them on the connection it already opens, but they arrive through its personal group instead of a region group.
 - **Leaderboard tab and other players' profiles:** these stop working on current app builds and show an error screen, until the app release that hides them.
 - **Old app builds** keep calling `JoinRegion`. It must not throw, or the app's reconnect loop retries forever.
+- **In-app theft alert stops.** A player who loses a hex now gets `HexesReleased`, not `HexOwnershipChanged`, so the app's in-app theft alert (`theft_alerts.dart`) no longer fires. The push still arrives. PR 2 removes the in-app alert.
 - **Stealing is not changed here.** Ownership still transfers, which is a data-loss bug and gets its own report. Only the push no longer names the other player.
 - **Rivals (after 0.1):** the FR that adds rivals decides what becomes public again. This fix adds no switch "for later" (CLAUDE.md, "Stay on the goal").
 
@@ -50,9 +51,12 @@ Two PRs, server first, so users' data is protected as soon as the server deploys
 2. **Map area** `GET /api/territories`: returns only the caller's own hexes.
 3. **Another player's hexes, user and profile** (`/territories/user/{id}`, `/users/{id}`, `/users/{id}/profile`): use the same self-only check as the private routes. Another id gets 403.
 4. **Leaderboard:** returns only the caller's own entry and rank, with no other players.
-5. **Stolen-hex push:** says "Some of your hexes were captured", with no name.
+5. **Stolen-hex push:** says "Some of your hexes were captured.", with no name and no count.
+6. **Lost-hexes list** (`/territories/stolen/{me}`): only the cells and times, never who took them. The live feed never sends the new owner the previous owner's id, and a claim reply never names them.
 
-**PR 2 — app:** hide the leaderboard tab and the tap-through to other players' profiles, and move live updates to the personal group.
+**Not in this fix (each has an owner):** a claim reply still shows that a hex belonged to someone (`WasStolen`, the `cooldown` skip, `StolenFromOthers`). That goes away when stealing is removed, which FR6 owns. The block and report routes answer 404 for an unknown id, so they reveal whether an id exists; FR12 owns them. Both are scenario PRIV-6.
+
+**PR 2 — app:** hide the leaderboard tab, the tap-through to other players' profiles and the in-app theft alert, and move live updates to the personal group.
 
 ## Tests that will prove it (each proven red with its fix removed)
 
@@ -64,5 +68,7 @@ Two PRs, server first, so users' data is protected as soon as the server deploys
 | PRIV-1 | `/territories/user/{other}`, `/users/{other}` and `/users/{other}/profile` return 403; the caller's own id returns 200 |
 | PRIV-1 | The leaderboard holds no other player |
 | PRIV-1 | The stolen-hex push text contains no other player's name |
+| PRIV-1 | The lost-hexes list holds no taker id or claim; a claimed step never names the previous owner |
+| PRIV-2 | The new owner's live update carries no previous owner id |
 
 The tests live in `tests/MyLoop.V01.Tests/Bugs/B1/`, which CI runs.

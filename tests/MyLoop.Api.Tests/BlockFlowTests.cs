@@ -183,7 +183,7 @@ public class BlockFlowTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task A_blocked_thief_is_anonymous_in_the_victims_push_only()
+    public async Task Every_theft_push_is_anonymous_blocked_or_not()
     {
         var users = await SeedUsers(3, tokenPrefix: "token");
         var (victim, blockedThief, otherThief) = (users[0], users[1], users[2]);
@@ -194,13 +194,13 @@ public class BlockFlowTests : IAsyncLifetime
         await using (var db = NewDb())
         {
             var push = new PushNotificationService(db, sender, NullLogger<PushNotificationService>.Instance);
-            await push.NotifyHexStolen(victim, 2);
-            await push.NotifyHexStolen(victim, 1);
+            await push.NotifyHexStolen(victim);
+            await push.NotifyHexStolen(victim);
         }
 
-        Assert.Equal($"{GameConstants.BlockedActorLabel} captured 2 of your hexes!", sender.Bodies[0]);
-        Assert.DoesNotContain("Rude Name", sender.Bodies[0]);
-        Assert.Equal("Kai captured one of your hexes!", sender.Bodies[1]);
+        // Single-player 0.1 (bug B1): no theft push names anyone, blocked or not.
+        Assert.Equal([GameConstants.HexesCapturedPushBody, GameConstants.HexesCapturedPushBody], sender.Bodies);
+        _ = (blockedThief, otherThief);
     }
 
     [Fact]

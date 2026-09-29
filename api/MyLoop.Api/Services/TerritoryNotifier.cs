@@ -35,7 +35,9 @@ public class TerritoryNotifier : ITerritoryNotifier
                 c.NewOwnerId,
                 c.NewOwnerColor,
                 c.NewOwnerDisplayName,
-                c.PreviousOwnerId,
+                // Kept for the app's payload shape, never filled: the new owner must not learn
+                // who held the hex before (bug B1).
+                PreviousOwnerId = (Guid?)null,
             }).ToList();
             await SafeSendToUser(ownerGroup.Key, "HexOwnershipChanged", payload, "HexOwnershipChanged");
         }
