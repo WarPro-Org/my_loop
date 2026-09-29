@@ -47,7 +47,7 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - the design doc (Gate 2), whose `## Scenarios` table answers every ID;
   - each code PR, whose `**Scenarios:**` line names the IDs it covers or changes;
   - every review, which checks the PR against those IDs;
-  - closing an FR, when no row of its table is left `open` against that FR.
+  - closing an FR, when no row of its table is left `open` with that FR (`FRn`) or its task (`#N`) as owner.
 - **Keep it growing without being asked:** any finding that no ID covers (a review, audit, bug, test failure or
   user report) becomes a new ID in the PR that records or fixes it. The same PR answers the new ID in every design
   doc. IDs are never deleted.
@@ -322,7 +322,7 @@ skill. After a new commit, gates that depend on the code run again.
 | 3 | after each push | Linked items synced (see "Keep linked items in sync"); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
 | 4 | opening a PR | A code PR has its `**Scenarios:**` line (IDs covered or changed, or `none — <reason>`); gate rows gone through **one by one** (below); the skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
 | 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
-| 6 | calling an FR done | No `## Scenarios` row is `open` against this FR; "Closing an FR" steps 1–7 hold (final audit, record merged, spec, design doc, task, parent task, branches) |
+| 6 | calling an FR done | No `## Scenarios` row is `open` with this FR (`FRn`) or its task (`#N`) as owner; "Closing an FR" steps 1–7 hold (final audit, record merged, spec, design doc, task, parent task, branches) |
 
 **Going through the gate rows.** Never pick rows by what the PR is "about": a one-line comment edit in a Dart file
 or a test still triggers the Dart and test rows. List the changed files (`git diff --name-only master...HEAD`), then
@@ -347,6 +347,14 @@ claim; the owner's review and the review records in the PR are what keep claims 
   - FR PRs (branch `vX.Y/frN-…`) need a task link line, "Part k of N" matching the title's `(k/N)`, and FR N's
     design doc already merged into master. A docs-only PR that adds the design doc is the exception. When the
     design doc merges, re-run "PR rules" on the FR's open PRs (a push or a description edit does it).
+  - Every PR: `docs/scenarios.md` keeps every ID it had on master. Every FR design doc's `## Scenarios` table
+    answers every ID exactly once, outside comments and code fences:
+    - `covered` names an existing test file and a test name found in it;
+    - `n/a` and `accepted` give a reason;
+    - `open` names an owner.
+
+    Claude-made and FR PRs that change code also need a `**Scenarios:**` line naming known IDs, or
+    `none — <reason>`.
   - Any PR over the size limit needs a `Size exception:` line.
   - Bot PRs are skipped.
 

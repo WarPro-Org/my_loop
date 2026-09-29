@@ -123,8 +123,10 @@ check_gate_rows() {
 catalogue_ids() { git show "$1:$SCENARIOS" 2>/dev/null | grep -oE '^\| [A-Z]+-[0-9]+ \|' | grep -oE '[A-Z]+-[0-9]+'; }
 
 check_design_doc_scenarios() {
-  local doc=$1 ids=$2 table id status evidence path paths seen="" missing=()
-  table=$(git show "$merge:$doc" 2>/dev/null | awk '/^## /{on = ($0 ~ /^## Scenarios[[:space:]]*$/); next} on')
+  local doc=$1 ids=$2 table id status evidence path paths names name contents seen="" missing=()
+  # Only the '## Scenarios' section counts; rows inside a code fence or an HTML comment don't.
+  table=$(git show "$merge:$doc" 2>/dev/null | perl -0pe 's/<!--.*?-->//gs' \
+    | awk '/^```/{fence = !fence; next} fence{next} /^## /{on = ($0 ~ /^## Scenarios[[:space:]]*$/); next} on')
   if [[ -z "$table" ]]; then
     problems+=("$doc has no '## Scenarios' table: answer every ID in $SCENARIOS.")
     return
@@ -132,15 +134,28 @@ check_design_doc_scenarios() {
   while IFS='|' read -r _ id status evidence _; do
     id=$(xargs <<<"$id"); status=$(xargs <<<"$status")
     [[ "$id" =~ ^[A-Z]+-[0-9]+$ ]] || continue
+    grep -qx "$id" <<<"$seen" && { problems+=("$doc answers $id more than once."); continue; }
     seen+="$id"$'\n'
     grep -qx "$id" <<<"$ids" || { problems+=("$doc answers $id, which isn't in $SCENARIOS."); continue; }
     case "$status" in
       covered)
+        # Each named test file must exist as a file, and each quoted test name must be in one of them.
         paths=$(grep -oE '`[^`]+`' <<<"$evidence" | tr -d '`' | grep -E '(^|/)(test|tests)/' || true)
+        names=$(grep -oE '"[^"]+"' <<<"$evidence" | tr -d '"' || true)
         [[ -n "$paths" ]] || problems+=("$doc: $id is 'covered' but names no test file in backticks.")
+        [[ -n "$names" ]] || problems+=("$doc: $id is 'covered' but names no test in double quotes.")
+        contents=""
         for path in $paths; do
-          git cat-file -e "$merge:$path" 2>/dev/null || problems+=("$doc: $id names $path, which doesn't exist.")
-        done ;;
+          if [[ "$(git cat-file -t "$merge:$path" 2>/dev/null)" == blob ]]; then
+            contents+=$(git show "$merge:$path")$'\n'
+          else
+            problems+=("$doc: $id names $path, which isn't a file.")
+          fi
+        done
+        while IFS= read -r name; do
+          [[ -z "$name" || -z "$contents" ]] && continue
+          grep -qF -- "$name" <<<"$contents" || problems+=("$doc: $id names the test \"$name\", which isn't in its test file(s).")
+        done <<<"$names" ;;
       n/a|accepted)
         grep -qE '[A-Za-z]{3,}' <<<"$evidence" || problems+=("$doc: $id is '$status' with no reason.") ;;
       open)

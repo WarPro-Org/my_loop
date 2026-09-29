@@ -128,7 +128,10 @@ expect fail "a skill in a note after the Skills run list doesn't count as run" \
 # optionally a code file. Rows are "ID|status|evidence" lines.
 catalogue() { printf '# Scenarios\n| ID | Scenario |\n|---|---|\n'; for id in $1; do printf '| %s | something |\n' "$id"; done; }
 design_doc() { printf '# FR9\n## Scenarios\n| ID | Status | Evidence |\n|---|---|---|\n'
-  while IFS='|' read -r id status evidence; do [[ -n "$id" ]] && printf '| %s | %s | %s |\n' "$id" "$status" "$evidence"; done <<<"$1"
+  while IFS='|' read -r id status evidence; do
+    if [[ "$id" == '```'* || "$id" == '<!--'* || "$id" == '-->'* ]]; then echo "$id"  # raw fence or comment line
+    elif [[ -n "$id" ]]; then printf '| %s | %s | %s |\n' "$id" "$status" "$evidence"; fi
+  done <<<"$1"
   printf '## Next section\n| NET-9 | open | not a scenario row |\n'; }
 make_scenarios() {
   rm -rf "$work/repo" && mkdir -p "$work/repo" && cd "$work/repo" || exit 1
@@ -136,7 +139,7 @@ make_scenarios() {
   mkdir -p .github .claude/skills docs/versions/1/0.1/design tests/Fr9
   cp "$root/CLAUDE.md" . && cp "$root/.github/gate-rows.tsv" .github/
   for dir in "$root"/.claude/skills/*/; do mkdir -p ".claude/skills/$(basename "$dir")" && touch ".claude/skills/$(basename "$dir")/SKILL.md"; done
-  echo test >tests/Fr9/ATests.cs
+  echo 'public void Foo_works() {}' >tests/Fr9/ATests.cs
   catalogue "$1" >docs/scenarios.md
   design_doc "$(for id in $1; do echo "$id|n/a|not in this area"; done)" >docs/versions/1/0.1/design/fr9-x.md
   g add -A && g commit -qm base
@@ -150,7 +153,7 @@ make_scenarios() {
   g checkout -q master && g merge -q --no-ff --no-edit pr
 }
 ALL_RUN='`flutter-disk-concurrency-test`, `state-lifecycle-consistency`, `coding-standards`, `dotnet-patterns`, `csharp-testing`, `webapi-standards`, `database-migrations`, `api-design`, `security-review`, `latency-critical-systems`, `database-retry-resilience`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mobile-background-location`, `mock-gps-anticheat`, `app-store-compliance`, `error-handling`, `coordinate-overlapping-pr-removals`, `verification-loop`'
-GOOD_ROWS=$'NET-1|covered|`tests/Fr9/ATests.cs`\nNET-2|n/a|reads only\nNET-3|open|FR5 owns it\nNET-4|accepted|D2, approved in #219'
+GOOD_ROWS=$'NET-1|covered|`tests/Fr9/ATests.cs` "Foo_works"\nNET-2|n/a|reads only\nNET-3|open|FR5 owns it\nNET-4|accepted|D2, approved in #219'
 
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
 expect pass "a design doc answering every ID with each status" "$(body 'none' '')"
@@ -159,13 +162,25 @@ expect fail "a new ID not answered in a design doc" "$(body 'none' '')" "doesn't
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3" "${GOOD_ROWS%$'\n'*}"
 expect fail "an ID removed from the catalogue" "$(body 'none' '')" "Scenario IDs removed from docs/scenarios.md: NET-4"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs/Missing.cs}"
-expect fail "covered names a test file that doesn't exist" "$(body 'none' '')" "names tests/Fr9/Missing.cs, which doesn't exist"
+expect fail "covered names a test file that doesn't exist" "$(body 'none' '')" "names tests/Fr9/Missing.cs, which isn't a file"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/\`tests\/Fr9\/ATests.cs\`/see the tests}"
 expect fail "covered without a test file" "$(body 'none' '')" "NET-1 is 'covered' but names no test file"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/}"
 expect fail "n/a without a reason" "$(body 'none' '')" "NET-2 is 'n/a' with no reason"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/FR5 owns it/later}"
 expect fail "open without an owner" "$(body 'none' '')" "NET-3 is 'open' with no owner"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/Bar_works}"
+expect fail "covered names a test that isn't in the file" "$(body 'none' '')" 'names the test "Bar_works", which isn'"'"'t in'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ \"Foo_works\"/}"
+expect fail "covered without a quoted test name" "$(body 'none' '')" "NET-1 is 'covered' but names no test in double quotes"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/tests\/Fr9\/ATests.cs/tests\/Fr9}"
+expect fail "covered names a folder, not a file" "$(body 'none' '')" "names tests/Fr9, which isn't a file"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"$'\nNET-2|n/a|again'
+expect fail "an ID answered twice" "$(body 'none' '')" "answers NET-2 more than once"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS%$'\n'*}"$'\n<!--\nNET-4|accepted|hidden\n-->'
+expect fail "a row inside an HTML comment doesn't count" "$(body 'none' '')" "doesn't answer 1 scenario ID(s): NET-4"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS%$'\n'*}"$'\n```\nNET-4|accepted|hidden\n```'
+expect fail "a row inside a code fence doesn't count" "$(body 'none' '')" "doesn't answer 1 scenario ID(s): NET-4"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/NET-4|accepted/NET-4|fine}"
 expect fail "an unknown status" "$(body 'none' '')" "NET-4 has status 'fine'"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"$'\nNET-7|n/a|typo'

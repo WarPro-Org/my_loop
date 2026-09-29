@@ -3,7 +3,7 @@
 This is the one place for every edge case in MyLoop. Look it up whenever you plan, design, code or review.
 Every FR design doc answers every ID below, and "PR rules" checks that on every PR.
 
-**Why it exists:** after FR1 was closed with every gate green, a blind audit on 2026-09-29 found 34 gaps
+**Why it exists:** after FR1 was closed with every gate green, a blind audit on 2026-09-29 found 49 gaps
 (`docs/versions/1/0.1/audits/2026-09-29-independent-audit.md`). Rules kept only in docs get skipped, so this list is
 checked by a machine.
 
@@ -12,7 +12,9 @@ checked by a machine.
 - **Planning (Gate 1):** go through every ID for the requirement. A question that no ID covers means you add a new ID.
 - **Design doc (Gate 2):** add a `## Scenarios` table that answers every ID, one row each:
   `| ID | covered / n/a / open / accepted | evidence |`.
-  - `covered`: name the test file that proves it, in backticks, e.g. `mobile/test/v0_1/fr1/rules_store_test.dart`.
+  - `covered`: name the test file in backticks and the test's name in double quotes, e.g.
+    `` `mobile/test/v0_1/fr1/rules_store_test.dart` "a corrupted saved copy is ignored" ``. "PR rules" checks that
+    the file exists and contains that name.
   - `n/a`: give a reason. The reviewer checks that the reason is true.
   - `open`: name the owner, an FR (e.g. `FR5`) or a task (e.g. `#221`). An `open` may not stay open when its owner
     FR closes.
@@ -56,6 +58,7 @@ checked by a machine.
 | NET-8 | 403 / 404 | A clear message; no endless retry; no data deleted | audit E6 |
 | NET-9 | 429 rate limit | Retried later; data kept | audit A7 |
 | NET-10 | Any 4xx | Only a verdict about the data itself is final; everything else is retried; the phone never deletes user data because of a reply | audit A7 |
+| NET-11 | A server rejection shown to the user | The message names the real cause (a network or sign-in problem is never called "anti-cheat") | audit A7 |
 
 ## AUTH — sign-in and accounts
 
@@ -137,6 +140,8 @@ checked by a machine.
 | GAME-12 | Exploration between points | Every hex the path crosses counts | audit C8 |
 | GAME-13 | Phone preview vs server result | Same limits, same maths (earth radius, point caps), a replay test | audit A8, C10 |
 | GAME-14 | End of walk | The result is always sent and queued, never skipped because the preview failed | audit A8 |
+| GAME-15 | Pause, and a forgotten walk (vehicle speed, or barely moving for a long time) | Pause records nothing; auto-end saves the walk and tells the user | audit D8 |
+| GAME-16 | Hexes inside a loop vs hexes the path crossed | Only crossed hexes count as explored; a loop's inside is captured, not explored | audit C8 |
 
 ## CHEAT — anti-cheat
 
