@@ -17,6 +17,7 @@ readonly GATE_ROWS=.github/gate-rows.tsv
 readonly SKILLS_DIR=.claude/skills
 readonly FINAL_GATE=verification-loop
 readonly REMOVAL_GATE=coordinate-overlapping-pr-removals
+readonly SCENARIOS=docs/scenarios.md
 readonly NOT_CODE='^(docs/|\.claude/)|\.md$'   # same rule as code-changed.sh
 
 if [[ "${PR_AUTHOR_TYPE:-}" == "Bot" ]]; then
@@ -116,6 +117,103 @@ check_gate_rows() {
   ((${#missing[@]})) && problems+=("Gate rows not gone through: ${missing[*]}. Add each to Skills run, or a line '- Not applicable: \`skill\` — <reason>'.")
 }
 
+# Scenario catalogue (CLAUDE.md "Scenario catalogue"): every FR design doc answers every ID, IDs are
+# never removed, and a code PR names the IDs it touches. The catalogue and design docs are read from
+# the PR's merge commit, so a PR that adds an ID must answer it everywhere in the same PR.
+catalogue_ids() { git show "$1:$SCENARIOS" 2>/dev/null | grep -oE '^\| [A-Z]+-[0-9]+ \|' | grep -oE '[A-Z]+-[0-9]+'; }
+
+# The test names a file declares, one per line: Dart test('…') / testWidgets("…") (the name may start on
+# the next line, may be split into adjacent literals, and \' is read as '), or C# [Fact]/[Theory] methods
+# (comments may sit between their attributes).
+test_names() {
+  case "$1" in
+    *.dart) perl -0ne '
+      my $lit = qr/\x27(?:[^\x27\\]|\\.)*\x27|"(?:[^"\\]|\\.)*"/;
+      while (/\b(?:test|testWidgets)\(\s*((?:$lit)(?:\s*(?:$lit))*)/g) {
+        my $all = $1; my $n = "";
+        while ($all =~ /\x27((?:[^\x27\\]|\\.)*)\x27|"((?:[^"\\]|\\.)*)"/g) { $n .= defined $1 ? $1 : $2 }
+        $n =~ s/\\(.)/$1/g; print "$n\n";
+      }' ;;
+    *.cs) perl -0ne 'print "$1\n" while /\[(?:Fact|Theory)\b(?:[^\[\]]|\[[^\]]*\])*\](?:\s*(?:\[(?:[^\[\]]|\[[^\]]*\])*\]|\/\/[^\n]*))*\s*public\s+(?:async\s+)?(?:void|Task)\s+(\w+)\s*\(/g' ;;
+  esac
+}
+
+check_design_doc_scenarios() {
+  local doc=$1 ids=$2 table id status evidence path paths names name tests seen="" missing=()
+  # Only the '## Scenarios' section counts; rows inside a code fence or an HTML comment don't.
+  table=$(git show "$merge:$doc" 2>/dev/null | perl -0pe 's/<!--.*?-->//gs' \
+    | awk '/^```/{fence = !fence; next} fence{next} /^## /{on = ($0 ~ /^## Scenarios[[:space:]]*$/); next} on')
+  if [[ -z "$table" ]]; then
+    problems+=("$doc has no '## Scenarios' table: answer every ID in $SCENARIOS.")
+    return
+  fi
+  while IFS='|' read -r _ id status evidence _; do
+    id=$(xargs <<<"$id"); status=$(xargs <<<"$status")
+    [[ "$id" =~ ^[A-Z]+-[0-9]+$ ]] || continue
+    grep -qx "$id" <<<"$seen" && { problems+=("$doc answers $id more than once."); continue; }
+    seen+="$id"$'\n'
+    grep -qx "$id" <<<"$ids" || { problems+=("$doc answers $id, which isn't in $SCENARIOS."); continue; }
+    case "$status" in
+      covered)
+        # Each named test file must exist as a file, and each quoted test name must be in one of them.
+        paths=$(grep -oE '`[^`]+`' <<<"$evidence" | tr -d '`' | grep -E '(^|/)(test|tests)/' || true)
+        names=$(grep -oE '"[^"]+"' <<<"$evidence" | tr -d '"' || true)
+        [[ -n "$paths" ]] || problems+=("$doc: $id is 'covered' but names no test file in backticks.")
+        [[ -n "$names" ]] || problems+=("$doc: $id is 'covered' but names no test in double quotes.")
+        # Each named file must exist; each quoted name must be exactly the name of a test in one of them.
+        tests=""
+        for path in $paths; do
+          if [[ "$(git cat-file -t "$merge:$path" 2>/dev/null)" == blob ]]; then
+            tests+=$(git show "$merge:$path" | test_names "$path")$'\n'
+          else
+            problems+=("$doc: $id names $path, which isn't a file.")
+          fi
+        done
+        [[ -n "$paths" && -z "${tests//$'\n'/}" ]] && problems+=("$doc: $id names no file that declares a test.")
+        while IFS= read -r name; do
+          [[ -z "$name" || -z "${tests//$'\n'/}" ]] && continue
+          grep -qxF -- "$name" <<<"$tests" || problems+=("$doc: $id names the test \"$name\", which isn't the full name of a test in its test file(s).")
+        done <<<"$names" ;;
+      n/a|accepted)
+        grep -qE '[A-Za-z]{3,}' <<<"$evidence" || problems+=("$doc: $id is '$status' with no reason.") ;;
+      open)
+        grep -qE '#[0-9]+|FR[0-9]+' <<<"$evidence" || problems+=("$doc: $id is 'open' with no owner (FRn or #task).") ;;
+      *) problems+=("$doc: $id has status '$status'; use covered, n/a, open or accepted.") ;;
+    esac
+  done <<<"$table"
+  for id in $ids; do grep -qx "$id" <<<"$seen" || missing+=("$id"); done
+  ((${#missing[@]})) && problems+=("$doc doesn't answer ${#missing[@]} scenario ID(s): ${missing[*]}. Add a row for each to its '## Scenarios' table.")
+}
+
+check_scenarios() {
+  local ids master_ids removed doc line named id
+  ids=$(catalogue_ids "$merge")
+  master_ids=$(catalogue_ids "$MASTER")
+  if [[ -z "$ids" ]]; then
+    [[ -n "$master_ids" ]] && problems+=("$SCENARIOS is missing or empty: scenario IDs are never removed.")
+    return
+  fi
+  removed=$(comm -23 <(sort -u <<<"$master_ids") <(sort -u <<<"$ids") | grep . | tr '\n' ' ')
+  [[ -n "$removed" ]] && problems+=("Scenario IDs removed from $SCENARIOS: ${removed}. IDs are never deleted; mark one '(retired: <reason>)'.")
+  while IFS= read -r doc; do
+    [[ -n "$doc" ]] && check_design_doc_scenarios "$doc" "$ids"
+  done < <(git ls-tree -r --name-only "$merge" -- docs/versions 2>/dev/null | grep -E '/design/fr[0-9]+-[^/]*\.md$')
+  [[ "$by_claude" == true || -n "$fr" ]] && [[ -n "$code_status" ]] || return 0
+  line=$(grep -m1 '^\*\*Scenarios:\*\*' <<<"$body")
+  if [[ -z "$line" ]]; then
+    problems+=("A code PR needs a '**Scenarios:**' line: the $SCENARIOS IDs it covers or changes, or 'none — <reason>'.")
+    return
+  fi
+  named=$(before_dash "${line#\*\*Scenarios:\*\*}" | grep -oE '[A-Z]+-[0-9]+' || true)
+  if [[ -z "$named" ]]; then
+    grep -qiE 'none[^A-Za-z]+.*[A-Za-z]{3,}' <<<"${line#\*\*Scenarios:\*\*}" \
+      || problems+=("'**Scenarios:**' names no ID: list them, or write 'none — <reason>'.")
+  fi
+  for id in $named; do
+    grep -qx "$id" <<<"$ids" || problems+=("'**Scenarios:**' names $id, which isn't in $SCENARIOS: add it there first.")
+  done
+}
+
 fr=""
 [[ "${PR_BRANCH:-}" =~ $FR_BRANCH ]] && fr="${BASH_REMATCH[1]}"
 by_claude=false
@@ -161,6 +259,8 @@ if [[ -n "$fr" ]]; then
     problems+=("$doc must be merged into master (approved) before FR${fr} code.")
   fi
 fi
+
+check_scenarios
 
 if (( ${PR_FILES:-0} > MAX_FILES || lines > MAX_LINES )) && ! grep -q '^Size exception:' <<<"$body"; then
   problems+=("PR is ${PR_FILES:-0} files / ${lines} lines (limit ~${MAX_FILES} / ~${MAX_LINES}). Split it, or add a 'Size exception: <reason, agreed with the owner>' line.")

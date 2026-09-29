@@ -123,6 +123,103 @@ expect fail "a skill in a note after the Skills run list doesn't count as run" \
   "$(body "$MIGRATION_RUN — \`security-review\` not run yet" "$NA_MIGRATION")" \
   'Gate rows not gone through: `security-review`'
 
+# Scenario catalogue cases. make_scenarios "<master catalogue IDs>" "<PR catalogue IDs>" "<design doc rows>" [code file]:
+# master holds a catalogue and a design doc answering it; the PR changes the catalogue, the doc's rows and
+# optionally a code file. Rows are "ID|status|evidence" lines.
+catalogue() { printf '# Scenarios\n| ID | Scenario |\n|---|---|\n'; for id in $1; do printf '| %s | something |\n' "$id"; done; }
+design_doc() { printf '# FR9\n## Scenarios\n| ID | Status | Evidence |\n|---|---|---|\n'
+  while IFS='|' read -r id status evidence; do
+    if [[ "$id" == '```'* || "$id" == '<!--'* || "$id" == '-->'* ]]; then echo "$id"  # raw fence or comment line
+    elif [[ -n "$id" ]]; then printf '| %s | %s | %s |\n' "$id" "$status" "$evidence"; fi
+  done <<<"$1"
+  printf '## Next section\n| NET-9 | open | not a scenario row |\n'; }
+make_scenarios() {
+  rm -rf "$work/repo" && mkdir -p "$work/repo" && cd "$work/repo" || exit 1
+  g init -q
+  mkdir -p .github .claude/skills docs/versions/1/0.1/design tests/Fr9
+  cp "$root/CLAUDE.md" . && cp "$root/.github/gate-rows.tsv" .github/
+  for dir in "$root"/.claude/skills/*/; do mkdir -p ".claude/skills/$(basename "$dir")" && touch ".claude/skills/$(basename "$dir")/SKILL.md"; done
+  printf '[Fact]\npublic void Foo_works() {}\nprivate void Helper() {}\n' >tests/Fr9/ATests.cs
+  printf "test(\n    'a long name', () {});\ntest('it\\\\'s done', () {});\ngroup('a group', () {});\ntest('split ' \"across \"\n  'lines', () {});\n" >tests/Fr9/a_test.dart
+  printf '[Theory]\n[InlineData(1)] // one\n[InlineData(2)]\npublic void With_comment(int x) {}\n[Theory]\n[InlineData(new string[0], true)]\npublic void With_array(string[] a, bool b) {}\n' >tests/Fr9/BTests.cs
+  printf 'global using Xunit;\n' >tests/Fr9/GlobalUsings.cs
+  catalogue "$1" >docs/scenarios.md
+  design_doc "$(for id in $1; do echo "$id|n/a|not in this area"; done)" >docs/versions/1/0.1/design/fr9-x.md
+  g add -A && g commit -qm base
+  g update-ref refs/remotes/origin/master HEAD
+  g checkout -qb pr
+  catalogue "$2" >docs/scenarios.md
+  design_doc "$3" >docs/versions/1/0.1/design/fr9-x.md
+  [[ -n "${4:-}" ]] && mkdir -p "$(dirname "$4")" && echo new >"$4"
+  g add -A && g commit -qm change
+  head_sha=$(git rev-parse HEAD)
+  g checkout -q master && g merge -q --no-ff --no-edit pr
+}
+ALL_RUN='`flutter-disk-concurrency-test`, `state-lifecycle-consistency`, `coding-standards`, `dotnet-patterns`, `csharp-testing`, `webapi-standards`, `database-migrations`, `api-design`, `security-review`, `latency-critical-systems`, `database-retry-resilience`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mobile-background-location`, `mock-gps-anticheat`, `app-store-compliance`, `error-handling`, `coordinate-overlapping-pr-removals`, `verification-loop`'
+GOOD_ROWS=$'NET-1|covered|`tests/Fr9/ATests.cs` "Foo_works"\nNET-2|n/a|reads only\nNET-3|open|FR5 owns it\nNET-4|accepted|D2, approved in #219'
+
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
+expect pass "a design doc answering every ID with each status" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4 NET-5" "$GOOD_ROWS"
+expect fail "a new ID not answered in a design doc" "$(body 'none' '')" "doesn't answer 1 scenario ID(s): NET-5"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3" "${GOOD_ROWS%$'\n'*}"
+expect fail "an ID removed from the catalogue" "$(body 'none' '')" "Scenario IDs removed from docs/scenarios.md: NET-4"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs/Missing.cs}"
+expect fail "covered names a test file that doesn't exist" "$(body 'none' '')" "names tests/Fr9/Missing.cs, which isn't a file"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/\`tests\/Fr9\/ATests.cs\`/see the tests}"
+expect fail "covered without a test file" "$(body 'none' '')" "NET-1 is 'covered' but names no test file"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/}"
+expect fail "n/a without a reason" "$(body 'none' '')" "NET-2 is 'n/a' with no reason"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/FR5 owns it/later}"
+expect fail "open without an owner" "$(body 'none' '')" "NET-3 is 'open' with no owner"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/Bar_works}"
+expect fail "covered names a test that isn't in the file" "$(body 'none' '')" 'names the test "Bar_works", which isn'"'"'t the full name'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/works}"
+expect fail "a quoted name that is only part of a test's name" "$(body 'none' '')" 'names the test "works", which isn'"'"'t the full name'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/public void}"
+expect fail "a quoted name that isn't a test declaration" "$(body 'none' '')" 'names the test "public void"'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/Foo_works/Helper}"
+expect fail "a quoted C# helper that isn't a test" "$(body 'none' '')" 'names the test "Helper"'
+OTHER_ROWS=${GOOD_ROWS#*$'\n'}
+dart_row() { printf 'NET-1|covered|`tests/Fr9/a_test.dart` %s\n%s' "$1" "$OTHER_ROWS"; }
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"a long name", "it'"'"'s done"')"
+expect pass "Dart names on the next line and with an apostrophe" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"a long"')"
+expect fail "a prefix of a Dart test name" "$(body 'none' '')" 'names the test "a long"'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"a group"')"
+expect fail "a Dart group that isn't a test" "$(body 'none' '')" 'names the test "a group"'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"split across lines"')"
+expect pass "a Dart name split into adjacent literals" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '"split "')"
+expect fail "the first part of a split Dart name" "$(body 'none' '')" 'names the test "split "'
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/BTests.cs\` \"With_comment}"
+expect pass "a C# Theory with a comment between its attributes" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/BTests.cs\` \"With_array}"
+expect pass "a C# Theory whose attribute holds brackets" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/GlobalUsings.cs\` \"Anything_at_all}"
+expect fail "a file with no tests" "$(body 'none' '')" "NET-1 names no file that declares a test"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ \"Foo_works\"/}"
+expect fail "covered without a quoted test name" "$(body 'none' '')" "NET-1 is 'covered' but names no test in double quotes"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/tests\/Fr9\/ATests.cs/tests\/Fr9}"
+expect fail "covered names a folder, not a file" "$(body 'none' '')" "names tests/Fr9, which isn't a file"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"$'\nNET-2|n/a|again'
+expect fail "an ID answered twice" "$(body 'none' '')" "answers NET-2 more than once"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS%$'\n'*}"$'\n<!--\nNET-4|accepted|hidden\n-->'
+expect fail "a row inside an HTML comment doesn't count" "$(body 'none' '')" "doesn't answer 1 scenario ID(s): NET-4"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS%$'\n'*}"$'\n```\nNET-4|accepted|hidden\n```'
+expect fail "a row inside a code fence doesn't count" "$(body 'none' '')" "doesn't answer 1 scenario ID(s): NET-4"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/NET-4|accepted/NET-4|fine}"
+expect fail "an unknown status" "$(body 'none' '')" "NET-4 has status 'fine'"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"$'\nNET-7|n/a|typo'
+expect fail "a row for an ID not in the catalogue" "$(body 'none' '')" "answers NET-7, which isn't in"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS" "api/MyLoop.Api/Services/Foo.cs"
+expect fail "a code PR without a Scenarios line" "$(body "$ALL_RUN" '')" "A code PR needs a '**Scenarios:**' line"
+expect fail "a Scenarios line naming an unknown ID" "$(body "$ALL_RUN" '')"$'\n**Scenarios:** NET-1, NET-9' \
+  "names NET-9, which isn't in docs/scenarios.md"
+expect fail "a Scenarios line with no ID and no reason" "$(body "$ALL_RUN" '')"$'\n**Scenarios:** none' "names no ID"
+expect pass "a Scenarios line naming known IDs" "$(body "$ALL_RUN" '')"$'\n**Scenarios:** NET-1, NET-3'
+expect pass "a Scenarios line 'none' with a reason" "$(body "$ALL_RUN" '')"$'\n**Scenarios:** none — a log message only'
+
 make_pr $'docs/versions/1/0.1/design/fr9-x.md\n.claude/skills/mock-gps-anticheat/SKILL.md\nREADME.md' "docs/old.md"
 expect pass "docs-only PR: no gate rows required" "$(body 'none' '')"
 MERGE=no-such-ref expect fail "changed files can't be read: fails, never skips" "$(body 'none' '')" \

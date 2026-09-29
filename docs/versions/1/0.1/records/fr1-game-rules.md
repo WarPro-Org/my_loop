@@ -1,6 +1,6 @@
 # FR1 — Game rules: record
 
-**Status:** done (2026-09-28). Task #201 · spec `requirements.md` → FR1 · design `design/fr1-game-rules.md`
+**Status:** reopened (2026-09-29): the blind audit found gaps, listed as `open #201` rows in the design doc's `## Scenarios` table. First closed 2026-09-28. Task #201 · spec `requirements.md` → FR1 · design `design/fr1-game-rules.md`
 (full matrix, risks and history) · PRs #203 #210 #204 #205 #214 #215 #216 #218 #219, and close-out PR #220
 (this record).
 
