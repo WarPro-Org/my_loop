@@ -141,7 +141,7 @@ make_scenarios() {
   for dir in "$root"/.claude/skills/*/; do mkdir -p ".claude/skills/$(basename "$dir")" && touch ".claude/skills/$(basename "$dir")/SKILL.md"; done
   printf '[Fact]\npublic void Foo_works() {}\nprivate void Helper() {}\n' >tests/Fr9/ATests.cs
   printf "test(\n    'a long name', () {});\ntest('it\\\\'s done', () {});\ngroup('a group', () {});\ntest('split ' \"across \"\n  'lines', () {});\n" >tests/Fr9/a_test.dart
-  printf '[Theory]\n[InlineData(1)] // one\n[InlineData(2)]\npublic void With_comment(int x) {}\n' >tests/Fr9/BTests.cs
+  printf '[Theory]\n[InlineData(1)] // one\n[InlineData(2)]\npublic void With_comment(int x) {}\n[Theory]\n[InlineData(new string[0], true)]\npublic void With_array(string[] a, bool b) {}\n' >tests/Fr9/BTests.cs
   printf 'global using Xunit;\n' >tests/Fr9/GlobalUsings.cs
   catalogue "$1" >docs/scenarios.md
   design_doc "$(for id in $1; do echo "$id|n/a|not in this area"; done)" >docs/versions/1/0.1/design/fr9-x.md
@@ -194,6 +194,8 @@ make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$(dart_row '
 expect fail "the first part of a split Dart name" "$(body 'none' '')" 'names the test "split "'
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/BTests.cs\` \"With_comment}"
 expect pass "a C# Theory with a comment between its attributes" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/BTests.cs\` \"With_array}"
+expect pass "a C# Theory whose attribute holds brackets" "$(body 'none' '')"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ATests.cs\` \"Foo_works/GlobalUsings.cs\` \"Anything_at_all}"
 expect fail "a file with no tests" "$(body 'none' '')" "NET-1 names no file that declares a test"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/ \"Foo_works\"/}"

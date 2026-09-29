@@ -134,7 +134,7 @@ test_names() {
         while ($all =~ /\x27((?:[^\x27\\]|\\.)*)\x27|"((?:[^"\\]|\\.)*)"/g) { $n .= defined $1 ? $1 : $2 }
         $n =~ s/\\(.)/$1/g; print "$n\n";
       }' ;;
-    *.cs) perl -0ne 'print "$1\n" while /\[(?:Fact|Theory)\b[^\]]*\](?:\s*(?:\[[^\]]*\]|\/\/[^\n]*))*\s*public\s+(?:async\s+)?(?:void|Task)\s+(\w+)\s*\(/g' ;;
+    *.cs) perl -0ne 'print "$1\n" while /\[(?:Fact|Theory)\b(?:[^\[\]]|\[[^\]]*\])*\](?:\s*(?:\[(?:[^\[\]]|\[[^\]]*\])*\]|\/\/[^\n]*))*\s*public\s+(?:async\s+)?(?:void|Task)\s+(\w+)\s*\(/g' ;;
   esac
 }
 
