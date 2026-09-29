@@ -17,8 +17,10 @@ namespace MyLoop.Api.Tests;
 /// </summary>
 public class LeaderboardControllerTests
 {
+    private static readonly Guid Caller = Guid.NewGuid();
+
     private static LeaderboardController Build(Mock<ILeaderboardService> leaderboard) =>
-        new(leaderboard.Object);
+        new(leaderboard.Object, Mock.Of<ICurrentUser>(u => u.TryGetUserIdAsync() == Task.FromResult<Guid?>(Caller)));
 
     [Fact]
     public void Controller_requires_authorization()
@@ -40,12 +42,12 @@ public class LeaderboardControllerTests
         leaderboard.Setup(l => l.GetLeaderboard(It.IsAny<double>(), It.IsAny<double>(), It.IsAny<Guid?>(), "city"))
             .ReturnsAsync(new LeaderboardResponse { Scope = "city" });
 
-        var result = await Build(leaderboard).GetLeaderboard(12.9, 77.5, null, scope: null);
+        var result = await Build(leaderboard).GetLeaderboard(12.9, 77.5, scope: null);
 
         var ok = Assert.IsType<OkObjectResult>(result);
         var response = Assert.IsType<LeaderboardResponse>(ok.Value);
         Assert.Equal("city", response.Scope);
-        leaderboard.Verify(l => l.GetLeaderboard(12.9, 77.5, null, "city"), Times.Once);
+        leaderboard.Verify(l => l.GetLeaderboard(12.9, 77.5, Caller, "city"), Times.Once);
     }
 
     [Theory]
@@ -57,27 +59,26 @@ public class LeaderboardControllerTests
         leaderboard.Setup(l => l.GetLeaderboard(It.IsAny<double>(), It.IsAny<double>(), It.IsAny<Guid?>(), scope))
             .ReturnsAsync(new LeaderboardResponse { Scope = scope });
 
-        var result = await Build(leaderboard).GetLeaderboard(12.9, 77.5, null, scope);
+        var result = await Build(leaderboard).GetLeaderboard(12.9, 77.5, scope);
 
         Assert.IsType<OkObjectResult>(result);
-        leaderboard.Verify(l => l.GetLeaderboard(12.9, 77.5, null, scope), Times.Once);
+        leaderboard.Verify(l => l.GetLeaderboard(12.9, 77.5, Caller, scope), Times.Once);
         // Must NOT silently fall back to "city" for a caller-supplied scope.
         leaderboard.Verify(l => l.GetLeaderboard(It.IsAny<double>(), It.IsAny<double>(), It.IsAny<Guid?>(), "city"), Times.Never);
     }
 
     [Fact]
-    public async Task GetLeaderboard_passes_the_userId_query_parameter_through_for_rank_lookup()
+    public async Task GetLeaderboard_uses_the_signed_in_caller_for_rank_lookup()
     {
-        // userId is a client-supplied [FromQuery] value, not the authenticated caller's identity;
-        // this only pins the pass-through, not any identity binding.
-        var userId = Guid.NewGuid();
+        // Bug B1: the rank lookup is bound to the authenticated caller; there is no userId
+        // query parameter a client could use to ask for another player's rank.
         var leaderboard = new Mock<ILeaderboardService>();
-        leaderboard.Setup(l => l.GetLeaderboard(It.IsAny<double>(), It.IsAny<double>(), userId, It.IsAny<string>()))
+        leaderboard.Setup(l => l.GetLeaderboard(It.IsAny<double>(), It.IsAny<double>(), It.IsAny<Guid?>(), It.IsAny<string>()))
             .ReturnsAsync(new LeaderboardResponse());
 
-        await Build(leaderboard).GetLeaderboard(0, 0, userId, "city");
+        await Build(leaderboard).GetLeaderboard(0, 0, "city");
 
-        leaderboard.Verify(l => l.GetLeaderboard(0, 0, userId, "city"), Times.Once);
+        leaderboard.Verify(l => l.GetLeaderboard(0, 0, Caller, "city"), Times.Once);
     }
 
     [Fact]

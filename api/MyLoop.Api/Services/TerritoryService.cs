@@ -356,12 +356,10 @@ public class TerritoryService : ITerritoryService
                 var cellCenter = _hexGrid.GetCellCenter(cellId);
                 var decayDays = CalculateDecayDays(user, cellCenter.Lat, cellCenter.Lng);
 
-                string? previousOwnerName = null;
                 bool wasStolen;
 
                 if (existing != null)
                 {
-                    previousOwnerName = existing.Owner?.DisplayName;
                     var transfer = CreateTransfer(cellId, existing.OwnerId, userId, claimId);
                     _db.CellTransfers.Add(transfer);
                     transfers.Add(transfer);
@@ -385,15 +383,7 @@ public class TerritoryService : ITerritoryService
                 processedThisBatch.Add(cellId);
                 capturedHexes.Add(hexCell);
 
-                results.Add(new BatchStepResult
-                {
-                    ClientId = p.ClientId,
-                    Claimed = true,
-                    CellId = cellId,
-                    Boundary = hexCell.Boundary,
-                    WasStolen = wasStolen,
-                    PreviousOwnerName = previousOwnerName,
-                });
+                results.Add(ClaimedStepResult(p.ClientId, cellId, hexCell, wasStolen));
             }
 
             var totalClaimedThisBatch = newCellsCount + stolenCellsCount;
@@ -590,8 +580,22 @@ public class TerritoryService : ITerritoryService
         return commit.Response;
     }
 
+    /// <summary>
+    /// The reply for one claimed step. Single-player 0.1 (bug B1): it never names the player a
+    /// hex was taken from; <c>PreviousOwnerName</c> stays null so older apps still parse it.
+    /// </summary>
+    internal static BatchStepResult ClaimedStepResult(string clientId, long cellId, HexCell hexCell, bool wasStolen) =>
+        new()
+        {
+            ClientId = clientId,
+            Claimed = true,
+            CellId = cellId,
+            Boundary = hexCell.Boundary,
+            WasStolen = wasStolen,
+        };
+
     public async Task<TerritoryViewportResult> GetTerritoriesInViewport(
-        double minLat, double minLng, double maxLat, double maxLng)
+        Guid ownerId, double minLat, double minLng, double maxLat, double maxLng)
     {
         // Bucket-first pruning per docs/architecture/spatial-model.md (#114): filter on the
         // indexed res-3 ParentCellId set covering the bbox, then refine by center coords.
@@ -602,7 +606,8 @@ public class TerritoryService : ITerritoryService
         var regionIds = _hexGrid.GetRegionIdsForBbox(minLat, minLng, maxLat, maxLng).ToList();
 
         // Empty = "viewport too wide to prune" (see IHexGridService) — coordinate filter only.
-        var cells = _db.TerritoryCells.AsNoTracking().AsQueryable();
+        // Single-player 0.1: only the caller's own cells, filtered before the cap (bug B1).
+        var cells = _db.TerritoryCells.AsNoTracking().Where(t => t.OwnerId == ownerId);
         if (regionIds.Count > 0)
             cells = cells.Where(t => regionIds.Contains(t.ParentCellId));
 
@@ -1320,16 +1325,13 @@ public class TerritoryService : ITerritoryService
     {
         try
         {
-            var thief = await _db.Users.FindAsync(thiefUserId);
-            if (thief == null) return;
-
             var victimGroups = transfers
                 .Where(t => t.FromUserId != null && t.FromUserId != thiefUserId)
                 .GroupBy(t => t.FromUserId!.Value);
 
             foreach (var group in victimGroups)
             {
-                await _pushService.NotifyHexStolen(group.Key, thiefUserId, thief.DisplayName, group.Count());
+                await _pushService.NotifyHexStolen(group.Key, group.Count());
             }
         }
         catch (Exception ex)

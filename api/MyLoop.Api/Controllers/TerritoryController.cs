@@ -36,7 +36,8 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get all territory cells within a map viewport bounding box (public map data).
+    /// Get the caller's own territory cells within a map viewport bounding box. 0.1 is
+    /// single-player, so other players' cells are never returned (bug B1).
     /// </summary>
     [HttpGet]
     public async Task<IActionResult> GetTerritoriesInViewport(
@@ -50,7 +51,10 @@ public class TerritoryController : ControllerBase
         if (!ViewportBounds.IsValid(minLat, minLng, maxLat, maxLng))
             return BadRequest(InvalidViewportMessage);
 
-        var viewport = await _territoryService.GetTerritoriesInViewport(minLat, minLng, maxLat, maxLng);
+        var callerId = await _currentUser.TryGetUserIdAsync();
+        if (callerId is null) return Unauthorized();
+
+        var viewport = await _territoryService.GetTerritoriesInViewport(callerId.Value, minLat, minLng, maxLat, maxLng);
         // The body stays the bare cell array the mobile client already parses; truncation is
         // additive metadata in a header so existing clients are unaffected (#114).
         Response.Headers["X-Viewport-Truncated"] = viewport.Truncated ? "true" : "false";
@@ -72,11 +76,13 @@ public class TerritoryController : ControllerBase
     }
 
     /// <summary>
-    /// Get ALL territory cells owned by a specific user (public — rendered on everyone's map).
+    /// Get ALL territory cells owned by the caller (private in single-player 0.1, bug B1).
     /// </summary>
     [HttpGet("user/{userId:guid}")]
     public async Task<IActionResult> GetUserTerritories([FromRoute] Guid userId)
     {
+        if (await DenySelf(userId) is { } deny) return deny;
+
         var cells = await _territoryService.GetUserTerritories(userId);
         return Ok(cells);
     }

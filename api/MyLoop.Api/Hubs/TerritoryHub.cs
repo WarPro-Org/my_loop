@@ -1,16 +1,16 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using MyLoop.Api.Interfaces;
 
 namespace MyLoop.Api.Hubs;
 
 /// <summary>
-/// SignalR hub for real-time territory updates.
-/// Clients join geographic region groups (H3 resolution-3 parent cells)
-/// for public map updates, and a personal user group for private state deltas.
-/// Connection does NOT require auth (public map events work without login).
-/// Personal group methods validate auth via Context.User claim.
+/// SignalR hub for real-time territory updates. 0.1 is single-player (bug B1): a connection
+/// needs sign-in, and every update goes only to the owner's personal group. Region groups are
+/// no longer joined or broadcast to; <see cref="JoinRegion"/> stays so old app builds don't fail.
 /// </summary>
+[Authorize]
 public class TerritoryHub : Hub
 {
     private readonly IUserService _users;
@@ -41,10 +41,11 @@ public class TerritoryHub : Hub
     }
 
     /// <summary>
-    /// Client calls this to subscribe to a geographic region (public map events).
-    /// Region ID = H3 res-3 parent cell ID (covers ~12,000 km²).
+    /// Kept for app builds that still subscribe to regions. It checks the id as before but joins
+    /// nothing: in single-player 0.1 no region broadcast exists (bug B1). A successful return keeps
+    /// old clients from retrying forever.
     /// </summary>
-    public async Task JoinRegion(string regionId)
+    public Task JoinRegion(string regionId)
     {
         // regionId is caller-supplied. Region groups are named by a res-3 H3 cell id, but personal
         // delta groups are named "user_{guid}" (see TerritoryNotifier). Without this check a caller
@@ -58,16 +59,13 @@ public class TerritoryHub : Hub
             throw new HubException("Invalid region id.");
         }
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, regionId);
+        return Task.CompletedTask;
     }
 
     /// <summary>
-    /// Client calls this to unsubscribe from a region (e.g., when panning away).
+    /// Kept for old app builds; there is no region group to leave (bug B1).
     /// </summary>
-    public async Task LeaveRegion(string regionId)
-    {
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, regionId);
-    }
+    public Task LeaveRegion(string regionId) => Task.CompletedTask;
 
     /// <summary>
     /// Client calls this after auth to subscribe to personal state deltas.

@@ -5,8 +5,8 @@ using MyLoop.Api.Interfaces;
 namespace MyLoop.Api.Services;
 
 /// <summary>
-/// Broadcasts hex ownership changes (public, region-scoped) and personal
-/// state deltas (per-user group) via SignalR.
+/// Sends hex ownership changes and personal state deltas via SignalR, always to the
+/// affected player's own group only (single-player 0.1, bug B1).
 /// </summary>
 public class TerritoryNotifier : ITerritoryNotifier
 {
@@ -23,13 +23,11 @@ public class TerritoryNotifier : ITerritoryNotifier
     {
         if (changes.Count == 0) return;
 
-        // Group changes by parent cell (region) for targeted broadcast
-        var byRegion = changes.GroupBy(c => c.ParentCellId.ToString());
-
-        var regionCount = 0;
-        foreach (var regionGroup in byRegion)
+        // Single-player 0.1 (bug B1): each player hears only about their own hexes. The new owner
+        // gets the change; a previous owner only learns the hex left their map, never who took it.
+        foreach (var ownerGroup in changes.GroupBy(c => c.NewOwnerId))
         {
-            var payload = regionGroup.Select(c => new
+            var payload = ownerGroup.Select(c => new
             {
                 c.H3Index,
                 c.CenterLat,
@@ -39,53 +37,27 @@ public class TerritoryNotifier : ITerritoryNotifier
                 c.NewOwnerDisplayName,
                 c.PreviousOwnerId,
             }).ToList();
-
-            // Isolate each region: a transient transport failure on one group
-            // must not abort delivery to the others (HIGH-10). These broadcasts
-            // are fire-and-forget, so a thrown exception would also go unobserved.
-            try
-            {
-                await _hubContext.Clients
-                    .Group(regionGroup.Key)
-                    .SendAsync("HexOwnershipChanged", payload);
-                regionCount++;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to broadcast HexOwnershipChanged to region {Region}", regionGroup.Key);
-            }
+            await SafeSendToUser(ownerGroup.Key, "HexOwnershipChanged", payload, "HexOwnershipChanged");
         }
 
-        _logger.LogDebug("Broadcast {Count} hex changes to {RegionCount} regions",
-            changes.Count, regionCount);
+        var lost = changes
+            .Where(c => c.PreviousOwnerId is { } previous && previous != c.NewOwnerId)
+            .Select(c => new HexReleasedEvent(c.H3Index, c.ParentCellId, c.PreviousOwnerId!.Value))
+            .ToList();
+        await NotifyHexesReleasedAsync(lost);
     }
 
     public async Task NotifyHexesReleasedAsync(IReadOnlyList<HexReleasedEvent> released)
     {
-        if (released.Count == 0) return;
-
-        foreach (var regionGroup in released.GroupBy(r => r.ParentCellId.ToString()))
+        // One payload per owner and region, in the shape clients already parse (#104).
+        foreach (var group in released.GroupBy(r => (r.OwnerId, r.ParentCellId)))
         {
             var payload = new
             {
-                ParentCellId = regionGroup.Key,
-                H3Indexes = regionGroup.Select(r => r.H3Index).ToList(),
+                ParentCellId = group.Key.ParentCellId.ToString(),
+                H3Indexes = group.Select(r => r.H3Index).ToList(),
             };
-
-            // Same per-region isolation as HexOwnershipChanged (HIGH-10): one group's
-            // transport failure must not abort delivery to the others.
-            try
-            {
-                await _hubContext.Clients
-                    .Group(regionGroup.Key)
-                    .SendAsync("HexesReleased", payload);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to broadcast HexesReleased to region {Region}", regionGroup.Key);
-            }
+            await SafeSendToUser(group.Key.OwnerId, "HexesReleased", payload, "HexesReleased");
         }
     }
 

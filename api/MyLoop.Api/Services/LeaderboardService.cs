@@ -35,7 +35,8 @@ public class LeaderboardService : ILeaderboardService
 
         return new LeaderboardResponse
         {
-            Top = scopedTop,
+            // Single-player 0.1: other players never leave the server (bug B1).
+            Top = scopedTop.Where(e => e.UserId == userId).ToList(),
             MyRank = myRank,
             Scope = leaderboardScope,
         };

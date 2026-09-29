@@ -24,11 +24,12 @@ public interface ITerritoryService
         Guid userId, string? clientLocalDate, List<BatchStepPoint> points, Guid walkSessionId);
 
     /// <summary>
-    /// Gets the territory cells within a map viewport bounding box (deterministically
-    /// ordered, capped) plus whether the cap truncated the result.
+    /// Gets the caller's own territory cells within a map viewport bounding box
+    /// (deterministically ordered, capped) plus whether the cap truncated the result.
+    /// 0.1 is single-player: another player's cells are never returned (bug B1).
     /// </summary>
     Task<TerritoryViewportResult> GetTerritoriesInViewport(
-        double minLat, double minLng, double maxLat, double maxLng);
+        Guid ownerId, double minLat, double minLng, double maxLat, double maxLng);
 
     /// <summary>
     /// Gets a user's total territory stats (cell count + area).

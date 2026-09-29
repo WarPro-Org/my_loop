@@ -25,7 +25,7 @@ public class PushNotificationService : IPushNotificationService
         _logger = logger;
     }
 
-    public async Task NotifyHexStolen(Guid victimUserId, Guid thiefUserId, string thiefDisplayName, int stolenCount)
+    public async Task NotifyHexStolen(Guid victimUserId, int stolenCount)
     {
         var tokens = await _db.DeviceTokens
             .Where(t => t.UserId == victimUserId)
@@ -34,10 +34,9 @@ public class PushNotificationService : IPushNotificationService
 
         if (tokens.Count == 0) return;
 
-        // A blocked player's name never reaches the blocker's lock screen (Guideline 1.2).
-        var blocked = await _db.UserBlocks.AnyAsync(b => b.BlockerId == victimUserId && b.BlockedId == thiefUserId);
-        var actor = blocked ? GameConstants.BlockedActorLabel : thiefDisplayName;
-
+        // Single-player 0.1: the push never names the other player (bug B1). The neutral label
+        // is the one already used in place of a blocked player's name.
+        var actor = GameConstants.BlockedActorLabel;
         var title = "Territory Under Attack! ⚔️";
         var body = stolenCount == 1
             ? $"{actor} captured one of your hexes!"
