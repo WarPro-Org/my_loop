@@ -41,6 +41,18 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Requirements are numbered FR1, FR2, … in build order. Work happens strictly in that order.
 - The spec is updated first; code follows the spec. Any change of plan updates the spec before the code.
 
+**Scenario catalogue (`docs/scenarios.md`)** — the one list of every edge case. "PR rules" checks it on every PR.
+- **Look it up every time:**
+  - planning a requirement (Gate 1), going through every ID;
+  - the design doc (Gate 2), whose `## Scenarios` table answers every ID;
+  - each code PR, whose `**Scenarios:**` line names the IDs it covers or changes;
+  - every review, which checks the PR against those IDs;
+  - closing an FR, when no row of its table is left `open` against that FR.
+- **Keep it growing without being asked:** any finding that no ID covers (a review, audit, bug, test failure or
+  user report) becomes a new ID in the PR that records or fixes it. The same PR answers the new ID in every design
+  doc. IDs are never deleted.
+- A planning or design agent that isn't sure whether an ID applies marks it `open` with an owner, never `n/a`.
+
 **User stories (GitHub tasks)**
 - One task per requirement (FR). Task title: `0.1 > FR1 > <short title>`. PR title: `0.1 > FR1 (k/N) > <short title>`,
   with "Part k of N" in the description.
@@ -107,6 +119,10 @@ what must stay true, in a few minutes.
 1. **Final audit on master:** an independent agent checks every spec line, acceptance criterion, design-doc matrix
    cell, user situation and linked item (task, parent task, every PR, spec, design doc), re-running a "red when" per
    test group. Findings are fixed in a new PR of the FR (or accepted by the owner) before the FR is closed.
+   It also runs a **blind audit**: 4–6 agents that are given only the version's `requirements.md` and the code, never
+   the task, design doc, PRs or record, each searching one area for every way it can go wrong. Every finding
+   becomes a `docs/scenarios.md` ID, or a row under an existing one. Save the report in
+   `docs/versions/<release>/<version>/audits/`.
 2. **FR record:** `docs/versions/<release>/<version>/records/frN-<name>.md`, one page, for humans and AI agents:
    - **Status** line with the task, spec, design doc and every PR;
    - **Scope:** in and out;
@@ -157,6 +173,8 @@ task and every PR of that FR. When any of them changes, update all the others in
 - Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
 - Reading the diff is not enough. The reviewer also:
   - checks every commit in the PR ends with a `Task: #N` line, and reports any that doesn't;
+  - checks the PR against every `docs/scenarios.md` ID its area touches; any finding that no ID covers is reported
+    as "new scenario" and gets an ID in the fix;
   - checks the PR's gate section against the changed files and every row of both gate tables, and reports a row
     that applies but wasn't run, or a "Not applicable" whose reason is wrong, as a finding;
   - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that
@@ -217,6 +235,7 @@ Interrogate the request on:
 - .NET ↔ Flutter contract boundaries (field names, types, H3 CellId, UserId, game constants)
 - Concurrency and race conditions
 - EF migration atomicity
+- Every ID in `docs/scenarios.md`: say which apply to this requirement; a question no ID covers becomes a new ID
 
 Ask one sharp question at a time. Do not advance until requirements are unambiguous and the user approves.
 
@@ -232,6 +251,8 @@ Write a Design Doc only after Gate 1 is approved. Must include:
 - **Known risk checklist:** Race conditions, offline edge cases, anti-cheat gaps — each either mitigated or explicitly accepted.
 - **Lifecycle matrix** (for state covered by `state-lifecycle-consistency`): every reader × every app moment, each with its test or
   an agreed "accepted" — see `state-lifecycle-consistency`.
+- **`## Scenarios` table:** every ID in `docs/scenarios.md`, each `covered` (test file), `n/a` (reason), `open` (owner FR
+  or task) or `accepted` (where the owner approved it). "PR rules" fails when an ID is missing.
 
 Do not write implementation code until the user explicitly approves the Design Doc. The doc lives at
 `docs/versions/<release>/<version>/design/frN-<name>.md`; approval = the owner merges its PR into master. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.
@@ -296,12 +317,12 @@ skill. After a new commit, gates that depend on the code run again.
 
 | Step | Before … | Must be true |
 |---|---|---|
-| 1 | writing FR code | Requirement agreed (Gate 1); design doc `docs/versions/<release>/<version>/design/frN-<name>.md` merged after the owner approved it (Gate 2) |
+| 1 | writing FR code | Requirement agreed (Gate 1), including a pass through every `docs/scenarios.md` ID; design doc `docs/versions/<release>/<version>/design/frN-<name>.md` merged after the owner approved it (Gate 2) |
 | 2 | each commit | Pre-Check-in skills that apply have run; the lifecycle matrix tests for readers this commit touches are in it |
 | 3 | after each push | Linked items synced (see "Keep linked items in sync"); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
-| 4 | opening a PR | Gate rows gone through **one by one** (below); the skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
+| 4 | opening a PR | A code PR has its `**Scenarios:**` line (IDs covered or changed, or `none — <reason>`); gate rows gone through **one by one** (below); the skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
 | 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
-| 6 | calling an FR done | "Closing an FR" steps 1–7 hold (final audit, record merged, spec, design doc, task, parent task, branches) |
+| 6 | calling an FR done | No `## Scenarios` row is `open` against this FR; "Closing an FR" steps 1–7 hold (final audit, record merged, spec, design doc, task, parent task, branches) |
 
 **Going through the gate rows.** Never pick rows by what the PR is "about": a one-line comment edit in a Dart file
 or a test still triggers the Dart and test rows. List the changed files (`git diff --name-only master...HEAD`), then

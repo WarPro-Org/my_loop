@@ -57,7 +57,7 @@ Features are numbered in the order they should be built. Each one only depends o
 
 ## FR1 — Configurable game settings
 
-**Status:** done (task #201). What it built and what later FRs must keep true: `records/fr1-game-rules.md`.
+**Status:** reopened (task #201): open rows in the design doc's `## Scenarios` table, from the 2026-09-29 blind audit. What it built and what later FRs must keep true: `records/fr1-game-rules.md`.
 
 Every tunable number lives in one place so the rules can be tuned from real test walks without code changes.
 
