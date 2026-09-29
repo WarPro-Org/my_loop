@@ -238,7 +238,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | NET-9 | open | #201: no test sends a 429 or checks that it is retried later |
 | NET-10 | open | #201: no test sends a 4xx (only a 200 with a broken body) to prove the rules and saved copy are kept and a later refresh asks again |
 | NET-11 | n/a | Rules show the user no rejection message |
-| AUTH-1 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "signing out keeps the rules the app already has". Kept vs wiped is documented in this doc's matrix ("Sign out / switch account"); the 'unsent data' part doesn't apply: rules send nothing |
+| AUTH-1 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "signing out keeps the rules the app already has". Kept vs wiped is documented in this doc's matrix ('Sign out / switch account'); the 'unsent data' part doesn't apply: rules send nothing |
 | AUTH-2 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "logging in checks the rules again" |
 | AUTH-3 | n/a | Rules are the same for every user; nothing is cached per account |
 | AUTH-4 | open | FR12: guests can't fetch the rules (`GET /api/rules` needs sign-in) |
