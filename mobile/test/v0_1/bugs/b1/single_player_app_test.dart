@@ -59,7 +59,7 @@ void main() {
   test('no screen or route shows other players, and no text says they can see you', () {
     const banned = [
       "'/leaderboard'", "'/user-profile'", 'UserProfileScreen', 'LeaderboardScreen',
-      'shown to other players',
+      'shown to other players', 'territory is stolen',
     ];
     final hits = [
       for (final (path, source) in _libSources())

@@ -61,16 +61,17 @@ Two PRs, server first, so users' data is protected as soon as the server deploys
 2. **Other players' profiles:** the profile screen, its route and the map popup's "View profile" button are removed.
 3. **Sign-up text:** no longer says the name "is shown to other players".
 4. **In-app theft alert:** removed. The server stopped sending the previous owner in PR 1, so it could no longer fire.
-5. **Live updates:** no app change is needed. The app joins its personal group (`JoinUserGroup`) when it connects, and PR 1 sends every update there. A capture arrives as `HexOwnershipChanged`, a lost hex as `HexesReleased`.
+5. **Empty inbox text:** no longer promises an alert "when your territory is stolen".
+6. **Live updates:** no app change is needed. The app joins its personal group (`JoinUserGroup`) when it connects, and PR 1 sends every update there. A capture arrives as `HexOwnershipChanged`, a lost hex as `HexesReleased`.
 
 **Left in the app, each with an owner (LEG-1):**
 - The app still calls `JoinRegion` for the map's regions. The server joins nothing, and the map's poll back-off still reads these joins. FR8 (the map) removes them together.
 - The notification inbox stays: the profile keeps it (#38). Alerts saved before this fix can still name another player, and nothing new is written to it (`addTheftAlert` has no caller and is kept for FR11). FR11 decides the inbox and clears those alerts (PRIV-7).
 - The Home "Rank" tile and its rank sheet (`home_tab.dart`, `_RankSheet`, `ApiService.getLeaderboard`) still show the player's rank in their city, country and world, which says other players exist. FR11 removes them with the rank fields (PRIV-6).
 - Text that describes features outside 0.1 (LEG-12):
-  - achievements about ranks and rivals (`achievements.dart`, shown on the Achievements tab) — FR11, which decides what the profile and its tabs keep;
+  - achievements about ranks and rivals (`achievements.dart`) and the "PvP" and "Leaderboard" achievement categories (`achievement.dart`), shown on the Achievements tab — FR11, which decides what the profile and its tabs keep;
   - Home tips and cards about other players nearby or teaming up with friends (`home_tab.dart`) — FR14 (onboarding and tips);
-  - tips and cards about stealing — FR6.
+  - tips and cards about stealing, the post-walk "Stolen from others" row (`celebration_dialog.dart`, fed by the server's `stolenFromOthers`) and the "steal a hex" daily mission (`daily_mission.dart`, shown on Home) — FR6.
 - Block and report (`player_actions_menu.dart`) can no longer be opened, because no other player's name is shown. FR12 owns them with the block and report routes.
 - Map code for other players' hexes, and tips about stealing, remain. The server no longer sends other players' hexes. FR8 owns the map and FR6 owns stealing.
 
