@@ -310,6 +310,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | LEG-9 | n/a | CI's analyze bar isn't specific to FR1 (#221 tracks the process) |
 | LEG-10 | n/a | `RulesController` only calls `IRuleSettings` |
 | LEG-11 | n/a | FR1 adds no config files |
+| LEG-12 | n/a | FR1 adds no user-facing text or achievements |
 | API-1 | covered | `tests/MyLoop.V01.Tests/FR1/ContractTests.cs` "Server_sends_exactly_the_shared_client_rules_sample"; `mobile/test/v0_1/fr1/contract_test.dart` "the app knows exactly the fields the server sends". Dates, time zones and ids don't apply: the rules reply has none |
 | API-2 | covered | `mobile/test/v0_1/fr1/game_rules_test.dart` "built-in copy matches the server rules in appsettings.json" |
 | API-3 | open | #201: the contract test serialises in the test, not through the real HTTP pipeline |

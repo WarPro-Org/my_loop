@@ -171,6 +171,7 @@ checked by a machine.
 | LEG-9 | A check that CI runs more weakly than `scripts/verify.sh` (e.g. analyze warnings not failing) | CI enforces the same bar | audit E10 |
 | LEG-10 | Architecture rule broken (a fat controller querying the DB, a module reaching into another's tables) | Fixed when that code is touched, or owned | audit E11 |
 | LEG-11 | A file the docs call secret or ignored that is committed (e.g. Firebase config) | The docs and the repo agree; a real secret is never committed | audit E9 |
+| LEG-12 | Text, tips or achievements that describe a feature outside the version's scope (rivals, ranks, other players nearby) | Removed, or listed with a named owner | B1 part 2 review |
 
 ## API — contract between server and phone
 

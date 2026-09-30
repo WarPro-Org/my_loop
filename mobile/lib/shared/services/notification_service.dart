@@ -1,7 +1,8 @@
 /// In-app notification store.
 ///
-/// Captures territory theft events from SignalR and push messages
-/// so users can see a history of what happened to their territory.
+/// Holds the inbox the profile's "Notifications" screen shows. Since bug B1 (0.1 is
+/// single-player) nothing adds to it; alerts saved before then stay until FR11 decides the
+/// inbox (scenario PRIV-7).
 library;
 
 import 'package:flutter/foundation.dart';
@@ -65,7 +66,7 @@ class NotificationNotifier extends Notifier<List<AppNotification>> {
   String? get _userId => ref.read(userProfileProvider).userId;
 
   /// Restores the cached inbox for the current user. Skips if an alert already landed
-  /// during the async load, so a just-arrived SignalR theft alert is never clobbered.
+  /// during the async load, so a just-added alert is never clobbered.
   Future<void> _hydrate() async {
     final userId = _userId;
     if (userId == null || userId.isEmpty) return;
@@ -100,6 +101,7 @@ class NotificationNotifier extends Notifier<List<AppNotification>> {
     await NotificationCache.save(userId, state);
   }
 
+  /// No caller in the app since bug B1; kept for FR11, which decides the inbox (PRIV-7).
   void addTheftAlert({
     required String thiefName,
     required String thiefColor,

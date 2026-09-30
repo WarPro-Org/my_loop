@@ -129,9 +129,9 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
   bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
   /// [forUserId]'s block list once its first load has settled, or null if the signed-in account
-  /// is no longer [forUserId]. For code that records a name for later (theft alerts go to the
-  /// persisted inbox): reading [state] right after sign-in would see the empty initial set and
-  /// record a blocked player's real name (#195 review). With a cached list the wait is one local
+  /// is no longer [forUserId]. For code that must not show a blocked player's name (the map's hex
+  /// popup): reading [state] right after sign-in would see the empty initial set and show the
+  /// real name (#195 review). With a cached list the wait is one local
   /// file read.
   Future<Set<String>?> blockedIdsFor(String forUserId) async {
     final generation = _generation;

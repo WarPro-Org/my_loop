@@ -95,7 +95,7 @@ void main() {
         ],
       ]);
 
-      final events = await received;
+      final events = await received.timeout(const Duration(seconds: 1));
       expect(events.single.h3Index, '8b1');
       expect(events.single.previousOwnerId, isNull);
     });
@@ -108,7 +108,7 @@ void main() {
         {'parentCellId': '7', 'h3Indexes': ['8b1']},
       ]);
 
-      expect((await received).h3Indexes, ['8b1']);
+      expect((await received.timeout(const Duration(seconds: 1))).h3Indexes, ['8b1']);
     });
   });
 }
