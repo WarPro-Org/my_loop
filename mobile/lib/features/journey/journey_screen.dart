@@ -19,7 +19,6 @@ import 'package:myloop/features/journey/viewport_poll_backoff.dart';
 import 'package:myloop/features/journey/celebration_dialog.dart';
 import 'package:myloop/features/journey/journey_snackbar_presenter.dart';
 import 'package:myloop/features/journey/post_walk_refresh.dart';
-import 'package:myloop/features/journey/theft_alerts.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/mock/mock_walk_config.dart';
 import 'package:myloop/shared/services/location_service.dart';
@@ -32,9 +31,7 @@ import 'package:myloop/shared/widgets/app_map_tiles.dart';
 import 'package:myloop/shared/widgets/avatar_widget.dart';
 import 'package:myloop/shared/widgets/big_button.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
-import 'package:myloop/features/profile/user_profile_screen.dart';
 import 'package:myloop/shared/constants/app_constants.dart';
-import 'package:myloop/shared/services/notification_service.dart';
 import 'package:myloop/features/moderation/blocked_users.dart';
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -370,19 +367,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
       // rebuild the entire map subtree (tile layer, polyline, HUD, controls)
       // on every SignalR delta (issue #129).
       _hexManager.applyRealtimeChanges(events);
-
-      // Detect thefts from the current user → add in-app notifications. The notifiers are
-      // app-scoped, so they are read now: the alert still lands if this screen goes away while
-      // the block list finishes loading.
-      final userId = ref.read(userProfileProvider).userId;
-      if (userId != null) {
-        unawaited(recordTheftAlerts(
-          userId: userId,
-          events: events,
-          blockedUsers: ref.read(blockedUsersProvider.notifier),
-          notifications: ref.read(notificationProvider.notifier),
-        ));
-      }
     });
   }
 
@@ -564,20 +548,6 @@ class _JourneyMapState extends ConsumerState<_JourneyMap> {
         cell: cell,
         isOwn: isOwn,
         ownerColor: ownerColor,
-        onViewProfile: () {
-          Navigator.pop(ctx);
-          Navigator.push(context, MaterialPageRoute(
-            // Raw name: the profile screen masks it itself, and un-masks it the moment the
-            // viewer unblocks there (#195 review).
-            builder: (_) => UserProfileScreen(
-              userId: cell.ownerId,
-              name: rawCell.ownerName,
-              avatarId: 0,
-              color: cell.ownerColor,
-              rank: 0,
-            ),
-          ));
-        },
       ),
     );
   }
@@ -920,13 +890,11 @@ class _HexOwnerSheet extends StatelessWidget {
   final TerritoryCell cell;
   final bool isOwn;
   final Color ownerColor;
-  final VoidCallback onViewProfile;
 
   const _HexOwnerSheet({
     required this.cell,
     required this.isOwn,
     required this.ownerColor,
-    required this.onViewProfile,
   });
 
   @override
@@ -970,23 +938,6 @@ class _HexOwnerSheet extends StatelessWidget {
           if (cell.isOnCooldown) ...[
             const SizedBox(height: 16),
             _CooldownBanner(cell: cell),
-          ],
-          if (!isOwn) ...[
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: onViewProfile,
-                icon: const Icon(Icons.person, size: 18),
-                label: Text('View ${cell.ownerName}\'s Profile'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
           ],
         ],
       ),

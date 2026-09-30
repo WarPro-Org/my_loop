@@ -3,9 +3,6 @@
 /// and would drag thousands of uncovered UI lines into the coverage denominator (#130).
 library;
 
-import 'package:flutter/material.dart';
-import 'package:myloop/features/profile/user_profile_screen.dart';
-
 /// Where a signed-out user lands.
 const loginRoute = '/login';
 
@@ -30,39 +27,4 @@ const authRoutes = {loginRoute, '/local-signup'};
 String? authRedirect({required bool isAuthenticated, required String location}) {
   if (!isAuthenticated && !authRoutes.contains(location)) return loginRoute;
   return null;
-}
-
-/// Builds a [UserProfileScreen] from route `extra`, or `null` when `extra` is
-/// missing or any required field is absent/mistyped.
-UserProfileScreen? userProfileFromExtra(Object? extra) {
-  if (extra is! Map<String, dynamic>) return null;
-  final userId = extra['userId'];
-  final name = extra['name'];
-  final avatarId = extra['avatar'];
-  final color = extra['color'];
-  final rank = extra['rank'];
-  if (userId is! String || name is! String || avatarId is! int || color is! String || rank is! int) {
-    return null;
-  }
-  return UserProfileScreen(
-    userId: userId,
-    name: name,
-    avatarId: avatarId,
-    color: color,
-    rank: rank,
-  );
-}
-
-/// Shown when `/user-profile` is entered without the data it needs, instead of
-/// throwing. Lets the user navigate back rather than hitting a red error screen.
-class UnavailableProfileScreen extends StatelessWidget {
-  const UnavailableProfileScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
-      body: const Center(child: Text("This profile isn't available.")),
-    );
-  }
 }

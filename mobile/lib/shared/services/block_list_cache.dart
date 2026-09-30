@@ -1,7 +1,7 @@
 /// Local cache of the signed-in player's block list (DR-002b, #190).
 ///
 /// Blocking only helps if it survives an offline cold start: without this, a blocked player's
-/// name would reappear on the cached map/leaderboard until the API is reachable again. Bound to
+/// name would reappear on the cached map until the API is reachable again. Bound to
 /// the server user id (cross-user guard) and cleared on sign-out / account deletion, mirroring
 /// TerritoryCache.
 library;

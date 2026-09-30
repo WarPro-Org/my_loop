@@ -8,8 +8,7 @@ library;
 
 /// The application user model, mirroring the backend `User` entity.
 ///
-/// Used throughout the app to represent the currently signed-in player
-/// and other players visible on the leaderboard or territory map.
+/// Used throughout the app to represent the currently signed-in player.
 class AppUser {
   final String id;
   final String displayName;

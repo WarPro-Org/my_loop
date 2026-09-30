@@ -1,7 +1,7 @@
 /// Player blocking (DR-002b, #190; App Store Guideline 1.2).
 ///
-/// Blocking masks a player's identity for the blocker only — leaderboard, map popups and their
-/// profile show [blockedPlayerLabel]. It never affects gameplay.
+/// Blocking masks a player's identity for the blocker only — the map's hex popup shows
+/// [blockedPlayerLabel]. It never affects gameplay.
 library;
 
 import 'dart:async';
@@ -15,13 +15,12 @@ import 'package:myloop/shared/services/user_state.dart';
 
 final _log = Logger('BlockedUsers');
 
-/// Where a blocked player's name would stand on its own (leaderboard row, map popup, profile):
+/// Where a blocked player's name would stand on its own (map popup):
 /// says why the name is hidden, so the viewer can find them again to unblock.
 const blockedPlayerLabel = 'Blocked player';
 
-/// A blocked player as the subject of a sentence ("A player captured 3 of your hexes!"). Theft
-/// alerts use it in-app and in push (server: `GameConstants.BlockedActorLabel`) so the two copies
-/// of one event read the same, and a lock screen never says who was blocked (DR-002b §7.1).
+/// A player whose name is withheld: shown in the map's hex popup while the block list is still
+/// unknown, so a blocked player's name never shows (#195 review).
 const blockedActorLabel = 'A player';
 const blockOfflineError = "You're offline — connect to change who you block";
 const blockFailedError = "Couldn't update your block list — try again";
@@ -44,10 +43,6 @@ String hexOwnerNameFor(Set<String>? blocked, String? viewerId, String ownerId, S
   if (blocked != null) return displayNameFor(blocked, ownerId, name);
   return ownerId == viewerId ? name : blockedActorLabel;
 }
-
-/// The actor name for a theft alert about [userId]: [blockedActorLabel] when blocked. Pure.
-String actorNameFor(Set<String> blocked, String userId, String name) =>
-    blocked.contains(userId) ? blockedActorLabel : name;
 
 /// Ids the signed-in player has blocked. Starts from the user-bound cache, then the API.
 final blockedUsersProvider = NotifierProvider<BlockedUsersNotifier, Set<String>>(BlockedUsersNotifier.new);
@@ -134,9 +129,9 @@ class BlockedUsersNotifier extends Notifier<Set<String>> {
   bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
   /// [forUserId]'s block list once its first load has settled, or null if the signed-in account
-  /// is no longer [forUserId]. For code that records a name for later (theft alerts go to the
-  /// persisted inbox): reading [state] right after sign-in would see the empty initial set and
-  /// record a blocked player's real name (#195 review). With a cached list the wait is one local
+  /// is no longer [forUserId]. For code that must not show a blocked player's name (the map's hex
+  /// popup): reading [state] right after sign-in would see the empty initial set and show the
+  /// real name (#195 review). With a cached list the wait is one local
   /// file read.
   Future<Set<String>?> blockedIdsFor(String forUserId) async {
     final generation = _generation;
