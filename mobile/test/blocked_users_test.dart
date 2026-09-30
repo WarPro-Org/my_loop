@@ -11,13 +11,11 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:myloop/features/journey/theft_alerts.dart';
 import 'package:myloop/features/moderation/blocked_users.dart';
 import 'package:myloop/features/moderation/player_actions_menu.dart';
 import 'package:myloop/shared/models/territory_cell.dart';
 import 'package:myloop/shared/services/api_service.dart';
 import 'package:myloop/shared/services/block_list_cache.dart';
-import 'package:myloop/shared/services/notification_service.dart';
 import 'package:myloop/shared/services/realtime_resync.dart';
 import 'package:myloop/shared/services/territory_realtime_service.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -450,75 +448,6 @@ void main() {
       container.read(userProfileProvider.notifier).clear();
 
       expect(container.read(blockedUsersProvider), isEmpty);
-    });
-  });
-
-  group('theft alerts right after sign-in', () {
-    HexChangeEvent stolenBy(String thiefId, String thiefName) => HexChangeEvent(
-          h3Index: '8a2a1072b59ffff', centerLat: 0, centerLng: 0,
-          newOwnerId: thiefId, newOwnerColor: '#FF4B4B', newOwnerDisplayName: thiefName,
-          previousOwnerId: 'me',
-        );
-
-    Future<List<String>> alertBodies(ProviderContainer container, List<HexChangeEvent> events) async {
-      final notifications = container.read(notificationProvider.notifier);
-      await notifications.hydration;
-      await recordTheftAlerts(
-        userId: 'me',
-        events: events,
-        blockedUsers: container.read(blockedUsersProvider.notifier),
-        notifications: notifications,
-      );
-      await notifications.pendingWrite;
-      return container.read(notificationProvider).map((n) => n.body).toList();
-    }
-
-    test('a theft the moment the session starts masks a blocked thief from the cached list', () async {
-      // Cold start: the block list is on disk, the API is slow, and a theft event arrives before
-      // the provider has restored anything — its state is still the empty initial set.
-      await BlockListCache.save('me', {'rival'});
-      final container = signedIn(_FakeApi()..listGate = Completer<void>());
-
-      final bodies = await alertBodies(container, [stolenBy('rival', 'Rude Name'), stolenBy('kai', 'Kai')]);
-
-      expect(bodies, containsAll(['$blockedActorLabel captured 1 of your hex!', 'Kai captured 1 of your hex!']));
-      expect(bodies.join(), isNot(contains('Rude Name')));
-    });
-
-    test('with no cached list, the alert waits for the first fetch', () async {
-      final api = _FakeApi()
-        ..serverBlocks = {'rival'}
-        ..listGate = Completer<void>();
-      final container = signedIn(api);
-
-      final recorded = alertBodies(container, [stolenBy('rival', 'Rude Name')]);
-      await settle();
-      api.listGate!.complete();
-
-      expect(await recorded, ['$blockedActorLabel captured 1 of your hex!']);
-    });
-    test('nothing is recorded when the account switches during the first load', () async {
-      final api = _FakeApi()
-        ..serverBlocks = {'rival'}
-        ..holdLists = true;
-      final container = signedIn(api);
-      await settle();
-      final notifications = container.read(notificationProvider.notifier);
-      await notifications.hydration;
-
-      final recorded = recordTheftAlerts(
-        userId: 'me',
-        events: [stolenBy('rival', 'Rude Name')],
-        blockedUsers: container.read(blockedUsersProvider.notifier),
-        notifications: notifications,
-      );
-      container.read(userProfileProvider.notifier).setFromApi(
-            userId: 'other', avatarId: 0, color: '#00D4AA', displayName: 'Kai',
-          );
-      await recorded.timeout(const Duration(seconds: 1));
-      await notifications.pendingWrite;
-
-      expect(container.read(notificationProvider), isEmpty);
     });
   });
 

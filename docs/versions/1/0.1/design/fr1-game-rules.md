@@ -250,6 +250,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | PRIV-4 | n/a | The saved rules file holds no user data |
 | PRIV-5 | n/a | FR1 writes no user data |
 | PRIV-6 | n/a | Rules replies are the same for everyone and mention no player |
+| PRIV-7 | n/a | The saved rules file holds no player data |
 | DEV-1 | n/a | FR1 asks for no permission |
 | DEV-2 | n/a | FR1 asks for no permission |
 | DEV-3 | n/a | FR1 asks for no permission |

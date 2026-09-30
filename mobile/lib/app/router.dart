@@ -16,7 +16,6 @@ import 'package:myloop/features/auth/set_home_screen.dart';
 import 'package:myloop/features/home/home_screen.dart';
 import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/features/journey/journey_screen.dart';
-import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/features/profile/profile_screen.dart';
 import 'package:myloop/features/history/walk_history_screen.dart';
@@ -70,10 +69,6 @@ final router = GoRouter(
           pageBuilder: (context, state) => _noTransitionPage(const HomeTab(), state, 'home'),
         ),
         GoRoute(
-          path: '/leaderboard',
-          pageBuilder: (context, state) => _noTransitionPage(const LeaderboardScreen(), state, 'leaderboard'),
-        ),
-        GoRoute(
           path: '/achievements',
           pageBuilder: (context, state) => _noTransitionPage(const AchievementsScreen(), state, 'achievements'),
         ),
@@ -88,15 +83,5 @@ final router = GoRouter(
       GoRoute(path: '/dev/mock-walk', builder: (context, state) => const MockWalkScreen()),
     GoRoute(path: '/walk-history', builder: (context, state) => const WalkHistoryScreen()),
     GoRoute(path: '/notifications', builder: (context, state) => const NotificationsScreen()),
-    GoRoute(
-      path: '/user-profile',
-      builder: (context, state) {
-        // extra is caller-supplied and absent on a cold deep-link or a malformed
-        // push tap. The old unconditional `state.extra as Map` threw and crashed
-        // the route; validate every field and fall back to a recoverable screen.
-        final screen = userProfileFromExtra(state.extra);
-        return screen ?? const UnavailableProfileScreen();
-      },
-    ),
   ],
 );
