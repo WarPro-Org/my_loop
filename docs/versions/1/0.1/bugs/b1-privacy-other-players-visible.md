@@ -59,8 +59,9 @@ Two PRs, server first, so users' data is protected as soon as the server deploys
 **PR 2 — app:**
 1. **Leaderboard:** the "Ranks" tab and its screen are removed. The bottom bar is Home, Achievements and the profile drawer. The home tip and card that pointed to the leaderboard are removed.
 2. **Other players' profiles:** the profile screen, its route and the map popup's "View profile" button are removed.
-3. **In-app theft alert:** removed. The server stopped sending the previous owner in PR 1, so it could no longer fire.
-4. **Live updates:** no app change is needed. The app joins its personal group (`JoinUserGroup`) when it connects, and PR 1 sends every update there. A capture arrives as `HexOwnershipChanged`, a lost hex as `HexesReleased`.
+3. **Sign-up text:** no longer says the name "is shown to other players".
+4. **In-app theft alert:** removed. The server stopped sending the previous owner in PR 1, so it could no longer fire.
+5. **Live updates:** no app change is needed. The app joins its personal group (`JoinUserGroup`) when it connects, and PR 1 sends every update there. A capture arrives as `HexOwnershipChanged`, a lost hex as `HexesReleased`.
 
 **Left in the app, each with an owner (LEG-1):**
 - The app still calls `JoinRegion` for the map's regions. The server joins nothing, and the map's poll back-off still reads these joins. FR8 (the map) removes them together.

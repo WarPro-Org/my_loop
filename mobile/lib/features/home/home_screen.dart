@@ -25,7 +25,13 @@ final homeFabVisible = ValueNotifier<bool>(true);
 /// The bottom-bar tab for [location]: 0 Home, 1 Achievements. 0.1 is single-player, so there is
 /// no leaderboard tab (bug B1). Shared by the tab stack and [HomeBottomNav], so they never disagree.
 @visibleForTesting
-int homeTabIndexFor(String location) => location == '/achievements' ? 1 : 0;
+int homeTabIndexFor(String location) => location == _achievementsRoute ? _achievementsTab : _homeTab;
+
+const _homeRoute = '/home';
+const _achievementsRoute = '/achievements';
+const _homeTab = 0;
+const _achievementsTab = 1;
+const _profileDrawerTab = 2;
 
 /// The app shell scaffold providing bottom navigation and the journey FAB (home only).
 /// Uses IndexedStack to keep all tabs alive — eliminates the tab-switch glitch
@@ -48,7 +54,7 @@ class HomeScreen extends ConsumerWidget {
         ],
       ),
       endDrawer: const ProfileDrawer(),
-      floatingActionButton: currentIndex == 0
+      floatingActionButton: currentIndex == _homeTab
         ? ValueListenableBuilder<bool>(
             valueListenable: homeFabVisible,
             builder: (_, visible, child) => visible ? child! : const SizedBox.shrink(),
@@ -573,11 +579,11 @@ class HomeBottomNav extends ConsumerWidget {
       currentIndex: currentIndex,
       onTap: (index) {
         switch (index) {
-          case 0:
-            context.go('/home');
-          case 1:
-            context.go('/achievements');
-          case 2:
+          case _homeTab:
+            context.go(_homeRoute);
+          case _achievementsTab:
+            context.go(_achievementsRoute);
+          case _profileDrawerTab:
             // Open side drawer instead of navigating
             homeScaffoldKey.currentState?.openEndDrawer();
         }
