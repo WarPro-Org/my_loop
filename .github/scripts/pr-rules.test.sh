@@ -229,6 +229,8 @@ make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/
 expect pass "n/a on a [search] ID that says what was searched" "$(body 'none' '')"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/searched:}"
 expect fail "searched: with nothing after it" "$(body 'none' '')" "NET-2 is marked [search]"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/searched: ok}"
+expect fail "searched: with a reason shorter than 10 characters" "$(body 'none' '')" "NET-2 is marked [search]"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/NET-2|n\/a|reads only/NET-2|open|FR5 owns it}"
 expect pass "a [search] ID answered open with an owner" "$(body 'none' '')"
 SEARCH=""
