@@ -137,6 +137,10 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 | Server restart or bad config | A bad or missing number stops startup (R4) | server refuses to start — red without `ValidateOnStart`; a test per setting that is missing — red without `GameRulesPresenceValidator` (without it, a missing `SkipNeighbors` starts the server); a test per bad value (all 14 settings and the speed pair) — red when that setting's check is removed |
 | Server updated between walks, app kept open | The next walk starts on the new rules: starting a walk checks for them, waiting up to the D1 limit (R1, R2). If that request is slow or fails, the walk starts on the rules it has | walk start asks the server itself — red when `refreshWithin` doesn't start a refresh; its own request is slow — red when `refreshWithin` waits for it without the limit; its own request fails — red when the failure reaches `startJourney` |
 | Captive portal (HTML reply) / server error (503) | Current rules kept, saved copy untouched (R3). Both reach refresh as a `DioException` | captive portal; server down — through the real `ApiService`, Dio and parser, with a positive control (real rules through the same setup apply) — red when refresh lets the exception escape (e.g. rethrows it) |
+| Refused reply (400, 403, 404, 429, 500, 503) | Current rules and saved copy kept; no retry on its own; the next trigger asks again (R3) | one test per status, through the real `ApiService` and Dio, with a positive control (the first request reached the network) — red when refresh retries on its own or lets the exception escape |
+| First launch, offline, nothing saved, then online | Built-in rules, then the server's on the next refresh, saved (R3) | first launch offline, then refresh — red when an offline start stops later refreshes |
+| Request never answers (e.g. sign-in token step stuck offline) | Gives up at 30 s (`rulesRequestLimit`), keeps the rules; the next refresh runs (R3) | fake time: still waiting 1 ms before the limit, done at it — red when the request has no limit |
+| Walk start while the rules request is slow | Starts exactly at the 3 s D1 limit on the rules it has (R1, R2) | fake time: not started 1 ms before, started at it — red when the wait is longer than `walkStartRulesWait` |
 | Guest, no sign-in (FR12) | Accepted until FR12: guests don't exist yet, and `GET /api/rules` needs sign-in. FR12 must let a guest get the rules (requirements.md → FR12) | — |
 | Any moment, R5 | Accepted: dev-only screen follows the live rules | — |
 
@@ -211,33 +215,34 @@ handling, and refresh's catch (captive portal, 503).
 
 ## Scenarios
 
-Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked `open #201` were found by the
-2026-09-29 blind audit after FR1 was closed. They reopen FR1, which is not done until they are fixed. The list
-was frozen on 2026-10-07: rows about code a later FR rebuilds moved to that FR, and nothing found later is added to FR1.
+Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The 2026-09-29 blind audit found 21 gaps
+after FR1 was first closed, which reopened it. The list was frozen on 2026-10-07: rows about code a later FR
+rebuilds moved to that FR (#228, #229), and nothing found later is added to FR1. The server rows were fixed in
+#229 and the phone rows in the PR after it; no row is left `open` with FR1 as owner.
 
 | ID | Status | Evidence |
 |---|---|---|
 | LIFE-1 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "a walk started right after launch waits for the saved rules" |
-| LIFE-2 | open | #201: the built-in copy is used offline on first launch (`game_rules_provider_test.dart`), but no test checks that the next refresh still runs |
+| LIFE-2 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "first launch offline with nothing saved uses the built-in copy, and the next refresh still runs" |
 | LIFE-3 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "a save cut off before it finishes never replaces the saved copy, and the next save works" |
 | LIFE-4 | open | FR9: the walk's pinned rules live only in memory and are lost when the app is killed |
 | LIFE-5 | n/a | Rules have no background work; they refresh only on app events |
 | LIFE-6 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "returning to the app checks the rules again" |
 | LIFE-7 | accepted | "App updated with newer built-in rules": the saved copy wins; approved by the owner in #219 |
 | LIFE-8 | covered | `mobile/test/v0_1/fr1/rules_store_test.dart` "a corrupted saved copy is ignored instead of crashing", "a saved copy with an unexpected shape is ignored instead of crashing"; `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "first launch with no internet uses the built-in copy" (nothing loaded falls back to the built-in copy) |
-| LIFE-9 | open | #201: one request at a time and no lost refresh are tested (`game_rules_provider_test.dart`, `rules_store_test.dart`), but nothing proves `RulesStore` is the only writer of the saved file |
-| LIFE-10 | open | #201: an expired token offline makes a request hang in the sign-in interceptor, and the stuck refresh blocks all later ones |
+| LIFE-9 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "overlapping refreshes never fetch in parallel or save twice", "a refresh asked for as the last request finishes is never lost"; `mobile/test/v0_1/fr1/rules_store_test.dart` "RulesStore is the only code that touches the saved rules file" |
+| LIFE-10 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a request that never answers gives up at the limit, and the next refresh is not blocked" (the sign-in token step stuck offline). The "timers pile up" part doesn't apply: rules run no timers. Other requests' token step is FR3's |
 | LIFE-11 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "starts on the rules it has when its own request fails" |
 | NET-1 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "offline with a saved copy uses the saved copy" |
-| NET-2 | open | #201: the 503 case keeps the rules (`game_rules_provider_test.dart`), but no test checks that a later refresh runs |
-| NET-3 | open | #201: walk start waits on a refresh already running, which may be stuck on a dead socket |
+| NET-2 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 500 (server error)", "a 503 (server down)" (rules kept, asked again at the next trigger) |
+| NET-3 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a request that never answers gives up at the limit, and the next refresh is not blocked"; `mobile/test/v0_1/fr1/rules_consistency_test.dart` "is not held back longer than the limit when its own request is slow" |
 | NET-4 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a captive portal (Wi-Fi sign-in page sent as HTML)" |
 | NET-5 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "a reconnect after being offline checks the rules again". The 'pending work is sent' part doesn't apply: rules have nothing to send |
 | NET-6 | n/a | `GET /api/rules` only reads; no write can be repeated |
-| NET-7 | open | #201: same interceptor hang as LIFE-10 (the 401 after login is covered in `game_rules_provider_test.dart`) |
-| NET-8 | open | #201: no test sends a 403 or 404; the catalogue also asks for no endless retry |
-| NET-9 | open | #201: no test sends a 429 or checks that it is retried later |
-| NET-10 | open | #201: no test sends a 4xx (only a 200 with a broken body) to prove the rules and saved copy are kept and a later refresh asks again |
+| NET-7 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a request that never answers gives up at the limit, and the next refresh is not blocked", "a refresh after login is not lost behind a signed-out request that got a 401" |
+| NET-8 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 403 (forbidden)", "a 404 (not found)" (rules kept, no retry on its own). The "clear message" part doesn't apply: a failed rules refresh shows the user nothing, by design |
+| NET-9 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 429 (too many requests)" |
+| NET-10 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 400 (bad request)", "a 403 (forbidden)", "a 404 (not found)", "a 429 (too many requests)" |
 | NET-11 | n/a | Rules show the user no rejection message |
 | AUTH-1 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "signing out keeps the rules the app already has". Kept vs wiped is documented in this doc's matrix ('Sign out / switch account'); the 'unsent data' part doesn't apply: rules send nothing |
 | AUTH-2 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "logging in checks the rules again" |
@@ -265,7 +270,7 @@ was frozen on 2026-10-07: rows about code a later FR rebuilds moved to that FR, 
 | IN-1 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Invalid_value_stops_startup_and_names_the_setting" (Infinity, -Infinity and NaN cases) |
 | IN-2 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Invalid_value_stops_startup_and_names_the_setting" |
 | IN-3 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Invalid_value_stops_startup_and_names_the_setting" (one step over each limit), "Value_at_its_upper_limit_is_allowed" |
-| IN-4 | open | #201: the server side is covered (`GameRulesTests.cs` "Missing_setting_stops_startup_and_names_it", "Wrong_type_or_empty_value_stops_startup"); the phone has no test for null and wrong-type fields |
+| IN-4 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Missing_setting_stops_startup_and_names_it", "Wrong_type_or_empty_value_stops_startup"; `mobile/test/v0_1/fr1/game_rules_test.dart` "rejects a response with a missing field instead of half-applying it", "a null decimal", "a decimal sent as text" |
 | IN-5 | covered | `mobile/test/v0_1/fr1/game_rules_test.dart` "accepts a response with a field it does not know (a newer server)", "rejects a response with a missing field instead of half-applying it" (an older server that lacks a field is rejected, and the current rules are kept). Deploy order is documented in `records/fr1-game-rules.md` (deploy the server before an app release that adds a field) |
 | IN-6 | open | FR6: `Loop:SkipNeighbors` has no effect from 0 to `MinPoints` (shipped 10 and 20); FR6 gives it a meaning or removes it; moved when the FR1 list was frozen |
 | IN-7 | open | FR5: the hop limit (60 m) is below max speed × interval + drift (71.65 m), so the relation check needs new values; FR5 sets them with the new speed limit; moved when the FR1 list was frozen |
@@ -307,7 +312,7 @@ was frozen on 2026-10-07: rows about code a later FR rebuilds moved to that FR, 
 | LEG-5 | open | FR3, FR5, FR6: numbers that decide captures are still in code — the phone's noise floor and the first GPS fix (FR3), the smoothness minimums (FR5), the loop overlap (FR6); moved when the FR1 list was frozen |
 | LEG-6 | n/a | FR1 has no debug-only path |
 | LEG-7 | n/a | No lesson or proposed ADR is about game rules |
-| LEG-8 | open | #201: the walk-start tests wait in real time and check 5 s, not 3 s |
+| LEG-8 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "is not held back longer than the limit when its own request is slow", "is not held back longer than the limit by a slow refresh" (fake time; waiting 1 ms before the 3 s limit, started at it) |
 | LEG-9 | n/a | CI's analyze bar isn't specific to FR1 (#221 tracks the process) |
 | LEG-10 | n/a | `RulesController` only calls `IRuleSettings` |
 | LEG-11 | n/a | FR1 adds no config files |

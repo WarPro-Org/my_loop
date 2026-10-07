@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myloop/shared/rules/game_rules.dart';
@@ -72,18 +73,23 @@ ProviderContainer _container(RulesStore store, RulesSource source) {
   return container;
 }
 
-/// The network under a real Dio: every request gets the same status, content type and body.
+/// The network under a real Dio: every request gets the same status, content type and body, or
+/// fails to connect while [offline]. A test may change the reply between requests.
 class _FixedReply implements HttpClientAdapter {
   _FixedReply(this.status, this.contentType, this.body);
-  final int status;
-  final String contentType;
-  final String body;
+  int status;
+  String contentType;
+  String body;
+  bool offline = false;
   int requests = 0;
 
   @override
   Future<ResponseBody> fetch(
       RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
     requests++;
+    if (offline) {
+      throw DioException(requestOptions: options, type: DioExceptionType.connectionError, message: 'no internet');
+    }
     return ResponseBody.fromString(body, status, headers: {
       Headers.contentTypeHeader: [contentType],
     });
@@ -102,6 +108,54 @@ RulesSource _realSource(_FixedReply reply) {
   dio.interceptors.clear();
   return ApiRulesSource(api);
 }
+
+/// Never answers its first request (e.g. the sign-in token step stuck offline); answers later
+/// requests with [rules].
+class _StuckOnce implements RulesSource {
+  _StuckOnce(this.rules);
+  final SavedRules rules;
+  int fetches = 0;
+  @override
+  Future<SavedRules?> fetchIfChanged(String? knownTag) {
+    fetches++;
+    return fetches == 1 ? Completer<SavedRules?>().future : Future.value(rules);
+  }
+}
+
+/// Runs [body] in fake time, with every pending microtask run after each step it takes.
+void _inFakeTime(void Function(FakeAsync async) body) => fakeAsync((async) {
+      body(async);
+      async.flushMicrotasks();
+    });
+
+/// The server refuses the app start's request with [status]: the rules and the saved copy are
+/// kept, nothing asks again on its own for an hour, and the next trigger (start, resume, login,
+/// walk start) asks again and applies new rules.
+void _refusedThenAskedAgain(int status) => _inFakeTime((async) {
+      final reply = _FixedReply(status, ContentType.text.mimeType, 'refused');
+      final store = _MemoryStore(_version(1));
+      final container = _container(store, _realSource(reply));
+      container.read(gameRulesProvider);
+      async.elapse(Duration.zero); // Dio sends on a zero-length timer
+
+      expect(reply.requests, 1, reason: 'the app start asked the server');
+      expect(container.read(gameRulesProvider).version, 1);
+      expect(store.saved?.rules.version, 1);
+      expect(store.saves, 0);
+
+      async.elapse(const Duration(hours: 1));
+      expect(reply.requests, 1, reason: 'no retry without a trigger');
+
+      reply
+        ..status = HttpStatus.ok
+        ..contentType = ContentType.json.mimeType
+        ..body = jsonEncode({...defaultGameRules.toJson(), 'version': 2});
+      container.read(gameRulesProvider.notifier).refresh();
+      async.elapse(Duration.zero);
+      expect(reply.requests, 2, reason: 'the next trigger asked again');
+      expect(container.read(gameRulesProvider).version, 2);
+      expect(store.saved?.rules.version, 2);
+    });
 
 void main() {
   test('first launch with no saved copy asks the server without a fingerprint', () async {
@@ -302,6 +356,55 @@ void main() {
       expect(reply.requests, isPositive, reason: 'the request reached the network');
       expect(store.saved?.rules.version, 1);
       expect(store.saves, 0);
+    });
+  });
+
+  group('a refused request keeps the rules and the saved copy, never retries on its own, and the next refresh asks again', () {
+    test('a 400 (bad request)', () => _refusedThenAskedAgain(HttpStatus.badRequest));
+    test('a 403 (forbidden)', () => _refusedThenAskedAgain(HttpStatus.forbidden));
+    test('a 404 (not found)', () => _refusedThenAskedAgain(HttpStatus.notFound));
+    test('a 429 (too many requests)', () => _refusedThenAskedAgain(HttpStatus.tooManyRequests));
+    test('a 500 (server error)', () => _refusedThenAskedAgain(HttpStatus.internalServerError));
+    test('a 503 (server down)', () => _refusedThenAskedAgain(HttpStatus.serviceUnavailable));
+  });
+
+  test('first launch offline with nothing saved uses the built-in copy, and the next refresh still runs', () async {
+    final reply = _FixedReply(HttpStatus.ok, ContentType.json.mimeType,
+        jsonEncode({...defaultGameRules.toJson(), 'version': 2}))
+      ..offline = true;
+    final store = _MemoryStore();
+    final container = _container(store, _realSource(reply));
+
+    expect((await _settle(container)).version, defaultGameRules.version);
+    expect(store.saves, 0);
+
+    reply.offline = false;
+    expect((await _settle(container)).version, 2);
+    expect(store.saved?.rules.version, 2);
+  });
+
+  test('a request that never answers gives up at the limit, and the next refresh is not blocked', () {
+    _inFakeTime((async) {
+      final source = _StuckOnce(_version(2));
+      final container = _container(_MemoryStore(_version(1)), source);
+      var firstDone = false;
+      container.read(gameRulesProvider); // the app start's refresh: its request never answers
+      container
+          .read(gameRulesProvider.notifier)
+          .settled(limit: const Duration(hours: 1))
+          .then((_) => firstDone = true);
+
+      async.elapse(rulesRequestLimit - const Duration(milliseconds: 1));
+      expect(firstDone, isFalse, reason: 'still waiting just before the limit');
+      async.elapse(const Duration(milliseconds: 1));
+      expect(firstDone, isTrue, reason: 'gave up exactly at the limit');
+      expect(container.read(gameRulesProvider).version, 1, reason: 'kept the rules it had');
+      expect(source.fetches, 1);
+
+      container.read(gameRulesProvider.notifier).refresh();
+      async.flushMicrotasks();
+      expect(source.fetches, 2, reason: 'the next refresh ran');
+      expect(container.read(gameRulesProvider).version, 2);
     });
   });
 }

@@ -74,6 +74,9 @@ Every tunable number lives in one place so the rules can be tuned from real test
   claim code.
 - A walk starts on the newest rules the server has, if the app can fetch them within 3 seconds; otherwise on the
   rules the app already has. The phone keeps a walk's rules for the whole walk.
+- A rules request gives up after 30 seconds, sign-in token step included, so a stuck request never blocks later
+  ones. A refused reply (any 4xx or 5xx) keeps the current rules and the saved copy; the app asks again only at the
+  next trigger (app start, resume, login, reconnect, walk start), never in a loop of its own.
 - Left to later FRs (agreed with the owner):
   - Until FR9 stores each walk's rules (version and fingerprint), the server judges a walk's points by the rules it has when they
     arrive, so a server update in the middle of a walk changes how the rest of that walk is judged.
@@ -117,6 +120,9 @@ Depends on: FR1.
   - The first GPS fix of a walk goes through the accuracy threshold like every other fix (today it is taken before
     the walk's rules are pinned and skips it; moved from FR1, scenario DEV-9). The phone's noise floor (fixes closer
     than about 8 m are dropped) becomes a setting (LEG-5).
+- Every request the app sends has a bounded wait, including the sign-in token step in the shared API client
+  (`api_service.dart`), which can hang offline with an expired token. FR1 bounds only the rules request (found in
+  FR1, scenarios LIFE-10 and NET-7).
 - **[#12]** Weak GPS is flagged at that moment — as a message on screen, or in the tracking notification when the app is
   in the background — with no buzz.
 - Tracking keeps working with the screen off, the phone in a pocket, or another app (e.g. WhatsApp) open.
