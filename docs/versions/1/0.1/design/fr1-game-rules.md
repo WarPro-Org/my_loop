@@ -247,7 +247,7 @@ rebuilds moved to that FR (#228, #229), and nothing found later is added to FR1.
 | LIFE-7 | accepted | "App updated with newer built-in rules": the saved copy wins; approved by the owner in #219 |
 | LIFE-8 | covered | `mobile/test/v0_1/fr1/rules_store_test.dart` "a corrupted saved copy is ignored instead of crashing", "a saved copy with an unexpected shape is ignored instead of crashing"; `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "first launch with no internet uses the built-in copy" (nothing loaded falls back to the built-in copy) |
 | LIFE-9 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "overlapping refreshes never fetch in parallel or save twice", "a refresh asked for as the last request finishes is never lost"; `mobile/test/v0_1/fr1/rules_store_test.dart` "RulesStore is the only code that touches the saved rules file" |
-| LIFE-10 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a request that never answers gives up at the limit, the next refresh is not blocked, and a late answer is dropped" (the sign-in token step stuck offline). The "timers pile up" part doesn't apply: rules run no timers. Other requests' token step is FR3's |
+| LIFE-10 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a request that never answers gives up at the limit, the next refresh is not blocked, and a late answer is dropped" (the sign-in token step stuck offline). The part about timers piling up doesn't apply: rules run no timers. Other requests' token step is FR3's |
 | LIFE-11 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "starts on the rules it has when its own request fails" |
 | NET-1 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "offline with a saved copy uses the saved copy" |
 | NET-2 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 500 (server error)", "a 503 (server down)" (rules kept, asked again at the next trigger) |
@@ -256,7 +256,7 @@ rebuilds moved to that FR (#228, #229), and nothing found later is added to FR1.
 | NET-5 | covered | `mobile/test/v0_1/fr1/rules_consistency_test.dart` "a reconnect after being offline checks the rules again". The 'pending work is sent' part doesn't apply: rules have nothing to send |
 | NET-6 | n/a | `GET /api/rules` only reads; no write can be repeated |
 | NET-7 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a request that never answers gives up at the limit, the next refresh is not blocked, and a late answer is dropped", "a refresh after login is not lost behind a signed-out request that got a 401" |
-| NET-8 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 403 (forbidden)", "a 404 (not found)" (rules kept, no retry on its own). The "clear message" part doesn't apply: a failed rules refresh shows the user nothing, by design |
+| NET-8 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 403 (forbidden)", "a 404 (not found)" (rules kept, no retry on its own). The part about a clear message doesn't apply: a failed rules refresh shows the user nothing, by design |
 | NET-9 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 429 (too many requests)" |
 | NET-10 | covered | `mobile/test/v0_1/fr1/game_rules_provider_test.dart` "a 400 (bad request)", "a 403 (forbidden)", "a 404 (not found)", "a 429 (too many requests)" |
 | NET-11 | n/a | Rules show the user no rejection message |
