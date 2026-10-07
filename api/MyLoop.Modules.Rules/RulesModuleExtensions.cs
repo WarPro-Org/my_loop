@@ -16,6 +16,7 @@ public static class RulesModuleExtensions
         services.AddSingleton<IValidateOptions<GameRules>>(new GameRulesPresenceValidator(section));
         services.AddSingleton<IValidateOptions<GameRules>, GameRulesValidator>();
         services.AddSingleton<IRuleSettings, RuleSettings>();
+        services.AddHostedService<RulesStartupCheck>();
         return services;
     }
 }
