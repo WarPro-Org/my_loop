@@ -21,9 +21,9 @@ whose file no longer exists.
 
 | File | What it removes or hands over | Verdict | Owner |
 |---|---|---|---|
-| `api/MyLoop.Api/Data/DbInitializer.cs` | Startup deletes every player's explored hexes and rebuilds them from owned land (line 103, audit A2); also removes duplicate daily-mission rows | breaks #5 | #201 |
+| `api/MyLoop.Api/Data/DbInitializer.cs` | Startup deletes every player's explored hexes and rebuilds them from owned land (line 103, audit A2); also removes duplicate daily-mission rows | breaks #5 | FR7 |
 | `api/MyLoop.Api/Services/TerritoryService.cs` | A claim hands a hex that another player owns to the claimant (`cell.OwnerId = userId`, line 1139) | breaks #43 | FR6 |
-| `api/MyLoop.Api/Services/DecayCleanupService.cs` | Every hour, deletes land not refreshed within `DecayDays` (line 215) | breaks #43 | FR15 |
+| `api/MyLoop.Api/Services/DecayCleanupService.cs` | Every hour, deletes land not refreshed within `DecayDays` (line 215) | breaks #43 | FR6 |
 | `api/MyLoop.Api/Services/UserService.cs` | Account deletion purges the user's rows without the per-user lock, and four tables have no cascade (audit A4) | breaks #40 | FR12 |
 | `api/MyLoop.Api/Services/LeaderboardService.cs` | Deletes today's and old leaderboard snapshot rows | keeps none — a derived snapshot, not user-owned data | - |
 | `api/MyLoop.Api/Services/Moderation/BlockService.cs` | Unblock deletes the caller's own block row | keeps none — the caller's own request | - |

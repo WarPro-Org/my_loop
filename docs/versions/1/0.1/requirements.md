@@ -163,6 +163,11 @@ Depends on: FR1, FR3.
   reproduce them exactly, every time.
 - **[#43]** In 0.1 no land and no explored hex is ever lost: not to another player's claim, to a timer, or to a server
   restart. Land already owned stays owned. This replaces the two prose promises that stood here and in FR15.
+  - Old server code that breaks #43 today, which FR6 switches off (audit E5, `docs/data-removals.md`):
+    - stealing: a claim hands a hex that another player owns to the claimant (`TerritoryService.cs`,
+      `UpdateExistingCell`). In 0.1 such hexes are skipped and stay with their owner;
+    - decay: an hourly job deletes land not walked through for 7 days (`DecayCleanupService.cs`). The land part is
+      removed; the streak-breaking part of the same job keeps running.
 
 Depends on: FR1, FR3.
 
@@ -172,6 +177,9 @@ Depends on: FR1, FR3.
   stretch between two recorded points, not only the hex a point landed in. Explored land is yours to see, not owned,
   and nobody can steal it.
   - Sections rejected as too fast, and long gaps that aren't joined up, explore nothing.
+  - Old server code that breaks #5 and #43 today, which FR7 removes before it stores any exploration: on every start
+    after the first, a startup step deletes every player's explored hexes and rebuilds them from owned land only
+    (`Data/DbInitializer.cs`, `BackfillExploredCells`, audit A2). Startup never deletes user data (scenario SRV-4).
 
 Depends on: FR3, FR4, FR5.
 
@@ -257,6 +265,8 @@ Depends on: FR9, FR10.
 - **[#41]** Fresh start for existing beta testers: accounts, display names and avatars stay; captured land, explored hexes
   and saved home locations are deleted. Testers see a one-time message: "MyLoop has been rebuilt — your map starts
   fresh."
+- Bot users and their land, seeded today in every environment including Production (`Data/Seeding/`, audit A3), are
+  deleted with the reset and no longer seeded outside development (scenario SRV-5).
 
 Depends on: FR6, FR7 (new rules live before the reset).
 
