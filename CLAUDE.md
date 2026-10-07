@@ -48,6 +48,12 @@ Applies when planning versions, discussing requirements, or creating tasks.
   - each code PR, whose `**Scenarios:**` line names the IDs it covers or changes;
   - every review, which checks the PR against those IDs;
   - closing an FR, when no row of its table is left `open` with that FR (`FRn`) or its task (`#N`) as owner.
+- **`n/a` on an existing-code ID needs a search:** an ID marked `[search]` is about code that already exists. Answer
+  `n/a` only after searching the whole code base, written as `searched: <what> — <result>`. "My change doesn't do
+  this" is not an answer. "PR rules" checks the prefix; the reviewer checks the search was real.
+- **Data-removal register (`docs/data-removals.md`, DATA-1):** every file that deletes, overwrites, hands over or
+  expires user data is listed with a verdict (`keeps #N` or `breaks #N` plus an owner). A PR that adds such code adds
+  its row in the same PR.
 - **Keep it growing without being asked:** any finding that no ID covers (a review, audit, bug, test failure or
   user report) becomes a new ID in the PR that records or fixes it. The same PR answers the new ID in every design
   doc. IDs are never deleted.
@@ -351,7 +357,12 @@ claim; the owner's review and the review records in the PR are what keep claims 
     answers every ID exactly once, outside comments and code fences:
     - `covered` names an existing test file and a test name found in it;
     - `n/a` and `accepted` give a reason;
-    - `open` names an owner.
+    - `open` names an owner;
+    - `n/a` on a `[search]` ID starts with `searched:`.
+
+  - Every PR: every file with a delete, overwrite, ownership change or expiry (the patterns are in the script) is a
+    row in `docs/data-removals.md`, every row names a file that exists, a verdict `keeps #N` / `breaks #N`, and an
+    owner for `breaks`.
 
     Claude-made and FR PRs that change code also need a `**Scenarios:**` line naming known IDs, or
     `none — <reason>`.

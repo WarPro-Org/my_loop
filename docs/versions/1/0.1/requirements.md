@@ -161,7 +161,8 @@ Depends on: FR1, FR3.
 - **[#7]** (rule part) Accuracy means the rule is applied 100% correctly, and the path is as good as the phone's GPS
   allows. "100% correct" is proven by a set of reference walks with known correct results; the capture rule must
   reproduce them exactly, every time.
-- In 0.1, capturing never loses land: land already owned stays owned (see FR15).
+- **[#43]** In 0.1 no land and no explored hex is ever lost: not to another player's claim, to a timer, or to a server
+  restart. Land already owned stays owned. This replaces the two prose promises that stood here and in FR15.
 
 Depends on: FR1, FR3.
 
@@ -268,7 +269,7 @@ Depends on: nothing.
 
 ## FR15 — Land strength (recorded now, designed with rivals)
 
-In 0.1 no land is ever lost and strength is not shown. FR9 records full walk history, so these rules can be added later
+In 0.1 no land is ever lost (#43) and strength is not shown. FR9 records full walk history, so these rules can be added later
 without rework. The details and numbers are decided when rivals are designed.
 
 - **[#16]** Walking a hex makes it stronger, up to a limit.
@@ -303,3 +304,4 @@ No 0.1 work beyond FR9.
 | #12 | FR3 | #26 | FR10 | #40 | FR12 |
 | #13 | FR5 | #27 | FR10 | #41 | FR13 |
 | #14 | FR5 | #28 | FR10 | #42 | FR2 |
+| #43 | FR6 | | | | |
