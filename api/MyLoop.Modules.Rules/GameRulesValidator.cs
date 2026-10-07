@@ -8,6 +8,8 @@ namespace MyLoop.Modules.Rules;
 /// </summary>
 internal sealed class GameRulesValidator : IValidateOptions<GameRules>
 {
+    // One line per setting on purpose: each limit is its own chosen number, so a setting a later FR adds gets
+    // its line here with it (presence is covered for every setting by GameRulesPresenceValidator).
     // Upper limits catch a typo such as 500 instead of 50. Each sits at most 5× above the shipped
     // value (appsettings.json), so tuning still has room and a 10× slip stops startup.
     private const double MaxClosureDistanceMeters = 200;
@@ -44,24 +46,29 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
             if (!(value > 0 && value <= 1)) failures.Add($"{GameRules.SectionName}:{path} must be above 0 and at most 1");
         }
 
+        // Setting paths come from the property names, so a rename can't leave a stale message.
+        static string Loop(string setting) => $"{nameof(GameRules.Loop)}:{setting}";
+        static string Gps(string setting) => $"{nameof(GameRules.Gps)}:{setting}";
+        static string AntiCheat(string setting) => $"{nameof(GameRules.AntiCheat)}:{setting}";
+
         // Version only grows, one step per change, so it has no upper limit.
         if (rules.Version <= 0) failures.Add($"{GameRules.SectionName}:{nameof(rules.Version)} must be greater than 0");
 
-        Positive(rules.Loop.ClosureDistanceMeters, "Loop:ClosureDistanceMeters", MaxClosureDistanceMeters);
-        Positive(rules.Loop.MinPoints, "Loop:MinPoints", MaxLoopPoints);
-        NotNegative(rules.Loop.SkipNeighbors, "Loop:SkipNeighbors", MaxSkipNeighbors);
-        Positive(rules.Loop.MinAreaSquareMeters, "Loop:MinAreaSquareMeters", MaxLoopAreaSquareMeters);
+        Positive(rules.Loop.ClosureDistanceMeters, Loop(nameof(LoopRules.ClosureDistanceMeters)), MaxClosureDistanceMeters);
+        Positive(rules.Loop.MinPoints, Loop(nameof(LoopRules.MinPoints)), MaxLoopPoints);
+        NotNegative(rules.Loop.SkipNeighbors, Loop(nameof(LoopRules.SkipNeighbors)), MaxSkipNeighbors);
+        Positive(rules.Loop.MinAreaSquareMeters, Loop(nameof(LoopRules.MinAreaSquareMeters)), MaxLoopAreaSquareMeters);
 
-        Positive(rules.Gps.AccuracyThresholdMeters, "Gps:AccuracyThresholdMeters", MaxAccuracyThresholdMeters);
+        Positive(rules.Gps.AccuracyThresholdMeters, Gps(nameof(GpsRules.AccuracyThresholdMeters)), MaxAccuracyThresholdMeters);
 
-        Positive(rules.AntiCheat.MaxSpeedMetersPerSecond, "AntiCheat:MaxSpeedMetersPerSecond", MaxSpeedLimitMetersPerSecond);
-        Positive(rules.AntiCheat.MaxAverageSpeedMetersPerSecond, "AntiCheat:MaxAverageSpeedMetersPerSecond", MaxSpeedLimitMetersPerSecond);
-        Positive(rules.AntiCheat.GpsDriftMarginMeters, "AntiCheat:GpsDriftMarginMeters", MaxDriftMarginMeters);
-        Positive(rules.AntiCheat.MaxDistanceBetweenPointsMeters, "AntiCheat:MaxDistanceBetweenPointsMeters", MaxHopMeters);
-        Fraction(rules.AntiCheat.MaxSpeedViolationRate, "AntiCheat:MaxSpeedViolationRate");
-        Positive(rules.AntiCheat.GpsSamplingIntervalSeconds, "AntiCheat:GpsSamplingIntervalSeconds", MaxSamplingIntervalSeconds);
-        Fraction(rules.AntiCheat.DurationToleranceFactor, "AntiCheat:DurationToleranceFactor");
-        Positive(rules.AntiCheat.MinBearingStdDev, "AntiCheat:MinBearingStdDev", MaxBearingStdDevDegrees);
+        Positive(rules.AntiCheat.MaxSpeedMetersPerSecond, AntiCheat(nameof(AntiCheatRules.MaxSpeedMetersPerSecond)), MaxSpeedLimitMetersPerSecond);
+        Positive(rules.AntiCheat.MaxAverageSpeedMetersPerSecond, AntiCheat(nameof(AntiCheatRules.MaxAverageSpeedMetersPerSecond)), MaxSpeedLimitMetersPerSecond);
+        Positive(rules.AntiCheat.GpsDriftMarginMeters, AntiCheat(nameof(AntiCheatRules.GpsDriftMarginMeters)), MaxDriftMarginMeters);
+        Positive(rules.AntiCheat.MaxDistanceBetweenPointsMeters, AntiCheat(nameof(AntiCheatRules.MaxDistanceBetweenPointsMeters)), MaxHopMeters);
+        Fraction(rules.AntiCheat.MaxSpeedViolationRate, AntiCheat(nameof(AntiCheatRules.MaxSpeedViolationRate)));
+        Positive(rules.AntiCheat.GpsSamplingIntervalSeconds, AntiCheat(nameof(AntiCheatRules.GpsSamplingIntervalSeconds)), MaxSamplingIntervalSeconds);
+        Fraction(rules.AntiCheat.DurationToleranceFactor, AntiCheat(nameof(AntiCheatRules.DurationToleranceFactor)));
+        Positive(rules.AntiCheat.MinBearingStdDev, AntiCheat(nameof(AntiCheatRules.MinBearingStdDev)), MaxBearingStdDevDegrees);
 
         CheckCombinations(rules, failures);
 
@@ -75,6 +82,6 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
         // below it, fast runners would be rejected.
         var antiCheat = rules.AntiCheat;
         if (antiCheat.MaxAverageSpeedMetersPerSecond < antiCheat.MaxSpeedMetersPerSecond)
-            failures.Add($"{GameRules.SectionName}:AntiCheat:MaxAverageSpeedMetersPerSecond must not be below MaxSpeedMetersPerSecond");
+            failures.Add($"{GameRules.SectionName}:{nameof(GameRules.AntiCheat)}:{nameof(AntiCheatRules.MaxAverageSpeedMetersPerSecond)} must not be below {nameof(AntiCheatRules.MaxSpeedMetersPerSecond)}");
     }
 }

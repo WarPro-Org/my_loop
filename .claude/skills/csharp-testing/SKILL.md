@@ -17,6 +17,9 @@ Comprehensive testing patterns for .NET applications using xUnit, FluentAssertio
 
 ## Test Framework Stack
 
+> **MyLoop:** the 0.1 tests (`tests/MyLoop.V01.Tests`) use xUnit's own `Assert` and Moq; FluentAssertions and
+> NSubstitute are not referenced. Follow the project, not the table below.
+
 | Tool | Purpose |
 |---|---|
 | **xUnit** | Test framework (preferred for .NET) |
