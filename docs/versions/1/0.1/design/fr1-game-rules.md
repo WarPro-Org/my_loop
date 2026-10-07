@@ -1,7 +1,7 @@
 # FR1 — Game rules: design
 
-Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1. FR1 is done; the one-page summary is
-`docs/versions/1/0.1/records/fr1-game-rules.md` — read that first.
+Task: #201. Requirement: `docs/versions/1/0.1/requirements.md` → FR1. FR1 is done (closed again 2026-10-07); the
+one-page summary is `docs/versions/1/0.1/records/fr1-game-rules.md` — read that first.
 
 **Status:** written after the code, because Gate 2 was skipped when FR1 was built (see #201). It describes what
 was built and the gaps found while writing it; PR 5/9 closed those gaps. An independent audit of all of FR1 then found
@@ -12,7 +12,9 @@ D1 and D2.
 **FR1 PRs (merge in order):** 1/9 #203 server rules module · 2/9 #210 this design doc · 3/9 #204 server uses the
 rules · 4/9 #205 phone uses the rules · 5/9 #214 fixes and contract tests from this doc · 6/9 #215 spec and design
 updates from the FR1 audit · 7/9 #216 the audit's server gaps · 8/9 #218 the audit's app gaps (replaced #217, which
-was merged into 7/9's branch by mistake and reverted) · 9/9 the final audit's gaps.
+was merged into 7/9's branch by mistake and reverted) · 9/9 #219 the final audit's gaps. After the first close-out
+(#220) and the scenario table (#222), the 2026-09-29 blind audit reopened FR1: #228 and #229 moved rows to later
+FRs and froze the list, #229 fixed the server rows, #230 the phone rows, and #231 closed FR1 again.
 
 ## In one paragraph
 
@@ -45,8 +47,10 @@ them for its GPS filter and live loop estimate. Anti-cheat numbers never leave t
 
 **Startup check:** every setting must be present (`GameRulesPresenceValidator`; a missing number would otherwise
 read as 0), every number must be above 0 (SkipNeighbors may be 0), rates must be above 0 and at most 1,
-and the average-speed limit may not be below the per-point limit. Any failure stops the server and names the
-setting.
+and the average-speed limit may not be below the per-point limit. Every number setting except `Version` has an
+upper limit (at most 5× its shipped value; the rates at most 1), and `NaN` and `Infinity` are rejected. Any failure
+stops the server and names the setting. `RulesStartupCheck` builds the rules while the server starts, so nothing
+fails later on the first request.
 
 **Changing a rule:** edit `appsettings.json` (or a production override) and redeploy. Bump `Version`. Even
 without a bump, the fingerprint changes, so phones still get the new numbers.
@@ -148,7 +152,7 @@ The built-in copy is version 1 of `appsettings.json`; a test fails if they drift
 
 | Risk | Status |
 |---|---|
-| Anti-cheat numbers leak to the phone | Mitigated: the server's reply must equal the shared five-field sample exactly. Limit: the test uses ASP.NET's default JSON settings, not the real HTTP pipeline; custom JSON options added to the API later would not be caught |
+| Anti-cheat numbers leak to the phone | Mitigated: the server's reply must equal the shared five-field sample exactly. `RulesHttpTests` also checks the reply over real HTTP (#229). Limit: its host is set up like `Program.cs` without the other modules, so a JSON option added to `Program.cs` must be added to the test too |
 | Server and phone disagree on field names or types | Mitigated: one shared sample, `tests/contracts/client_rules.json`, tested on both sides (same limit as above) |
 | A fixed number comes back in the server's loop or anti-cheat code | Mitigated: each of the 12 settings the server's loop and anti-cheat code reads has a "changing it changes the result" test (`ServicesUseRulesTests`, 3 from 3/9 and 9 from 7/9). (The GPS accuracy threshold is checked at startup and passed on to the phone, but no server check uses it yet; its server test comes with FR3.) |
 | Dev mock walks stop passing anti-cheat after tuning | Mitigated: the mock-walk tests read the anti-cheat values from `appsettings.json`, and CI and `verify.sh` run them (from 9/9) |
@@ -212,6 +216,18 @@ handling, and refresh's catch (captive portal, 503).
 2. CI and `scripts/verify.sh` run `mobile/test/mock_walk_engine_test.dart` too, so the mock-walk check against
    `appsettings.json` guards every change.
 3. Spec: FR9 stores a fingerprint of the full rule set per walk, because a version number alone doesn't identify one.
+
+## Work done after the blind audit (#228, #229, #230)
+
+1. The list was frozen; rows about code a later FR rebuilds moved to it, each with a spec bullet there (#228:
+   data loss to FR6, FR7 and FR13; #229: IN-6 and LEG-3 to FR6, IN-7 to FR5, DEV-9 to FR3, LEG-5 to FR3, FR5, FR6).
+2. Server (#229): `NaN` and `Infinity` rejected, upper limits, the rules built at startup, wrong-type values tested,
+   the rules reply tested over real HTTP.
+3. Phone (#230): a rules request gives up after 30 s; refused replies (400–503), a stuck request, a first launch
+   offline, one writer for the saved file and null or wrong-type fields are tested; the walk-start limit is tested in
+   fake time against a written-out 3 s.
+4. Final audit on master, 2026-10-07: `audits/2026-10-07-fr1-final-audit.md`. The blind audit was not rerun (owner
+   decision): it ran on 2026-09-29, and every finding is fixed or moved.
 
 ## Scenarios
 

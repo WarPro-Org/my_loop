@@ -1,8 +1,10 @@
 # FR1 — Game rules: record
 
-**Status:** reopened (2026-09-29): the blind audit found gaps, listed as `open #201` rows in the design doc's `## Scenarios` table. First closed 2026-09-28. Task #201 · spec `requirements.md` → FR1 · design `design/fr1-game-rules.md`
-(full matrix, risks and history) · PRs #203 #210 #204 #205 #214 #215 #216 #218 #219, and close-out PR #220
-(this record).
+**Status:** done, closed 2026-10-07. First closed 2026-09-28 (#220); reopened by the 2026-09-29 blind audit, whose
+21 findings were fixed (#229, #230) or moved to later FRs (#228, #229); final audit
+`audits/2026-10-07-fr1-final-audit.md`. Task #201 · spec `requirements.md` → FR1 · design `design/fr1-game-rules.md`
+(full matrix, risks and history) · PRs #203 #210 #204 #205 #214 #215 #216 #218 #219, close-out #220, scenario table
+#222, #228, #229, #230, and close-out #231 (this update).
 
 This page is the short version: what FR1 put into the app and what a later change must keep true.
 
@@ -19,7 +21,7 @@ This page is the short version: what FR1 put into the app and what a later chang
 |---|---|---|
 | Settings | `GameRules` section in `appsettings.json`: `Version`, `Loop` (4), `Gps` (1), `AntiCheat` (8) | `api/MyLoop.Api/appsettings.json` |
 | Server module | Rules module; others use only `IRuleSettings` (`Current`, `GetClientRules()`, `ClientRulesTag`). Internals are internal | `api/MyLoop.Modules.Rules/` |
-| Startup check | Server refuses to start if any setting is missing or invalid (presence check + value check) | `GameRulesPresenceValidator`, `GameRulesValidator` |
+| Startup check | Server refuses to start if any setting is missing or invalid (presence check + value check, upper limits, no `NaN`/`Infinity`); the rules are built at startup, never first on a request | `GameRulesPresenceValidator`, `GameRulesValidator`, `RulesStartupCheck` |
 | Server readers | Loop detection and anti-cheat read every `Loop` and `AntiCheat` number from the rules. The GPS accuracy threshold is phone-only until FR3 | `HexGridService`, `PathValidationService` |
 | API | `GET /api/rules` (signed-in): the 5 phone fields only, never anti-cheat numbers (#15); ETag = `{Version}-{hash}`, 304 when unchanged. The phone rejects a reply with a missing or wrongly typed field instead of half-applying it | `RulesController`; contract `tests/contracts/client_rules.json` |
 | Phone state | `gameRulesProvider`: built-in copy → saved copy → server copy; refresh on app start, walk start and every hydration (login, onboarding, after a walk, resume, reconnect); one request at a time | `mobile/lib/shared/rules/` |
@@ -54,7 +56,13 @@ This page is the short version: what FR1 put into the app and what a later chang
 - **FR3:** the first GPS fix of a walk goes through the accuracy threshold (DEV-9); the phone's noise floor becomes
   a setting.
 - **FR6:** `Loop:SkipNeighbors` has no effect at 0 to `MinPoints`; FR6 gives it a meaning or removes it (IN-6,
-  LEG-3). The loop-overlap number becomes a setting.
+  LEG-3). The loop-overlap number becomes a setting. FR6 also switches off stealing and the land part of decay
+  (requirement #43, LEG-1).
+- **FR3:** every request the app sends gets a bounded wait, the shared sign-in step included (only the rules request
+  has one today).
+- **FR7:** the startup step that deletes explored hexes is removed (SRV-4).
+- **FR8:** the preview and the server use the same point cap and earth radius (GAME-13).
+- **FR13:** seeded bot users and their land are removed, and not seeded outside development (SRV-5).
 
 ## Known limits
 
@@ -80,7 +88,8 @@ change too, update `defaultGameRules` — a test fails when it drifts from `apps
 
 ## Tests that guard it
 
-`tests/MyLoop.V01.Tests/FR1/` (server: settings, startup checks, every read setting, contract, module boundary,
-endpoint) and `mobile/test/v0_1/fr1/` (phone: saved copy, refresh, every app moment in the design matrix, contract,
-ETag). `mobile/test/mock_walk_engine_test.dart` checks dev mock walks against the server's anti-cheat settings.
+`tests/MyLoop.V01.Tests/FR1/` (server: settings, startup checks and upper limits, every read setting, contract,
+the rules reply over real HTTP in `RulesHttpTests`, module boundary, endpoint) and `mobile/test/v0_1/fr1/` (phone:
+saved copy and its single writer, refresh, refused and stuck requests, every app moment in the design matrix, the
+exact 3 s walk-start wait in fake time, contract, ETag). `mobile/test/mock_walk_engine_test.dart` checks dev mock walks against the server's anti-cheat settings.
 All run in CI and `scripts/verify.sh`.

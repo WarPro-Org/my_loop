@@ -57,7 +57,7 @@ Features are numbered in the order they should be built. Each one only depends o
 
 ## FR1 — Configurable game settings
 
-**Status:** reopened (task #201): open rows in the design doc's `## Scenarios` table, from the 2026-09-29 blind audit. The list was frozen on 2026-10-07: only rows owned by #201 are fixed in FR1, and anything found later goes to the FR that owns that code. What it built and what later FRs must keep true: `records/fr1-game-rules.md`.
+**Status:** done (task #201), closed again 2026-10-07 after the 2026-09-29 blind audit reopened it; its list is frozen, and anything found later goes to the FR that owns that code. What it built and what later FRs must keep true: `records/fr1-game-rules.md`.
 
 Every tunable number lives in one place so the rules can be tuned from real test walks without code changes.
 
@@ -66,8 +66,9 @@ Every tunable number lives in one place so the rules can be tuned from real test
 - FR1 builds the settings system and moves the numbers today's code uses: loop-closing distance, minimum loop
   points and size, GPS accuracy threshold, and the speed numbers today's anti-cheat uses. Exact values are tuned from
   real test walks.
-- Every setting has an upper limit at most 5× its shipped value, so a typo (500 instead of 50) stops the server at
-  startup instead of running with it. `NaN` and `Infinity` are rejected too.
+- Every number setting except `Version` has an upper limit, so a typo (500 instead of 50) stops the server at
+  startup instead of running with it: at most 5× its shipped value, except the two rate settings, which are capped
+  at 1. `Version` has none, as it only grows. `NaN` and `Infinity` are rejected too.
 - Each later FR adds its own settings when it is built: auto-end thresholds (FR2), short-gap limits and safety-alarm
   delay (FR4), speed checks over gaps (FR5), guest inactivity period (FR12).
 - The old claim limits (e.g. 10 GPS points, 200 m walked, 20 walks a day) stay in code until FR6 replaces the old
@@ -220,6 +221,8 @@ Depends on: FR3, FR4, FR5.
 - **[#36]** The result screen shows how close an unfinished loop came to closing ("You were 150 m from closing this
   loop"), with the gap drawn on the map.
 - The result screen also shows what was explored, and any section rejected as too fast (see FR5).
+- The preview and the server use the same limits: today the preview sends at most 500 points while the server
+  allows 10,000, and the phone and the server use different earth radii (found in FR1, scenario GAME-13).
 
 Depends on: FR5, FR6, FR7.
 
