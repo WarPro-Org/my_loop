@@ -144,9 +144,9 @@ public class GameRulesTests
         builder.Services.AddMyLoopRules(ShippedWith(key, value));
         using var host = builder.Build();
 
-        var ex = await Assert.ThrowsAnyAsync<Exception>(() => host.StartAsync());
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => host.StartAsync());
 
-        Assert.Contains(key, ex.ToString());
+        Assert.Contains($"Failed to convert configuration value '{value}' at '{key}'", ex.Message);
     }
 
     [Fact]

@@ -31,6 +31,9 @@ home, not inline.
 
 - **C#:** game-rule numbers in `GameRules` (appsettings.json, read via `IRuleSettings`); other constants in `Constants/` (`GameConstants`, `ApiRoutes`, `FirebaseClaims`, `InfrastructureDefaults`)
 - **Dart:** a `*_constants.dart` / `const` in the feature, never a bare literal in a widget/provider
+- **A value only one class uses** stays a private named constant in that class (see `solid-architecture`). Limits
+  that guard the settings (e.g. `GameRulesValidator`'s upper limits) stay in code, never in the settings file they
+  guard, so a typo there can't loosen them.
 
 ```csharp
 // Bad

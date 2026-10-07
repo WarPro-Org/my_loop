@@ -69,7 +69,7 @@ a reviewer can answer with yes or no for every class, file and dependency the ch
 
 ## How to run it
 
-1. List the changed production files (`git diff --name-only master...HEAD -- api mobile/lib`).
+1. List the changed production files (`git diff --name-only origin/master...HEAD -- api mobile/lib`).
 2. For each new or changed class, file and dependency, answer every box above that applies.
 3. Record the result in the PR's "Skills run" with any findings and their fix commits. A box answered "no"
    without a fix is either fixed before the PR or written as an accepted exception with its reason.
