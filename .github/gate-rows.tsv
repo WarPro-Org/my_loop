@@ -8,8 +8,8 @@
 # and every code PR requires verification-loop.
 # Rows no pattern can decide (state kept across launches, error handling, hex counts, …) are not here:
 # the PR must still name them, as run or "Not applicable" with a reason.
-^api/.*\.cs$	coding-standards	dotnet-patterns	csharp-testing
-^mobile/lib/.*\.dart$	coding-standards
+^api/.*\.cs$	coding-standards	solid-architecture	dotnet-patterns	csharp-testing
+^mobile/lib/.*\.dart$	coding-standards	solid-architecture
 ^tests/.*\.cs$	csharp-testing
 ^mobile/.*\.dart$	dart-flutter-patterns	flutter-dart-code-review
 (^|/)Program\.cs$|^api/.*/Configuration/.*Extensions\.cs$|^api/.*/Controllers/	webapi-standards
