@@ -205,6 +205,27 @@ check_early_audit() {
   fi
 }
 
+# Docs map (CLAUDE.md "Docs map"): every folder and top-level file under docs/, and every kind of version
+# subfolder (audits/, design/, …), is named in the map, so Claude knows when to read it.
+check_docs_map() {
+  local map entry
+  map=$(git show "$merge:CLAUDE.md" 2>/dev/null | awk '/^## /{on = ($0 ~ /^## Docs map/); next} on')
+  if [[ -z "$map" ]]; then
+    problems+=("CLAUDE.md has no '## Docs map' section.")
+    return
+  fi
+  while IFS= read -r entry; do
+    [[ -z "$entry" ]] && continue
+    grep -qF -- "$entry" <<<"$map" || problems+=("${entry//\`/} isn't in CLAUDE.md's Docs map: add it to the activity that needs it (or to 'Only for background').")
+  done < <(
+    git ls-tree --name-only "$merge" docs/ 2>/dev/null | while read -r path; do
+      if [[ "$(git cat-file -t "$merge:$path")" == tree ]]; then echo "$path/"; else echo "$path"; fi
+    done
+    git ls-tree -r -d --name-only "$merge" docs/versions 2>/dev/null | grep -E '^docs/versions/[^/]+/[^/]+/[^/]+$' \
+      | sed -E 's#.*/##; s#.*#`&/`#' | sort -u
+  )
+}
+
 # IDs whose catalogue row carries the [search] marker: they are about code that already exists.
 search_ids=""
 check_scenarios() {
@@ -323,6 +344,7 @@ fi
 
 check_scenarios
 check_data_removals
+check_docs_map
 
 if (( ${PR_FILES:-0} > MAX_FILES || lines > MAX_LINES )) && ! grep -q '^Size exception:' <<<"$body"; then
   problems+=("PR is ${PR_FILES:-0} files / ${lines} lines (limit ~${MAX_FILES} / ~${MAX_LINES}). Split it, or add a 'Size exception: <reason, agreed with the owner>' line.")
