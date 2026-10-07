@@ -154,6 +154,9 @@ make_scenarios() {
   # NEW_DOC: text appended to a design doc that is new in this PR; AUDIT: an audit report the PR adds.
   [[ -n "${NEW_DOC:-}" ]] && { design_doc "$3"; printf '%s\n' "$NEW_DOC"; } >docs/versions/1/0.1/design/fr8-y.md
   [[ -n "${AUDIT:-}" ]] && mkdir -p docs/versions/1/0.1/audits && echo report >"docs/versions/1/0.1/audits/$AUDIT"
+  # EXTRA_DOC: a docs file the PR adds; NO_MAP: the PR's CLAUDE.md loses its Docs map heading.
+  [[ -n "${EXTRA_DOC:-}" ]] && mkdir -p "$(dirname "$EXTRA_DOC")" && echo doc >"$EXTRA_DOC"
+  [[ -n "${NO_MAP:-}" ]] && sed -i 's/^## Docs map/## Docs list/' CLAUDE.md
   [[ -n "${4:-}" ]] && mkdir -p "$(dirname "$4")" && echo new >"$4"
   g add -A && g commit -qm change
   head_sha=$(git rev-parse HEAD)
@@ -302,6 +305,18 @@ NEW_DOC="$EARLY" make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET
 expect fail "an early blind audit whose report isn't saved" "$(body 'none' '')" "fr8-y.md: its '## Early blind audit' section must link the saved report"
 NEW_DOC=$'## Early blind audit\n<!-- `docs/versions/1/0.1/audits/fr8-early.md` -->' AUDIT=fr8-early.md make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
 expect fail "a report link only inside a comment" "$(body 'none' '')" "fr8-y.md is a new design doc with no '## Early blind audit' section"
+
+# Docs map (CLAUDE.md): every docs folder, top-level docs file and kind of version subfolder is named in it.
+EXTRA_DOC=docs/runbooks/deploy.md make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
+expect pass "a docs folder the map names" "$(body 'none' '')"
+EXTRA_DOC=docs/notes/ideas.md make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
+expect fail "a docs folder the map doesn't name" "$(body 'none' '')" "docs/notes/ isn't in CLAUDE.md's Docs map"
+EXTRA_DOC=docs/todo.md make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
+expect fail "a top-level docs file the map doesn't name" "$(body 'none' '')" "docs/todo.md isn't in CLAUDE.md's Docs map"
+EXTRA_DOC=docs/versions/1/0.1/plans/x.md make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
+expect fail "a kind of version subfolder the map doesn't name" "$(body 'none' '')" "plans/ isn't in CLAUDE.md's Docs map"
+NO_MAP=1 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
+expect fail "CLAUDE.md without a Docs map" "$(body 'none' '')" "CLAUDE.md has no '## Docs map' section"
 
 make_pr $'docs/versions/1/0.1/design/fr9-x.md\n.claude/skills/mock-gps-anticheat/SKILL.md\nREADME.md' "docs/old.md"
 expect pass "docs-only PR: no gate rows required" "$(body 'none' '')"

@@ -15,6 +15,54 @@ These rules override all default Claude behavior. No exceptions.
 
 ---
 
+## Project Overview
+
+MyLoop is a real-world GPS territory-capture game ("Pokémon GO meets Risk meets Strava"): a Flutter app and a
+.NET 10 REST API. Players walk a closed loop outdoors to claim the H3 hexes inside it. Auth is Firebase JWT (Sign in
+with Apple + Google). The multiplayer closed beta is being rebuilt as single-player version 0.1, one FR at a time
+(`docs/versions/1/0.1/requirements.md`); old beta code (stealing, live map, leaderboard) stays until the FR that
+replaces it.
+
+```
+my_loop/
+  api/MyLoop.Api/        ← .NET 10 REST API host: controllers, old beta services, EF migrations, SignalR hubs
+  api/MyLoop.Modules.*/  ← 0.1 modules, one class library each (e.g. Rules), used only through their interface
+  mobile/                ← Flutter app (Dart)
+  tests/                 ← MyLoop.V01.Tests (0.1, runs in CI), MyLoop.Api.Tests (old, compiled only), contracts/
+  docs/                  ← all docs (see Docs map)
+  scripts/               ← verify.sh and dev scripts
+```
+
+**Mobile stack:** Flutter, Riverpod (state), go_router (navigation), Dio (HTTP), Firebase Auth
+**API stack:** .NET 10, Entity Framework (migrations in `api/MyLoop.Api/Migrations/`), SignalR (`Hubs/`)
+**Auth:** Firebase JWT — the API validates the token on every request
+
+---
+
+## Docs map — what to read, when
+
+All docs live under `docs/`; `docs/README.md` says what each folder holds. Read the docs for the activity before
+starting it. "PR rules" fails a PR that adds a docs folder or a top-level docs file this map doesn't name.
+
+| Activity | Read first |
+|---|---|
+| Planning a version or FR (Gate 1) | the version's `requirements.md` (`docs/versions/<release>/<version>/`), `docs/scenarios.md`, the records of earlier FRs (`records/`), `docs/decisions/` |
+| Writing a design doc (Gate 2) | the above, plus `docs/architecture/`, `docs/data-removals.md` and the version's `audits/` |
+| Coding (Gate 3) | the FR's design doc (`design/`), the records of FRs whose code it touches, `docs/architecture/`, `docs/runbooks/` for migrations and deploys |
+| Reviewing | the task, the design doc, `docs/scenarios.md`, `docs/data-removals.md` |
+| Fixing a bug | the version's `bugs/`, the records of the FRs it touches, `docs/scenarios.md`, `docs/data-removals.md` |
+| Anything iOS-facing | `docs/compliance/` |
+| Closing an FR | the version's `audits/` and `records/` |
+
+Only for background: `docs/product/` (the beta's product spec and design log; `requirements.md` wins where they
+disagree), `docs/design/` (beta design reviews), `docs/learnings/` (the story behind rules).
+
+**A lesson counts only once it is something Claude reads anyway:** a rule in this file, a skill, a
+`docs/scenarios.md` ID or a "PR rules" check, added in the PR that records the lesson. `docs/learnings/` keeps only
+the story of why, so nothing there has to be read to follow the rules.
+
+---
+
 ## Architecture Rules — SOLID, independent modules in one app
 
 - **Always follow SOLID.**
@@ -283,32 +331,6 @@ Do not write implementation code until the user explicitly approves the Design D
 
 ---
 
-## Project Overview
-
-MyLoop is a real-world GPS territory-capture game ("Pokémon GO meets Risk meets Strava") with
-a Flutter mobile client and a .NET 10 REST API backend. Players walk a closed loop outdoors to
-claim the H3 hexagons inside it; other players can steal territory, with real-time map updates
-over SignalR and push notifications via FCM. Auth is handled via Firebase JWT (Sign in with
-Apple + Google). The project is in closed beta.
-
----
-
-## Architecture
-
-```
-my_loop/
-  api/MyLoop.Api/     ← .NET 10 REST API (C#)
-  mobile/             ← Flutter app (Dart)
-  tests/              ← Shared test suite
-  scripts/            ← Dev/utility scripts
-```
-
-**Mobile stack:** Flutter, Riverpod (state), go_router (navigation), Dio (HTTP), Firebase Auth
-**API stack:** .NET 10, Entity Framework (migrations in api/MyLoop.Api/Migrations/), SignalR (Hubs/)
-**Auth:** Firebase JWT — API validates tokens on every request
-
----
-
 ## Branch & PR Workflow
 
 - Branch format: FR work uses `v0.1/frN-<part>` (see Planning Chat & User Stories); everything else uses
@@ -376,6 +398,9 @@ claim; the owner's review and the review records in the PR are what keep claims 
     the script (listed in `docs/data-removals.md`, with their blind spots) is one row there. Each row names a file
     that exists, appears once, has a verdict `keeps #N`, `keeps none — <reason>` or `breaks #N`, and an owner for
     `breaks`.
+  - Every PR: a design doc new on this PR has a `## Early blind audit` section linking a saved report under
+    `audits/` (it doesn't check that the report belongs to that FR).
+  - Every PR: every docs folder, top-level docs file and kind of version subfolder is named in the Docs map.
   - Any PR over the size limit needs a `Size exception:` line.
   - Bot PRs are skipped.
 
@@ -391,11 +416,8 @@ These are fast, local, write-time skills — catch issues before they reach a PR
 | A disk-persisting / async-serialized service or its tests (`*queue*.dart`, `*cache*.dart`, WAL/offline queues, `mobile/test/**`) | `flutter-disk-concurrency-test` (stub `path_provider`, assert disk==memory + surviving set, prove the test fails without the fix) |
 | **App state kept across launches or pinned for a walk, read by more than one place** (e.g. rules, saved profile, offline queues, values captured at walk start) | `state-lifecycle-consistency` (reader × app-moment matrix from the design doc (or the Bug Report on the bug track); tests for the readers this commit touches, through the real trigger; fake failures inside the real code, never its result; positive control before any "nothing happened" check; each test proven red when its behaviour is removed) |
 
-> These two gate tables are **intended to be auto-maintained**: once the `/update-session`
-> tooling lands in this repo, extracting a new skill should append a row here (or to the
-> Pre-PR table if it's a review-time concern). Until that companion change merges, add rows
-> by hand. A row with a file pattern also gets a line in `.github/gate-rows.tsv`, in the same PR. Keep the set of gate tables small (Pre-Check-in, Pre-PR) — every skill should
-> fall under exactly one.
+A new skill gets a row in one of these two tables (Pre-Check-in for write-time checks, Pre-PR for review-time
+ones), and a row with a file pattern also gets a line in `.github/gate-rows.tsv`, in the same PR.
 
 ---
 
@@ -474,8 +496,8 @@ Debug builds fall back to a dev tunnel, so plain `flutter run` needs no flags.
 - No hardcoded strings — use constants
 
 ### .NET API
-- Follow existing Controller → Service → Repository pattern
-- New endpoints go in `Controllers/`, business logic in `Services/`, data access in `Data/`
+- New 0.1 logic goes in a module (Architecture Rules); controllers stay in `Controllers/` and call the module's
+  interface. Old beta code keeps Controller → `Services/` → `Data/` until the FR that rebuilds it
 - Add EF migrations for any schema changes: `dotnet ef migrations add <Name>`
 - Never commit secrets — use `appsettings.Development.json` (gitignored) for local config
 
