@@ -272,7 +272,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | SRV-1 | accepted | D2: a redeploy mid-walk judges the rest of the walk by the new rules until FR9 |
 | SRV-2 | accepted | Deploy the server before an app release that adds a field (record, "Decisions that must stay true") |
 | SRV-3 | n/a | `GET /api/rules` only reads |
-| SRV-4 | open | FR7: startup code that rewrites data exists — `DbInitializer.cs:103` deletes every player's explored hexes on each start after the first (audit A2) |
+| SRV-4 | open | FR7: startup code that rewrites data exists — `DbInitializer.cs:103` deletes every player's explored hexes on a start whenever an owned hex has no explored row for its owner (audit A2) |
 | SRV-5 | open | FR13: bot users and bot land are seeded in every environment, Production included (audit A3) |
 | SRV-6 | n/a | The reply is five fixed fields |
 | SRV-7 | n/a | `GET /api/rules` only reads |

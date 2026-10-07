@@ -166,8 +166,10 @@ Depends on: FR1, FR3.
   - Old server code that breaks #43 today, which FR6 switches off (audit E5, `docs/data-removals.md`):
     - stealing: a claim hands a hex that another player owns to the claimant (`TerritoryService.cs`,
       `UpdateExistingCell`). In 0.1 such hexes are skipped and stay with their owner;
-    - decay: an hourly job deletes land not walked through for 7 days (`DecayCleanupService.cs`). The land part is
-      removed; the streak-breaking part of the same job keeps running.
+    - decay: an hourly job deletes land not walked through within its decay period, 7 to 90 days depending on
+      distance from home (`DecayCleanupService.cs`, `GameConstants.cs`). The land part is removed; the
+      streak-breaking part of the same job keeps running.
+  - #43's "server restart" part is closed by FR7, which removes the startup step that deletes explored hexes.
 
 Depends on: FR1, FR3.
 
@@ -177,9 +179,10 @@ Depends on: FR1, FR3.
   stretch between two recorded points, not only the hex a point landed in. Explored land is yours to see, not owned,
   and nobody can steal it.
   - Sections rejected as too fast, and long gaps that aren't joined up, explore nothing.
-  - Old server code that breaks #5 and #43 today, which FR7 removes before it stores any exploration: on every start
-    after the first, a startup step deletes every player's explored hexes and rebuilds them from owned land only
-    (`Data/DbInitializer.cs`, `BackfillExploredCells`, audit A2). Startup never deletes user data (scenario SRV-4).
+  - Old server code that breaks #5 and #43 today, which FR7 removes before it stores any exploration: whenever an owned
+    hex has no explored row for its owner (seeded bot land, a stolen hex), the next server start deletes every player's
+    explored hexes and rebuilds them from owned land only (`Data/DbInitializer.cs`, `BackfillExploredCells`, audit
+    A2). FR7 removes the whole step: startup never deletes user data (scenario SRV-4).
 
 Depends on: FR3, FR4, FR5.
 
