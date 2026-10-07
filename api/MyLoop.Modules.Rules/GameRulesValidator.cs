@@ -12,6 +12,7 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
     // value (appsettings.json), so tuning still has room and a 10× slip stops startup.
     private const double MaxClosureDistanceMeters = 200;
     private const double MaxLoopPoints = 100;
+    private const double MaxSkipNeighbors = 50;
     private const double MaxLoopAreaSquareMeters = 25_000;
     private const double MaxAccuracyThresholdMeters = 200;
     private const double MaxSpeedLimitMetersPerSecond = 15;
@@ -48,7 +49,7 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
 
         Positive(rules.Loop.ClosureDistanceMeters, "Loop:ClosureDistanceMeters", MaxClosureDistanceMeters);
         Positive(rules.Loop.MinPoints, "Loop:MinPoints", MaxLoopPoints);
-        NotNegative(rules.Loop.SkipNeighbors, "Loop:SkipNeighbors", MaxLoopPoints);
+        NotNegative(rules.Loop.SkipNeighbors, "Loop:SkipNeighbors", MaxSkipNeighbors);
         Positive(rules.Loop.MinAreaSquareMeters, "Loop:MinAreaSquareMeters", MaxLoopAreaSquareMeters);
 
         Positive(rules.Gps.AccuracyThresholdMeters, "Gps:AccuracyThresholdMeters", MaxAccuracyThresholdMeters);
