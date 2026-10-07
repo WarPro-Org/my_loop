@@ -6,7 +6,8 @@
 (full matrix, risks and history) · PRs #203 #210 #204 #205 #214 #215 #216 #218 #219, close-out #220, scenario table
 #222, #228, #229, #230, and close-out #231 (this update).
 
-This page is the short version: what FR1 put into the app and what a later change must keep true.
+This page is the short version: what FR1 put into the app and what a later change must keep true. How FR1 got here, in one page:
+the design doc's "FR1 story in one page".
 
 ## Scope
 
