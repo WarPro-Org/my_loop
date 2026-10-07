@@ -5,6 +5,16 @@ discovery. Keep it skimmable: what surprised us, the fix, and how to apply it ne
 
 ---
 
+## 2026-10-07 — "Always follow SOLID" had no check
+
+**Surprise:** CLAUDE.md said "Always follow SOLID", but no gate skill covered it: `coding-standards` checks
+function size, names and magic numbers, and `dotnet-patterns` checks C# idioms. The author also ran every skill
+alone; the reviewer read the diff but not the skills' checklists.
+**Fix:** a `solid-architecture` skill (SOLID, module boundaries, where constants, settings and interfaces belong),
+required by "PR rules" for any production C# or Dart file, and the independent reviewer now works through the
+checklist of every gate skill the PR lists.
+**Apply next time:** a rule in CLAUDE.md that no skill or check enforces is a wish; give it one.
+
 ## 2026-10-07 — FR1 kept reopening: edge cases were hunted only after the code was done
 
 **Surprise:** FR1 (game rules) was closed, then a blind audit and the new scenario catalogue found about 30 gaps,

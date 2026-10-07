@@ -237,6 +237,8 @@ task and every PR of that FR. When any of them changes, update all the others in
     that applies but wasn't run, or a "Not applicable" whose reason is wrong, as a finding;
   - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that
     skill's matrix and reports any moment nobody handled;
+  - works through the checklist of every gate skill the PR lists as run — always including `solid-architecture`
+    for production C# or Dart — and reports each box that fails, so no skill is checked only by the author;
   - re-runs at least one of the author's "red when Y is removed" checks per new test, breaking code only in a
     scratch worktree (`git worktree add <tmp> HEAD`, removed afterwards) — a test that stays green guards nothing.
 
@@ -431,7 +433,7 @@ chosen from MyLoop's documented failure classes).
 
 | If the PR touches… | Run before opening/merging |
 |--------------------|----------------------------|
-| **Any production C# or Dart code** | `coding-standards` (function size / no magic values / naming / comments / logging / exceptions) |
+| **Any production C# or Dart code** | `coding-standards` (function size / no magic values / naming / comments / logging / exceptions), `solid-architecture` (SOLID, module boundaries, where constants, settings and interfaces belong) |
 | .NET API code (Controllers / Services / Data) | `dotnet-patterns`, `csharp-testing` |
 | Startup / DI / pipeline / `Program.cs` / `Configuration/*Extensions.cs` / Controllers | `webapi-standards` (keep `Program.cs` a thin composition root; group registrations; Options pattern; thin controllers) |
 | DB schema / EF migrations / hex counts | `database-migrations` (verify atomicity + explicit transactions) |

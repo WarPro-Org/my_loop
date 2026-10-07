@@ -64,8 +64,8 @@ mobile/test/mock_walk_engine_test.dart
 docs/runbooks/incident-spoofing.md
 .claude/skills/coding-standards/SKILL.md"
 PR204_DELETED="api/MyLoop.Api/Constants/AntiCheatConstants.cs"
-FIRST_204='`coding-standards`, `dotnet-patterns`, `csharp-testing`, `security-review`, `coordinate-overlapping-pr-removals`, `verification-loop`'
-FINAL_204='`flutter-disk-concurrency-test`, `coding-standards`, `dotnet-patterns`, `csharp-testing`, `security-review`, `database-migrations`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mock-gps-anticheat`, `coordinate-overlapping-pr-removals`, `verification-loop`'
+FIRST_204='`coding-standards`, `solid-architecture`, `dotnet-patterns`, `csharp-testing`, `security-review`, `coordinate-overlapping-pr-removals`, `verification-loop`'
+FINAL_204='`flutter-disk-concurrency-test`, `coding-standards`, `solid-architecture`, `dotnet-patterns`, `csharp-testing`, `security-review`, `database-migrations`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mock-gps-anticheat`, `coordinate-overlapping-pr-removals`, `verification-loop`'
 NA_204='- Not applicable: `state-lifecycle-consistency` — server reads the rules once at startup
 - Not applicable: `webapi-standards`, `api-design`, `latency-critical-systems`, `database-retry-resilience` — no startup, endpoint, cache or transaction change
 - Not applicable: `mobile-background-location`, `app-store-compliance`, `error-handling` — no location service, iOS or error-handling change'
@@ -88,18 +88,27 @@ expect fail "verification-loop missing" "$(body "${FINAL_204/, \`verification-lo
 
 make_pr "api/MyLoop.Api/Services/Foo.cs" "api/MyLoop.Api/Services/Old.cs"
 expect fail "a deleted code file needs the removals gate" \
-  "$(body '`coding-standards`, `dotnet-patterns`, `csharp-testing`, `verification-loop`' "$NA_204")" \
+  "$(body '`coding-standards`, `solid-architecture`, `dotnet-patterns`, `csharp-testing`, `verification-loop`' "$NA_204")" \
   '`coordinate-overlapping-pr-removals` is required by api/MyLoop.Api/Services/Old.cs'
 
 make_pr "mobile/lib/shared/services/api_service.dart" ""
 expect fail "#205's api_service change needs api-design" \
-  "$(body '`coding-standards`, `dart-flutter-patterns`, `flutter-dart-code-review`, `verification-loop`' "$NA_204")" \
+  "$(body '`coding-standards`, `solid-architecture`, `dart-flutter-patterns`, `flutter-dart-code-review`, `verification-loop`' "$NA_204")" \
   '`api-design` is required by mobile/lib/shared/services/api_service.dart'
 
 make_pr "api/MyLoop.Api/Models/ClaimRequest.cs" ""
 expect fail "a server request/response class needs api-design" \
-  "$(body '`coding-standards`, `dotnet-patterns`, `csharp-testing`, `verification-loop`' "$NA_204")" \
+  "$(body '`coding-standards`, `solid-architecture`, `dotnet-patterns`, `csharp-testing`, `verification-loop`' "$NA_204")" \
   '`api-design` is required by api/MyLoop.Api/Models/ClaimRequest.cs'
+
+make_pr "api/MyLoop.Modules.Rules/Thing.cs" ""
+expect fail "server code without the SOLID check" \
+  "$(body '`coding-standards`, `dotnet-patterns`, `csharp-testing`, `verification-loop`' "$NA_204")" \
+  '`solid-architecture` is required by api/MyLoop.Modules.Rules/Thing.cs'
+make_pr "mobile/lib/features/a.dart" ""
+expect fail "app code without the SOLID check" \
+  "$(body '`coding-standards`, `dart-flutter-patterns`, `flutter-dart-code-review`, `verification-loop`' "$NA_204")" \
+  '`solid-architecture` is required by mobile/lib/features/a.dart'
 
 make_pr "api/MyLoop.Api/Services/Café.cs" ""
 expect fail "a non-ASCII file name still matches its rows" \
@@ -109,7 +118,7 @@ make_pr $'mobile/lib/a\tb.dart' ""
 expect fail "a file name with a tab fails" "$(body "$FINAL_204" "$NA_204")" "File name with a tab"
 
 make_pr "api/MyLoop.Api/Migrations/20260101_Add.cs" ""
-MIGRATION_RUN='`coding-standards`, `dotnet-patterns`, `csharp-testing`, `database-migrations`, `verification-loop`, `flutter-disk-concurrency-test`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mock-gps-anticheat`, `coordinate-overlapping-pr-removals`'
+MIGRATION_RUN='`coding-standards`, `solid-architecture`, `dotnet-patterns`, `csharp-testing`, `database-migrations`, `verification-loop`, `flutter-disk-concurrency-test`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mock-gps-anticheat`, `coordinate-overlapping-pr-removals`'
 NA_MIGRATION=$'- Not applicable: `database-retry-resilience` — no transaction, and no change to `DbContext`\n'"${NA_204/\`database-retry-resilience\`/\`dotnet-patterns\`}"
 expect pass "a migration doesn't force the retry skill; a reason may name code in backticks" \
   "$(body "$MIGRATION_RUN, \`security-review\`" "$NA_MIGRATION")"
@@ -162,7 +171,7 @@ make_scenarios() {
   head_sha=$(git rev-parse HEAD)
   g checkout -q master && g merge -q --no-ff --no-edit pr
 }
-ALL_RUN='`flutter-disk-concurrency-test`, `state-lifecycle-consistency`, `coding-standards`, `dotnet-patterns`, `csharp-testing`, `webapi-standards`, `database-migrations`, `api-design`, `security-review`, `latency-critical-systems`, `database-retry-resilience`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mobile-background-location`, `mock-gps-anticheat`, `app-store-compliance`, `error-handling`, `coordinate-overlapping-pr-removals`, `verification-loop`'
+ALL_RUN='`flutter-disk-concurrency-test`, `state-lifecycle-consistency`, `coding-standards`, `solid-architecture`, `dotnet-patterns`, `csharp-testing`, `webapi-standards`, `database-migrations`, `api-design`, `security-review`, `latency-critical-systems`, `database-retry-resilience`, `dart-flutter-patterns`, `flutter-dart-code-review`, `mobile-background-location`, `mock-gps-anticheat`, `app-store-compliance`, `error-handling`, `coordinate-overlapping-pr-removals`, `verification-loop`'
 GOOD_ROWS=$'NET-1|covered|`tests/Fr9/ATests.cs` "Foo_works"\nNET-2|n/a|reads only\nNET-3|open|FR5 owns it\nNET-4|accepted|D2, approved in #219'
 
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
