@@ -44,8 +44,9 @@ public class PathValidationService : IPathValidationService
         for (int i = 1; i < path.Length; i++)
         {
             var distanceMeters = HaversineDistance(path[i - 1], path[i]);
-            // MaxDistanceBetweenPointsMeters is its own setting (GameRules:AntiCheat), sized to cover one
-            // sampling interval at max speed plus GPS drift; changing those two doesn't move it.
+            // MaxDistanceBetweenPointsMeters is its own setting (GameRules:AntiCheat); changing the speed or
+            // drift doesn't move it. It is meant to cover one sampling interval at max speed plus drift, but
+            // the shipped 60 m is below that (71.65 m); FR5 sets these together and checks the relation.
             if (distanceMeters > _antiCheat.MaxDistanceBetweenPointsMeters)
             {
                 violations++;

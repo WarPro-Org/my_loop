@@ -31,7 +31,10 @@ public sealed class LoopRules
     /// <summary>Fewest GPS points a loop must span, so jitter while standing still never closes one.</summary>
     public int MinPoints { get; init; }
 
-    /// <summary>Points skipped at the start of a walk before loop detection begins.</summary>
+    /// <summary>
+    /// Index where the loop scan starts. It has no effect while it is at most <see cref="MinPoints"/>,
+    /// because a loop already needs that many points (FR6 gives it a meaning or removes it).
+    /// </summary>
     public int SkipNeighbors { get; init; }
 
     /// <summary>Loops smaller than this capture nothing.</summary>

@@ -47,11 +47,18 @@ This page is the short version: what FR1 put into the app and what a later chang
   value changes; FR1's fingerprint covers only the 4 phone settings + version). Until then a redeploy mid-walk
   judges the rest of that walk by the new rules (D2).
 - **FR12:** guests can fetch the rules (`GET /api/rules` needs sign-in today).
-- **FR5:** the 20–25 km/h speed limit.
+- **FR5:** the 20–25 km/h speed limit, set together with the hop limit, which must cover max speed × sampling
+  interval + drift (today 60 m < 71.65 m), checked at startup (IN-7). The smoothness minimums become settings.
+- **FR3:** the first GPS fix of a walk goes through the accuracy threshold (DEV-9); the phone's noise floor becomes
+  a setting.
+- **FR6:** `Loop:SkipNeighbors` has no effect at 0 to `MinPoints`; FR6 gives it a meaning or removes it (IN-6,
+  LEG-3). The loop-overlap number becomes a setting.
 
 ## Known limits
 
-- The contract test serializes with ASP.NET's default JSON settings, not the real HTTP pipeline.
+- The HTTP contract test (`RulesHttpTests`) sets up the host like `Program.cs` but without the database and other
+  modules; a JSON option added to `Program.cs` must be added there too.
+- `Loop:SkipNeighbors` does nothing at its shipped value (see FR6 above).
 - The presence check covers number settings and nested rules classes; a list or text setting needs it extended.
 - A walk killed mid-way doesn't resume; its saved points are judged by the server's rules when they arrive (FR9
   makes them be judged by the rules the walk started with).
@@ -59,9 +66,12 @@ This page is the short version: what FR1 put into the app and what a later chang
 ## How to change a rule
 
 Edit `GameRules` in `appsettings.json` (or a production override), bump `Version`, redeploy. Allowed values: every
-number above 0 (`SkipNeighbors` may be 0), `MaxSpeedViolationRate` and `DurationToleranceFactor` above 0 and at
-most 1, and the average-speed limit not below the
-per-point limit; otherwise the server won't start. The server checks the values at startup; phones pick the change up on their next refresh or walk start. If the built-in phone copy must
+finite number above 0 (`SkipNeighbors` may be 0) and at most its upper limit, `MaxSpeedViolationRate` and
+`DurationToleranceFactor` above 0 and at most 1, and the average-speed limit not below the per-point limit;
+otherwise the server won't start. Upper limits (`GameRulesValidator`): closure distance 200 m, loop points and
+`SkipNeighbors` 500, loop area 1,000,000 m², GPS accuracy 200 m, both speed limits 15 m/s, drift 200 m, hop
+1,000 m, sampling interval 60 s, bearing spread 45°. The rules are also built once at startup
+(`RulesStartupCheck`), so nothing fails later on the first request. The server checks the values at startup; phones pick the change up on their next refresh or walk start. If the built-in phone copy must
 change too, update `defaultGameRules` — a test fails when it drifts from `appsettings.json`.
 
 ## Tests that guard it

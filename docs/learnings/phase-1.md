@@ -5,6 +5,21 @@ discovery. Keep it skimmable: what surprised us, the fix, and how to apply it ne
 
 ---
 
+## 2026-10-07 — FR1 kept reopening: edge cases were hunted only after the code was done
+
+**Surprise:** FR1 (game rules) was closed, then a blind audit and the new scenario catalogue found about 30 gaps,
+and fixing them kept finding more. The reviews had only checked each change against its task ("does it do what it
+says"), never "what can go wrong". So nobody asked what happens with a 403 or 429 reply, a typo of 500 instead of
+50, `Infinity`, or a setting that does nothing at its shipped value (`Loop:SkipNeighbors`) or contradicts another
+(the 60 m hop limit against speed × interval + drift). And every finding was pulled back into FR1, even when the
+code belonged to a later FR that rewrites it anyway.
+**Fix:** (1) An early blind audit before each design doc is reviewed (CLAUDE.md Gate 2, checked by "PR rules"), so
+these cases are found before the code. (2) After an FR's final audit, findings are triaged once and the FR's list
+is frozen: only gaps in the FR's own code that break its own spec stay; the rest go to the FR that owns that code
+(CLAUDE.md "Closing an FR"). The scenario catalogue (`docs/scenarios.md`) keeps the cases for every later FR.
+**Apply next time:** Hunt for failure cases before the design is approved, not after the FR is closed; and send a
+finding to the FR that owns the code, not to whichever FR is open.
+
 ## 2026-06-11 — EnsureCreated() silently blocks future EF migrations
 
 **Surprise:** `db.Database.EnsureCreated()` never writes `__EFMigrationsHistory`, so EF

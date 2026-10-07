@@ -212,7 +212,8 @@ handling, and refresh's catch (captive portal, 503).
 ## Scenarios
 
 Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked `open #201` were found by the
-2026-09-29 blind audit after FR1 was closed. They reopen FR1, which is not done until they are fixed.
+2026-09-29 blind audit after FR1 was closed. They reopen FR1, which is not done until they are fixed. The list
+was frozen on 2026-10-07: rows about code a later FR rebuilds moved to that FR, and nothing found later is added to FR1.
 
 | ID | Status | Evidence |
 |---|---|---|
@@ -259,16 +260,16 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | DEV-6 | n/a | Rules carry no timestamps |
 | DEV-7 | n/a | Rules have no background work |
 | DEV-8 | n/a | Rules run no timers |
-| DEV-9 | open | #201: the first GPS fix of a walk skips the accuracy threshold (taken before the rules are pinned) |
+| DEV-9 | open | FR3: the first GPS fix of a walk skips the accuracy threshold (taken before the rules are pinned); moved when the FR1 list was frozen |
 | DEV-10 | n/a | GPS filtering beyond the accuracy threshold is FR3's |
-| IN-1 | open | #201: `Infinity` passes `GameRulesValidator` |
+| IN-1 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Invalid_value_stops_startup_and_names_the_setting" (Infinity, -Infinity and NaN cases) |
 | IN-2 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Invalid_value_stops_startup_and_names_the_setting" |
-| IN-3 | open | #201: rule values have no upper bounds |
-| IN-4 | open | #201: a missing field is rejected on both sides (`GameRulesTests.cs`, `game_rules_test.dart`); null and wrong-type fields have no test |
+| IN-3 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Invalid_value_stops_startup_and_names_the_setting" (one step over each limit), "Value_at_its_upper_limit_is_allowed" |
+| IN-4 | open | #201: the server side is covered (`GameRulesTests.cs` "Missing_setting_stops_startup_and_names_it", "Wrong_type_or_empty_value_stops_startup"); the phone has no test for null and wrong-type fields |
 | IN-5 | covered | `mobile/test/v0_1/fr1/game_rules_test.dart` "accepts a response with a field it does not know (a newer server)", "rejects a response with a missing field instead of half-applying it" (an older server that lacks a field is rejected, and the current rules are kept). Deploy order is documented in `records/fr1-game-rules.md` (deploy the server before an app release that adds a field) |
-| IN-6 | open | #201: `Loop:SkipNeighbors` has no effect from 0 to `MinPoints`; its test uses 40 |
-| IN-7 | open | #201: `MaxDistanceBetweenPoints` isn't checked against speed × interval + drift |
-| IN-8 | open | #201: `RuleSettings` is built on first use, so a bad value found only then gives 500s |
+| IN-6 | open | FR6: `Loop:SkipNeighbors` has no effect from 0 to `MinPoints` (shipped 10 and 20); FR6 gives it a meaning or removes it; moved when the FR1 list was frozen |
+| IN-7 | open | FR5: the hop limit (60 m) is below max speed × interval + drift (71.65 m), so the relation check needs new values; FR5 sets them with the new speed limit; moved when the FR1 list was frozen |
+| IN-8 | covered | `tests/MyLoop.V01.Tests/FR1/GameRulesTests.cs` "Rules_are_built_while_the_server_starts_not_on_first_request" |
 | SRV-1 | accepted | D2: a redeploy mid-walk judges the rest of the walk by the new rules until FR9 |
 | SRV-2 | accepted | Deploy the server before an app release that adds a field (record, "Decisions that must stay true") |
 | SRV-3 | n/a | `GET /api/rules` only reads |
@@ -300,10 +301,10 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | CHEAT-5 | n/a | Replay detection is FR5's |
 | CHEAT-6 | covered | `tests/MyLoop.V01.Tests/FR1/ClientRulesTests.cs` "Client_rules_contain_no_anti_cheat_numbers"; `mobile/test/v0_1/fr1/game_rules_test.dart` "the app never knows anti-cheat numbers" |
 | LEG-1 | open | FR6: stealing and the hourly decay deletion of land still run, against requirement #43 (audit E5) |
-| LEG-2 | open | #201: stale comments in `GameRules.cs` ("resuming after a pause", "(#37)", the `SkipNeighbors` description) |
-| LEG-3 | open | #201: the `SkipNeighbors` test proves an effect only outside the shipped range |
+| LEG-2 | n/a | The stale comments are corrected (`GameRules.cs`: resume, "(#37)", `SkipNeighbors`; `PathValidationService.cs`: the hop limit); a comment has no test |
+| LEG-3 | open | FR6: the `SkipNeighbors` test can only show an effect outside the shipped range, because the setting has none inside it (IN-6); moved when the FR1 list was frozen |
 | LEG-4 | n/a | Every FR1 test runs in CI (`ci.yml`: `test/v0_1` and `tests/MyLoop.V01.Tests`) |
-| LEG-5 | open | #201: numbers that decide captures are still in code (loop overlap, smoothness minimums, the phone's noise floor), and the first GPS fix bypasses the rules |
+| LEG-5 | open | FR3, FR5, FR6: numbers that decide captures are still in code — the phone's noise floor and the first GPS fix (FR3), the smoothness minimums (FR5), the loop overlap (FR6); moved when the FR1 list was frozen |
 | LEG-6 | n/a | FR1 has no debug-only path |
 | LEG-7 | n/a | No lesson or proposed ADR is about game rules |
 | LEG-8 | open | #201: the walk-start tests wait in real time and check 5 s, not 3 s |
@@ -315,5 +316,5 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | DATA-2 | n/a | searched: `grep -n -i 'ever lost' requirements.md` and `grep -n 'never loses land' requirements.md` — two prose promises (FR6 and FR15), now numbered as requirement #43 |
 | API-1 | covered | `tests/MyLoop.V01.Tests/FR1/ContractTests.cs` "Server_sends_exactly_the_shared_client_rules_sample"; `mobile/test/v0_1/fr1/contract_test.dart` "the app knows exactly the fields the server sends". Dates, time zones and ids don't apply: the rules reply has none |
 | API-2 | covered | `mobile/test/v0_1/fr1/game_rules_test.dart` "built-in copy matches the server rules in appsettings.json" |
-| API-3 | open | #201: the contract test serialises in the test, not through the real HTTP pipeline |
+| API-3 | covered | `tests/MyLoop.V01.Tests/FR1/RulesHttpTests.cs` "Rules_reply_over_http_is_exactly_the_shared_sample", "Rules_etag_sent_back_over_http_gives_not_modified" |
 | STORE-1 | n/a | FR1 changes nothing store-facing |
