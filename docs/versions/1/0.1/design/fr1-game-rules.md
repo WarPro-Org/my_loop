@@ -21,6 +21,11 @@ FRs and froze the list, #229 fixed the server rows, #230 the phone rows, and #23
 For anyone picking FR1 up without the history (human or AI agent). Facts that must stay true are in the record;
 this section is how FR1 got there and what it changed in the way we work.
 
+Key: `#20`-style numbers under **Goal** are requirements in `requirements.md`; numbers in the tables are PRs; the
+FR1 task is #201. IDs like `LIFE-10` are edge cases in `docs/scenarios.md`. "Gate 2" is the design-doc step in
+CLAUDE.md. A "blind audit" is a check by agents given only the spec and the code, never the design or the PRs.
+D1 and D2 are this doc's owner-approved decisions (see "Decisions").
+
 **Goal.** Requirement #20: every number the game is tuned with lives in one versioned settings section, so it can
 change after test walks without code changes; anti-cheat numbers never reach the phone (#15).
 
@@ -34,18 +39,19 @@ change after test walks without code changes; anti-cheat numbers never reach the
 | #204 | Server loop and anti-cheat code read the rules; `AntiCheatConstants.cs` deleted |
 | #205 | Phone downloads, saves and uses the rules; a walk keeps its rules |
 | #214 | Gaps the design doc found: contract sample, ETag, module boundary, refresh errors, login refresh, D1 wait |
-| #215, #216, #218 | First audit's gaps: missing setting stops the server, walk start asks for rules, captive portal and 503 tests (#217 was merged into the wrong branch, reverted and replaced by #218) |
+| #215 | First audit's findings written into the spec and this doc (docs only) |
+| #216, #218 | First audit's gaps fixed: a missing setting stops the server; walk start asks for rules; captive portal and 503 tests (#217 was merged into the wrong branch, reverted and replaced by #218) |
 | #219 | Final audit's gaps: mock-walk tests in CI, FR9 stores a full-rules fingerprint |
 | #220 | First close-out: record, CLAUDE.md "Closing an FR" and `Task: #N` rules (closed 2026-09-28) |
 
-**Reopened (2026-09-29).** A blind audit, given only the spec and the code, found 21 gaps the earlier audits had
-missed (they were told what had been built). Main ones: `Infinity` and huge values passed the startup check; no
+**Reopened (2026-09-29).** A blind audit of the whole version found 49 findings; 21 of them landed on FR1, gaps the
+earlier FR1 audits had missed (those audits were told what had been built). Main ones: `Infinity` and huge values passed the startup check; no
 upper limits; `SkipNeighbors` had no effect; a request stuck in the sign-in step offline blocked every later
 refresh; refused replies (403, 404, 429, other 4xx) were untested; the walk-start tests waited in real time. It also
 found data-loss and privacy bugs in old beta code outside FR1 (stealing, decay, a startup step that deletes explored
 hexes, other players visible) — handled as bug B1 (#224, #225) and moved to FR6, FR7 and FR13 (#228).
 
-**Fixed (Oct 2026).**
+**Fixed (2026-09-29 to 2026-10-07).**
 
 | PR | What it did |
 |---|---|
@@ -55,8 +61,9 @@ hexes, other players visible) — handled as bug B1 (#224, #225) and moved to FR
 | #230 | Phone: a rules request gives up after 30 s; refused, stuck and offline-first requests tested; one writer for the saved file; walk-start limit tested in fake time against a written-out 3 s |
 | #231 | Close-out again: final audit (`audits/2026-10-07-fr1-final-audit.md`), record, spec, this section |
 
-**What FR1 changed in how we work** (all in CLAUDE.md, each enforced by a skill or the "PR rules" check):
-- every commit carries `Task: #N`; every FR closes with a record, a final audit and a blind audit (#220);
+**What FR1 changed in how we work** (each a rule in CLAUDE.md; some are also checked by "PR rules", the rest by
+the independent reviewer and the owner):
+- every commit carries `Task: #N`; every FR closes with a record and a final audit (#220), and a blind audit (#222);
 - `state-lifecycle-consistency` skill: every reader × every app moment, each test proven red (#206);
 - the scenario catalogue every design doc answers in full (#222); `[search]` IDs need a real search, and every
   data-removing file is in `docs/data-removals.md` (#227);
