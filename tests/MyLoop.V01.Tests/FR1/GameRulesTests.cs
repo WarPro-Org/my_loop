@@ -90,7 +90,7 @@ public class GameRulesTests
     // Upper limits: one step above each limit fails, so a 10× typo (500 instead of 50) stops startup.
     [InlineData("GameRules:Loop:ClosureDistanceMeters", "200.01", "Loop:ClosureDistanceMeters must be greater than 0 and at most 200")]
     [InlineData("GameRules:Loop:MinPoints", "101", "Loop:MinPoints must be greater than 0 and at most 100")]
-    [InlineData("GameRules:Loop:SkipNeighbors", "101", "Loop:SkipNeighbors must be 0 or more and at most 100")]
+    [InlineData("GameRules:Loop:SkipNeighbors", "51", "Loop:SkipNeighbors must be 0 or more and at most 50")]
     [InlineData("GameRules:Loop:MinAreaSquareMeters", "25000.1", "Loop:MinAreaSquareMeters must be greater than 0 and at most 25000")]
     [InlineData("GameRules:Gps:AccuracyThresholdMeters", "500", "Gps:AccuracyThresholdMeters must be greater than 0 and at most 200")]
     [InlineData("GameRules:AntiCheat:MaxSpeedMetersPerSecond", "15.01", "AntiCheat:MaxSpeedMetersPerSecond must be greater than 0 and at most 15")]
@@ -127,7 +127,7 @@ public class GameRulesTests
     [InlineData("GameRules:AntiCheat:MaxDistanceBetweenPointsMeters", "300")]
     [InlineData("GameRules:AntiCheat:GpsSamplingIntervalSeconds", "25")]
     [InlineData("GameRules:AntiCheat:MinBearingStdDev", "10")]
-    [InlineData("GameRules:Loop:SkipNeighbors", "100")]
+    [InlineData("GameRules:Loop:SkipNeighbors", "50")]
     public void Value_at_its_upper_limit_is_allowed(string key, string value)
     {
         Assert.NotNull(Build(ShippedWith(key, value)).GetRequiredService<IRuleSettings>().Current);

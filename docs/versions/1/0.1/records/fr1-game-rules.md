@@ -69,7 +69,7 @@ Edit `GameRules` in `appsettings.json` (or a production override), bump `Version
 finite number above 0 (`SkipNeighbors` may be 0) and at most its upper limit, `MaxSpeedViolationRate` and
 `DurationToleranceFactor` above 0 and at most 1, and the average-speed limit not below the per-point limit;
 otherwise the server won't start. Upper limits (`GameRulesValidator`, each at most 5× the shipped value): closure
-distance 200 m, loop points and `SkipNeighbors` 100, loop area 25,000 m², GPS accuracy 200 m, both speed limits
+distance 200 m, loop points 100, `SkipNeighbors` 50, loop area 25,000 m², GPS accuracy 200 m, both speed limits
 15 m/s, drift 150 m, hop 300 m, sampling interval 25 s, bearing spread 10°. The rules are also built once at startup
 (`RulesStartupCheck`), so nothing fails later on the first request. The server checks the values at startup; phones pick the change up on their next refresh or walk start. If the built-in phone copy must
 change too, update `defaultGameRules` — a test fails when it drifts from `appsettings.json`.
