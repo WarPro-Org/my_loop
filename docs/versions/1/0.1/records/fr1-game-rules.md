@@ -62,7 +62,7 @@ This page is the short version: what FR1 put into the app and what a later chang
   modules; a JSON option added to `Program.cs` must be added there too.
 - `Loop:SkipNeighbors` does nothing at its shipped value (see FR6 above).
 - Only the rules request has an overall time limit; other requests can still hang in the shared sign-in step
-  (FR3 bounds them).
+  (FR3 bounds them). Reading and saving the local copy have no limit either; a hung phone disk would block refreshes.
 - The presence check covers number settings and nested rules classes; a list or text setting needs it extended.
 - A walk killed mid-way doesn't resume; its saved points are judged by the server's rules when they arrive (FR9
   makes them be judged by the rules the walk started with).

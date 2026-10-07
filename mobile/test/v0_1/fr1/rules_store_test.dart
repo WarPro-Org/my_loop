@@ -81,11 +81,11 @@ void main() {
         .where((file) => file.path.endsWith('.dart'));
     final namingTheFile = sources
         .where((file) => file.readAsStringSync().contains('game_rules.json'))
-        .map((file) => file.path.replaceAll(r'\\', '/'))
+        .map((file) => file.path.replaceAll('\\', '/'))
         .toList();
     final buildingTheStore = sources
         .where((file) => file.readAsStringSync().contains('FileRulesStore('))
-        .map((file) => file.path.replaceAll(r'\\', '/'))
+        .map((file) => file.path.replaceAll('\\', '/'))
         .toList();
 
     expect(namingTheFile, ['lib/shared/rules/rules_store.dart']);

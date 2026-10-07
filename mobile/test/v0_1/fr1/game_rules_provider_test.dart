@@ -109,16 +109,17 @@ RulesSource _realSource(_FixedReply reply) {
   return ApiRulesSource(api);
 }
 
-/// Never answers its first request (e.g. the sign-in token step stuck offline); answers later
-/// requests with [rules].
+/// Doesn't answer its first request until the test calls [firstAnswer] (e.g. the sign-in token step
+/// stuck offline); answers later requests with [rules] at once.
 class _StuckOnce implements RulesSource {
   _StuckOnce(this.rules);
   final SavedRules rules;
+  final firstAnswer = Completer<SavedRules?>();
   int fetches = 0;
   @override
   Future<SavedRules?> fetchIfChanged(String? knownTag) {
     fetches++;
-    return fetches == 1 ? Completer<SavedRules?>().future : Future.value(rules);
+    return fetches == 1 ? firstAnswer.future : Future.value(rules);
   }
 }
 
@@ -383,10 +384,11 @@ void main() {
     expect(store.saved?.rules.version, 2);
   });
 
-  test('a request that never answers gives up at the limit, and the next refresh is not blocked', () {
+  test('a request that never answers gives up at the limit, the next refresh is not blocked, and a late answer is dropped', () {
     _inFakeTime((async) {
       final source = _StuckOnce(_version(2));
-      final container = _container(_MemoryStore(_version(1)), source);
+      final store = _MemoryStore(_version(1));
+      final container = _container(store, source);
       var firstDone = false;
       container.read(gameRulesProvider); // the app start's refresh: its request never answers
       container
@@ -405,6 +407,11 @@ void main() {
       async.flushMicrotasks();
       expect(source.fetches, 2, reason: 'the next refresh ran');
       expect(container.read(gameRulesProvider).version, 2);
+
+      source.firstAnswer.complete(_version(99)); // the timed-out request finally answers
+      async.elapse(const Duration(seconds: 1));
+      expect(container.read(gameRulesProvider).version, 2, reason: 'a late answer is dropped');
+      expect(store.saved?.rules.version, 2);
     });
   });
 }
