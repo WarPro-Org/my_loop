@@ -371,12 +371,16 @@ void main() {
       container.read(journeyControllerProvider.notifier).stopJourney();
     }
 
-    /// Starts a walk in fake time and checks it waits exactly [walkStartRulesWait]: still waiting
-    /// 1 ms before the limit, started at it.
+    /// The limit decision D1 set. Written out, not read from [walkStartRulesWait], so raising that
+    /// constant turns these tests red.
+    const d1Limit = Duration(seconds: 3);
+
+    /// Starts a walk in fake time and checks it waits exactly [d1Limit]: still waiting 1 ms before
+    /// the limit, started at it.
     void expectStartsExactlyAtLimit(FakeAsync async, ProviderContainer container) {
       var started = false;
       container.read(journeyControllerProvider.notifier).startJourney().then((_) => started = true);
-      async.elapse(walkStartRulesWait - const Duration(milliseconds: 1));
+      async.elapse(d1Limit - const Duration(milliseconds: 1));
       expect(started, isFalse, reason: 'still waiting for the rules just before the limit');
       async.elapse(const Duration(milliseconds: 1));
       expect(started, isTrue, reason: 'started at the limit');
