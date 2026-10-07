@@ -129,6 +129,10 @@ what must stay true, in a few minutes.
    the task, design doc, PRs or record, each searching one area for every way it can go wrong. Every finding
    becomes a `docs/scenarios.md` ID, or a row under an existing one. Save the report in
    `docs/versions/<release>/<version>/audits/`.
+   **Triage once, then freeze.** Each finding is sorted once: it stays with this FR only if it is in code this FR
+   wrote and breaks this FR's own spec. Anything else goes to the later FR that builds or rebuilds that code (a
+   bullet in its spec section and an `open FRn` design-doc row) or to a bug task. After this triage the FR's list
+   is frozen: nothing found later is added to it — it goes to the owning FR or a bug task.
 2. **FR record:** `docs/versions/<release>/<version>/records/frN-<name>.md`, one page, for humans and AI agents:
    - **Status** line with the task, spec, design doc and every PR;
    - **Scope:** in and out;
@@ -259,6 +263,12 @@ Write a Design Doc only after Gate 1 is approved. Must include:
   an agreed "accepted" — see `state-lifecycle-consistency`.
 - **`## Scenarios` table:** every ID in `docs/scenarios.md`, each `covered` (test file in backticks and the test's
   name in double quotes), `n/a` (reason), `open` (owner FR or task) or `accepted` (where the owner approved it). "PR rules" fails when an ID is missing.
+- **`## Early blind audit`:** before the design doc goes to review, 2–3 agents are given only the requirement and the
+  code it builds on (never the draft design) and each searches one area for every way it can go wrong: failure
+  replies, bad and extreme values, settings that do nothing or contradict each other, hard-coded numbers. Every
+  finding becomes a `docs/scenarios.md` ID (or a row under one) and a row in the `## Scenarios` table. The report is
+  saved in `docs/versions/<release>/<version>/audits/` and this section links it; "PR rules" fails a new design doc
+  without it. The blind audit at close-out then only checks what this pass missed.
 
 Do not write implementation code until the user explicitly approves the Design Doc. The doc lives at
 `docs/versions/<release>/<version>/design/frN-<name>.md`; approval = the owner merges its PR into master. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.

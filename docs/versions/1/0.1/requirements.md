@@ -57,7 +57,7 @@ Features are numbered in the order they should be built. Each one only depends o
 
 ## FR1 — Configurable game settings
 
-**Status:** reopened (task #201): open rows in the design doc's `## Scenarios` table, from the 2026-09-29 blind audit. What it built and what later FRs must keep true: `records/fr1-game-rules.md`.
+**Status:** reopened (task #201): open rows in the design doc's `## Scenarios` table, from the 2026-09-29 blind audit. The list was frozen on 2026-10-07: only rows owned by #201 are fixed in FR1, and anything found later goes to the FR that owns that code. What it built and what later FRs must keep true: `records/fr1-game-rules.md`.
 
 Every tunable number lives in one place so the rules can be tuned from real test walks without code changes.
 
@@ -66,6 +66,8 @@ Every tunable number lives in one place so the rules can be tuned from real test
 - FR1 builds the settings system and moves the numbers today's code uses: loop-closing distance, minimum loop
   points and size, GPS accuracy threshold, and the speed numbers today's anti-cheat uses. Exact values are tuned from
   real test walks.
+- Every setting has an upper limit a few times its shipped value, so a typo (500 instead of 50) stops the server at
+  startup instead of running with it. `NaN` and `Infinity` are rejected too.
 - Each later FR adds its own settings when it is built: auto-end thresholds (FR2), short-gap limits and safety-alarm
   delay (FR4), speed checks over gaps (FR5), guest inactivity period (FR12).
 - The old claim limits (e.g. 10 GPS points, 200 m walked, 20 walks a day) stay in code until FR6 replaces the old
@@ -77,6 +79,9 @@ Every tunable number lives in one place so the rules can be tuned from real test
     arrive, so a server update in the middle of a walk changes how the rest of that walk is judged.
   - Only the phone drops GPS points below the accuracy threshold; the server check comes with FR3.
   - Guests (FR12) must be able to get the rules too; today `GET /api/rules` needs a signed-in user.
+  - Moved out when the FR1 list was frozen, to the FR that rebuilds that code: the first GPS fix of a walk and the
+    phone's noise floor (FR3), the hop-distance check and the smoothness minimums (FR5), `Loop:SkipNeighbors` and the
+    loop-overlap number (FR6).
 
 Depends on: nothing.
 
@@ -109,6 +114,9 @@ Depends on: FR1.
   phone (left open by FR1). Capturing needs precise location: if
   the user has only allowed approximate location, the app explains why and asks for precise location before a walk
   can start.
+  - The first GPS fix of a walk goes through the accuracy threshold like every other fix (today it is taken before
+    the walk's rules are pinned and skips it; moved from FR1, scenario DEV-9). The phone's noise floor (fixes closer
+    than about 8 m are dropped) becomes a setting (LEG-5).
 - **[#12]** Weak GPS is flagged at that moment — as a message on screen, or in the tracking notification when the app is
   in the background — with no buzz.
 - Tracking keeps working with the screen off, the phone in a pocket, or another app (e.g. WhatsApp) open.
@@ -141,6 +149,10 @@ Depends on: FR2, FR3.
   - The version that adds rivals also uses the phone's motion sensor (walking / running / cycling / driving) to catch
     cycling at running speed.
 - **[#14]** Speed checks also cover gaps, so drive-and-walk tricks don't work.
+- The settings must agree: the fixed hop limit (`AntiCheat:MaxDistanceBetweenPointsMeters`) must be at least
+  max speed × sampling interval + GPS drift, and the server refuses to start otherwise (moved from FR1, scenario
+  IN-7). Today's values break this (60 m against 8.33 × 5 + 30 = 71.65 m), so FR5 sets them together with the new
+  speed limit. The smoothness minimums in the path check become settings (LEG-5).
 - **[#15]** Only the section that was too fast is rejected, not the whole walk. The app tells the user ("This section was
   too fast to count") but never reveals the exact speed limit.
 
@@ -156,6 +168,10 @@ Depends on: FR1, FR3.
 - **[#3]** Hexes are H3 resolution 11: each side is about 29 m, so a hex is roughly 50–58 m across.
 - **[#4]** A loop closes whenever the path crosses itself or comes back within the loop-closing distance of an earlier
   point of the same walk. One walk can close several loops.
+  - `Loop:SkipNeighbors` does nothing today: loop detection already ignores the first `Loop:MinPoints` points, so any
+    value from 0 to `MinPoints` (shipped: 10 and 20) has no effect. FR6 either gives it a meaning that shows at its
+    shipped value, with a test at that value and its neighbours, or removes it from the server and the app together
+    (moved from FR1, scenarios IN-6 and LEG-3). The loop-overlap number becomes a setting (LEG-5).
   - Loops below the minimum size (GPS jitter while standing still, walking up one side of a street and back down the
     other) capture nothing.
 - **[#7]** (rule part) Accuracy means the rule is applied 100% correctly, and the path is as good as the phone's GPS

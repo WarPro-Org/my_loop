@@ -189,6 +189,22 @@ check_design_doc_scenarios() {
   ((${#missing[@]})) && problems+=("$doc doesn't answer ${#missing[@]} scenario ID(s): ${missing[*]}. Add a row for each to its '## Scenarios' table.")
 }
 
+# A design doc new in this PR must show its early blind audit (CLAUDE.md Gate 2): a '## Early blind audit'
+# section linking the saved report. Design docs already on master are older than this rule.
+check_early_audit() {
+  local doc=$1 section path
+  section=$(git show "$merge:$doc" 2>/dev/null | perl -0pe 's/<!--.*?-->//gs' \
+    | awk '/^```/{fence = !fence; next} fence{next} /^## /{on = ($0 ~ /^## Early blind audit[[:space:]]*$/); next} on')
+  if [[ -z "${section//[[:space:]]/}" ]]; then
+    problems+=("$doc is a new design doc with no '## Early blind audit' section: run the early blind audit and link its report.")
+    return
+  fi
+  path=$(grep -oE 'docs/versions/[^ `)]+/audits/[^ `)]+\.md' <<<"$section" | head -1 || true)
+  if [[ -z "$path" || "$(git cat-file -t "$merge:$path" 2>/dev/null)" != blob ]]; then
+    problems+=("$doc: its '## Early blind audit' section must link the saved report (docs/versions/<release>/<version>/audits/<name>.md), and that file must exist.")
+  fi
+}
+
 # IDs whose catalogue row carries the [search] marker: they are about code that already exists.
 search_ids=""
 check_scenarios() {
@@ -203,7 +219,9 @@ check_scenarios() {
   removed=$(comm -23 <(sort -u <<<"$master_ids") <(sort -u <<<"$ids") | grep . | tr '\n' ' ')
   [[ -n "$removed" ]] && problems+=("Scenario IDs removed from $SCENARIOS: ${removed}. IDs are never deleted; mark one '(retired: <reason>)'.")
   while IFS= read -r doc; do
-    [[ -n "$doc" ]] && check_design_doc_scenarios "$doc" "$ids"
+    [[ -n "$doc" ]] || continue
+    check_design_doc_scenarios "$doc" "$ids"
+    git cat-file -e "$MASTER:$doc" 2>/dev/null || check_early_audit "$doc"
   done < <(git ls-tree -r --name-only "$merge" -- docs/versions 2>/dev/null | grep -E '/design/fr[0-9]+-[^/]*\.md$')
   [[ "$by_claude" == true || -n "$fr" ]] && [[ -n "$code_status" ]] || return 0
   line=$(grep -m1 '^\*\*Scenarios:\*\*' <<<"$body")
