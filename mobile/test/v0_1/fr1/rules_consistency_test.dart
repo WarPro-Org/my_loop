@@ -7,6 +7,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -370,17 +371,37 @@ void main() {
       container.read(journeyControllerProvider.notifier).stopJourney();
     }
 
-    test('is not held back longer than the limit when its own request is slow', () async {
-      final (container, location, source) = await serverChanged();
-      source.hold = Completer<void>(); // the walk start's request is never answered
-      final fetchesBefore = source.fetches;
-      await container
-          .read(journeyControllerProvider.notifier)
-          .startJourney()
-          .timeout(walkStartRulesWait + const Duration(seconds: 2));
+    /// Starts a walk in fake time and checks it waits exactly [walkStartRulesWait]: still waiting
+    /// 1 ms before the limit, started at it.
+    void expectStartsExactlyAtLimit(FakeAsync async, ProviderContainer container) {
+      var started = false;
+      container.read(journeyControllerProvider.notifier).startJourney().then((_) => started = true);
+      async.elapse(walkStartRulesWait - const Duration(milliseconds: 1));
+      expect(started, isFalse, reason: 'still waiting for the rules just before the limit');
+      async.elapse(const Duration(milliseconds: 1));
+      expect(started, isTrue, reason: 'started at the limit');
+    }
 
-      expect(source.fetches, fetchesBefore + 1, reason: 'the walk start asked the server');
-      await expectStartedOnLenientRules(container, location);
+    void expectStartedOnLenientRulesInFakeTime(FakeAsync async, ProviderContainer container, _FakeLocation location) {
+      var checked = false;
+      expectStartedOnLenientRules(container, location).then((_) => checked = true);
+      async.elapse(const Duration(seconds: 1));
+      expect(checked, isTrue);
+    }
+
+    test('is not held back longer than the limit when its own request is slow', () {
+      fakeAsync((async) {
+        late (ProviderContainer, _FakeLocation, _SwitchableSource) setup;
+        serverChanged().then((value) => setup = value);
+        async.elapse(Duration.zero);
+        final (container, location, source) = setup;
+        source.hold = Completer<void>(); // the walk start's request is never answered
+        final fetchesBefore = source.fetches;
+
+        expectStartsExactlyAtLimit(async, container);
+        expect(source.fetches, fetchesBefore + 1, reason: 'the walk start asked the server');
+        expectStartedOnLenientRulesInFakeTime(async, container, location);
+      });
     });
 
     test('starts on the rules it has when its own request fails', () async {
@@ -393,18 +414,16 @@ void main() {
       await expectStartedOnLenientRules(container, location);
     });
 
-    test('is not held back longer than the limit by a slow refresh', () async {
-      final (container, location, _) = await heldRefresh(); // the refresh is never answered
-      final journey = container.read(journeyControllerProvider.notifier);
-      await journey.startJourney().timeout(walkStartRulesWait + const Duration(seconds: 2));
+    test('is not held back longer than the limit by a slow refresh', () {
+      fakeAsync((async) {
+        late (ProviderContainer, _FakeLocation, _SwitchableSource) setup;
+        heldRefresh().then((value) => setup = value); // the refresh is never answered
+        async.elapse(Duration.zero);
+        final (container, location, _) = setup;
 
-      expect(container.read(journeyControllerProvider).status, JourneyStatus.tracking);
-      final pointsAtStart = container.read(journeyControllerProvider).path.length;
-      location.gps.add(location.next(accuracy: _fixAccuracyMeters));
-      await pumpEventQueue();
-      expect(container.read(journeyControllerProvider).path.length, pointsAtStart + 1,
-          reason: 'the walk started on the rules it had (lenient v1), so the 30 m fix counts');
-      journey.stopJourney();
+        expectStartsExactlyAtLimit(async, container);
+        expectStartedOnLenientRulesInFakeTime(async, container, location);
+      });
     });
   });
 

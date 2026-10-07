@@ -37,6 +37,8 @@ This page is the short version: what FR1 put into the app and what a later chang
 - The server is the judge: after an app update the phone keeps the last rules the server sent, not newer built-in ones
   (owner decision; newer built-in rules go wrong when the server is behind the app).
 - Any refresh failure keeps the current rules; a bug (Dart `Error`) still reaches the crash reporter.
+- A rules request gives up after 30 s (`rulesRequestLimit`, sign-in token step included), so a stuck request never
+  blocks later refreshes. A refused reply (any 4xx or 5xx) is asked again only at the next trigger, never in a loop.
 - Values are today's, including the 30 km/h speed limit (FR5 tightens it).
 - Tests build the module's internals via `InternalsVisibleTo`, not `AddMyLoopRules`.
 
@@ -59,6 +61,8 @@ This page is the short version: what FR1 put into the app and what a later chang
 - The HTTP contract test (`RulesHttpTests`) sets up the host like `Program.cs` but without the database and other
   modules; a JSON option added to `Program.cs` must be added there too.
 - `Loop:SkipNeighbors` does nothing at its shipped value (see FR6 above).
+- Only the rules request has an overall time limit; other requests can still hang in the shared sign-in step
+  (FR3 bounds them).
 - The presence check covers number settings and nested rules classes; a list or text setting needs it extended.
 - A walk killed mid-way doesn't resume; its saved points are judged by the server's rules when they arrive (FR9
   makes them be judged by the rules the walk started with).

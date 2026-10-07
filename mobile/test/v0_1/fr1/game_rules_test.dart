@@ -28,6 +28,33 @@ void main() {
     expect(() => GameRules.fromJson(json), throwsFormatException);
   });
 
+  group('rejects a response with a null or wrong-type field instead of half-applying it', () {
+    final cases = <String, Object?>{
+      'a null whole number': null,
+      'a whole number sent as text': '20',
+      'a whole number sent with a fraction': 20.5,
+    };
+    for (final MapEntry(key: name, value: value) in cases.entries) {
+      test(name, () {
+        final json = {...defaultGameRules.toJson(), 'minLoopPoints': value};
+
+        expect(() => GameRules.fromJson(json), throwsFormatException);
+      });
+    }
+
+    test('a null decimal', () {
+      final json = {...defaultGameRules.toJson(), 'gpsAccuracyThresholdMeters': null};
+
+      expect(() => GameRules.fromJson(json), throwsFormatException);
+    });
+
+    test('a decimal sent as text', () {
+      final json = {...defaultGameRules.toJson(), 'gpsAccuracyThresholdMeters': '50'};
+
+      expect(() => GameRules.fromJson(json), throwsFormatException);
+    });
+  });
+
   test('accepts a response with a field it does not know (a newer server)', () {
     final json = {...defaultGameRules.toJson(), 'fieldFromANewerServer': 7};
 

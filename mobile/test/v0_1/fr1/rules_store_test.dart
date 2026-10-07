@@ -72,4 +72,24 @@ void main() {
       expect(File('${tempDir.path}/game_rules.json.tmp').existsSync(), isFalse);
     }
   });
+
+  test('RulesStore is the only code that touches the saved rules file', () {
+    // One owner per file (LIFE-9): another writer could race the store's write-then-rename save.
+    final sources = Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'));
+    final namingTheFile = sources
+        .where((file) => file.readAsStringSync().contains('game_rules.json'))
+        .map((file) => file.path.replaceAll(r'\\', '/'))
+        .toList();
+    final buildingTheStore = sources
+        .where((file) => file.readAsStringSync().contains('FileRulesStore('))
+        .map((file) => file.path.replaceAll(r'\\', '/'))
+        .toList();
+
+    expect(namingTheFile, ['lib/shared/rules/rules_store.dart']);
+    expect(buildingTheStore, unorderedEquals(['lib/shared/rules/rules_store.dart', 'lib/shared/rules/game_rules_provider.dart']),
+        reason: 'only the provider creates the store, so the app has a single instance');
+  });
 }

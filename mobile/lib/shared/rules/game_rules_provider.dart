@@ -31,6 +31,11 @@ final gameRulesProvider = NotifierProvider<GameRulesNotifier, GameRules>(GameRul
 /// a refresh normally finishes well within this; a slow network must not hold the walk back longer.
 const walkStartRulesWait = Duration(seconds: 3);
 
+/// Longest a single rules request may take, sign-in token included. The HTTP client's own timeouts
+/// don't cover the token step, which can hang offline with an expired token; without this limit a
+/// stuck request would block every later refresh (only one runs at a time).
+const rulesRequestLimit = Duration(seconds: 30);
+
 class GameRulesNotifier extends Notifier<GameRules> {
   Future<void>? _loadSaved;
 
@@ -113,13 +118,17 @@ class GameRulesNotifier extends Notifier<GameRules> {
   Future<void> _refresh() async {
     await _loadSaved;
     try {
-      final changed = await ref.read(rulesSourceProvider).fetchIfChanged(_tag);
+      final changed = await ref.read(rulesSourceProvider).fetchIfChanged(_tag).timeout(rulesRequestLimit);
       if (changed == null) return;
       // Apply first: the new rules are valid even if saving them fails.
       _tag = changed.tag;
       state = changed.rules;
       _log.info('Game rules updated to version ${changed.rules.version}');
       await _save(changed);
+    } on TimeoutException catch (e) {
+      // A stuck request (e.g. the sign-in token step offline): give up on it so the next refresh
+      // can run; a late answer is dropped.
+      _log.warning('Game rules request took too long; keeping version ${state.version}', e);
     } on DioException catch (e) {
       // Offline, signed out (401) or server down: normal — keep the rules we have.
       _log.fine('Game rules refresh skipped; keeping version ${state.version}', e);
