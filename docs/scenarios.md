@@ -15,7 +15,10 @@ checked by a machine.
   - `covered`: name the test file in backticks and the test's name in double quotes, e.g.
     `` `mobile/test/v0_1/fr1/rules_store_test.dart` "a corrupted saved copy is ignored" ``. "PR rules" checks that
     the file exists and contains that name.
-  - `n/a`: give a reason. The reviewer checks that the reason is true.
+  - `n/a`: give a reason. The reviewer checks that the reason is true. For an ID marked `[search]` the reason must
+    start with `searched:` and say what was searched and what it found, e.g. `searched: grep -rn ExecuteDelete api/ —
+    only the files in docs/data-removals.md`. "PR rules" checks the prefix. A `[search]` ID is about code that
+    already exists, so "my change doesn't do this" is not an answer: search the whole code base (audit A2).
   - `open`: name the owner, an FR (e.g. `FR5`) or a task (e.g. `#221`). An `open` may not stay open when its owner
     FR closes.
   - `accepted`: the owner approved leaving it as it is. Say where it was approved (a decision ID, or a task or PR
@@ -118,11 +121,18 @@ checked by a machine.
 | SRV-1 | Server redeployed mid-walk, or two versions running during a rolling deploy | A documented choice decides which version judges; the phone doesn't flip back and forth | FR1 matrix |
 | SRV-2 | Phone and server versions differ (deploy order, rollback) | Both work, or the deploy order is written down | FR1 |
 | SRV-3 | Two requests for the same user at once | Locked or idempotent; no lost update | audit A4, D6 |
-| SRV-4 | Schema change, or startup code that rewrites data | Migration-managed; never deletes user data; a failed step stops startup | audit A2, E8 |
-| SRV-5 | Seed or test data | Development only, never Production | audit A3 |
+| SRV-4 | [search] Schema change, or startup code that rewrites data | Migration-managed; never deletes user data; a failed step stops startup | audit A2, E8 |
+| SRV-5 | [search] Seed or test data | Development only, never Production | audit A3 |
 | SRV-6 | A huge input (polygon, path, batch) | Size checked before costly work; only the bad part is rejected | audit C6 |
 | SRV-7 | Duplicate or replayed request | Detected (by id or content) | audit C3, D6 |
 | SRV-8 | A total or counter | Derived from stored source data, or can be rebuilt from it; can't drift | audit E2, D6 |
+
+## DATA — data that can be removed or handed over
+
+| ID | Scenario | What must be true | Found by |
+|---|---|---|---|
+| DATA-1 | [search] Code that deletes, overwrites, hands over or expires user data (a SQL delete, a startup rebuild, a timer or reaper, a claim that changes an owner, a cache clear) | The file is listed in `docs/data-removals.md` with the requirement it keeps or breaks, and an owner if it breaks one; "PR rules" fails an unlisted file | audit A2, E5; process #226 |
+| DATA-2 | [search] A promise written as prose ("no land is ever lost") instead of a numbered requirement | It is numbered, with an owning FR, and that FR is the first one that could break it | process #226 |
 
 ## GAME — core game rules
 
@@ -160,11 +170,11 @@ checked by a machine.
 
 | ID | Scenario | What must be true | Found by |
 |---|---|---|---|
-| LEG-1 | Old code in this area still runs and contradicts the version's scope | Listed; switched off or fixed by a named owner | audit A1, E5 |
+| LEG-1 | [search] Old code in this area still runs and contradicts the version's scope | Listed; switched off or fixed by a named owner | audit A1, E5 |
 | LEG-2 | Dead code, unreachable branches, comments that lie | Removed or corrected in the same PR | audit B8 |
 | LEG-3 | A test that passes without guarding its claim (a fake at the wrong layer, a value outside the shipped range) | The fake sits at the lowest real layer; the test is proven red | audit A6, C11 |
 | LEG-4 | Tests for code still running that aren't run in CI | They run in CI | audit D9 |
-| LEG-5 | Places that should use this rule or state but don't (copies, bypasses, hard-coded numbers) | Found by grep and listed; each covered or owned | audit B2 (and rules: hard-coded numbers) |
+| LEG-5 | [search] Places that should use this rule or state but don't (copies, bypasses, hard-coded numbers) | Found by grep and listed; each covered or owned | audit B2 (and rules: hard-coded numbers) |
 | LEG-6 | Debug-only path reachable in release or profile builds | Gated with `kDebugMode` or an environment check | audit E6 |
 | LEG-7 | Lessons in `docs/learnings/` and "Proposed" ADRs | Each is done, or has an owner | audit E8, E12 |
 | LEG-8 | A test that waits in real time | Uses fake time and checks the exact limit, not a loose margin | audit B6 |

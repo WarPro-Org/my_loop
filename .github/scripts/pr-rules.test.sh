@@ -126,7 +126,8 @@ expect fail "a skill in a note after the Skills run list doesn't count as run" \
 # Scenario catalogue cases. make_scenarios "<master catalogue IDs>" "<PR catalogue IDs>" "<design doc rows>" [code file]:
 # master holds a catalogue and a design doc answering it; the PR changes the catalogue, the doc's rows and
 # optionally a code file. Rows are "ID|status|evidence" lines.
-catalogue() { printf '# Scenarios\n| ID | Scenario |\n|---|---|\n'; for id in $1; do printf '| %s | something |\n' "$id"; done; }
+catalogue() { printf '# Scenarios\n| ID | Scenario |\n|---|---|\n'; for id in $1; do
+  if [[ " ${SEARCH:-} " == *" $id "* ]]; then printf '| %s | [search] something |\n' "$id"; else printf '| %s | something |\n' "$id"; fi; done; }
 design_doc() { printf '# FR9\n## Scenarios\n| ID | Status | Evidence |\n|---|---|---|\n'
   while IFS='|' read -r id status evidence; do
     if [[ "$id" == '```'* || "$id" == '<!--'* || "$id" == '-->'* ]]; then echo "$id"  # raw fence or comment line
@@ -219,6 +220,74 @@ expect fail "a Scenarios line naming an unknown ID" "$(body "$ALL_RUN" '')"$'\n*
 expect fail "a Scenarios line with no ID and no reason" "$(body "$ALL_RUN" '')"$'\n**Scenarios:** none' "names no ID"
 expect pass "a Scenarios line naming known IDs" "$(body "$ALL_RUN" '')"$'\n**Scenarios:** NET-1, NET-3'
 expect pass "a Scenarios line 'none' with a reason" "$(body "$ALL_RUN" '')"$'\n**Scenarios:** none — a log message only'
+
+# [search] IDs: an n/a must say what was searched.
+SEARCH="NET-2"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
+expect fail "n/a on a [search] ID without 'searched:'" "$(body 'none' '')" "NET-2 is marked [search]"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/searched: grep -rn Delete api/ — only the registered files}"
+expect pass "n/a on a [search] ID that says what was searched" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/searched:}"
+expect fail "searched: with nothing after it" "$(body 'none' '')" "NET-2 is marked [search]"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/searched: ok}"
+expect fail "searched: with a reason shorter than 10 characters" "$(body 'none' '')" "NET-2 is marked [search]"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/NET-2|n\/a|reads only/NET-2|open|FR5 owns it}"
+expect pass "a [search] ID answered open with an owner" "$(body 'none' '')"
+SEARCH=""
+
+# Data-removal register. make_register "<register rows>" "<server file text>" [phone file text]
+make_register() {
+  rm -rf "$work/repo" && mkdir -p "$work/repo" && cd "$work/repo" || exit 1
+  g init -q
+  mkdir -p .github .claude/skills docs api/MyLoop.Api/Services api/MyLoop.Api/Migrations mobile/lib/shared/services mobile/lib/features
+  cp "$root/CLAUDE.md" . && cp "$root/.github/gate-rows.tsv" .github/
+  for dir in "$root"/.claude/skills/*/; do mkdir -p ".claude/skills/$(basename "$dir")" && touch ".claude/skills/$(basename "$dir")/SKILL.md"; done
+  echo base >README.md
+  g add -A && g commit -qm base
+  g update-ref refs/remotes/origin/master HEAD
+  g checkout -qb pr
+  printf '%s\n' "$2" >api/MyLoop.Api/Services/Purge.cs
+  printf 'DELETE FROM "Old"\n' >api/MyLoop.Api/Migrations/Old.cs   # migrations are not scanned
+  printf 'void ui() { items.clear(); }\n' >mobile/lib/features/screen.dart   # UI code is not scanned
+  [[ -n "${3:-}" ]] && printf '%s\n' "$3" >mobile/lib/shared/services/cache.dart
+  { printf '# Register\n| File | What | Verdict | Owner |\n|---|---|---|---|\n'; [[ -n "$1" ]] && printf '%s\n' "$1"; } >docs/data-removals.md
+  g add -A && g commit -qm change
+  head_sha=$(git rev-parse HEAD)
+  g checkout -q master && g merge -q --no-ff --no-edit pr
+}
+PURGE='| `api/MyLoop.Api/Services/Purge.cs` | purges a user | keeps #40 | - |'
+make_register "$PURGE" 'await db.Users.ExecuteDeleteAsync();'
+expect pass "a destructive file that is in the register" "$(body "$ALL_RUN" '')"
+make_register "" 'await db.Users.ExecuteDeleteAsync();'
+expect fail "a destructive file with an empty register" "$(body "$ALL_RUN" '')" "Services/Purge.cs deletes, overwrites, hands over or expires data but isn't in docs/data-removals.md"
+make_register "$PURGE" 'var x = 1;'
+expect pass "a registered file that no longer matches a pattern is fine" "$(body "$ALL_RUN" '')"
+make_register "$PURGE"$'\n| `api/MyLoop.Api/Services/Gone.cs` | gone | keeps #40 | - |' 'await db.Users.ExecuteDeleteAsync();'
+expect fail "a register row for a file that doesn't exist" "$(body "$ALL_RUN" '')" "lists api/MyLoop.Api/Services/Gone.cs, which isn't a file"
+make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | unclear | - |' 'await db.Users.ExecuteDeleteAsync();'
+expect fail "a verdict that isn't keeps or breaks" "$(body "$ALL_RUN" '')" "has verdict 'unclear'"
+make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | breaks #43 | - |' 'await db.Users.ExecuteDeleteAsync();'
+expect fail "breaks without an owner" "$(body "$ALL_RUN" '')" "'breaks' a requirement but has no owner"
+make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | breaks #43 | FR6 |' 'await db.Users.ExecuteDeleteAsync();'
+expect pass "breaks with an owner" "$(body "$ALL_RUN" '')"
+make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | keeps none — a copy the user made | - |' 'cell.OwnerId = userId;'
+expect pass "keeps none with a reason, and an ownership change is a removal pattern" "$(body "$ALL_RUN" '')"
+make_register "" 'cell.OwnerId = userId;'
+expect fail "an ownership change that is not in the register" "$(body "$ALL_RUN" '')" "Services/Purge.cs deletes, overwrites, hands over or expires data"
+make_register "$PURGE"$'\n'"$PURGE" 'await db.Users.ExecuteDeleteAsync();'
+expect fail "a file listed twice" "$(body "$ALL_RUN" '')" "lists api/MyLoop.Api/Services/Purge.cs more than once"
+make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | breaks #43abc | FR6 |' 'await db.Users.ExecuteDeleteAsync();'
+expect fail "a verdict with text after the requirement number" "$(body "$ALL_RUN" '')" "has verdict 'breaks #43abc'"
+make_register "" 'await db.Users.ExecuteUpdateAsync(s => s.SetProperty(u => u.OwnerId, x));'
+expect fail "an ExecuteUpdate that is not in the register" "$(body "$ALL_RUN" '')" "Services/Purge.cs deletes, overwrites"
+make_register "" 'await db.Database.ExecuteSqlRawAsync("UPDATE x SET y = 1");'
+expect fail "raw SQL that is not in the register" "$(body "$ALL_RUN" '')" "Services/Purge.cs deletes, overwrites"
+make_register "$PURGE" 'await db.Users.ExecuteDeleteAsync();' 'await file.writeAsString(text);'
+expect fail "a phone file that rewrites a file and is not in the register" "$(body "$ALL_RUN" '')" "mobile/lib/shared/services/cache.dart deletes"
+make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | keeps none — | - |' 'await db.Users.ExecuteDeleteAsync();'
+expect fail "keeps none without a reason" "$(body "$ALL_RUN" '')" "has verdict 'keeps none —'"
+make_register "$PURGE" 'await db.Users.ExecuteDeleteAsync();' 'await file.delete();'
+expect fail "a phone service file with a delete that is not in the register" "$(body "$ALL_RUN" '')" "mobile/lib/shared/services/cache.dart deletes"
 
 make_pr $'docs/versions/1/0.1/design/fr9-x.md\n.claude/skills/mock-gps-anticheat/SKILL.md\nREADME.md' "docs/old.md"
 expect pass "docs-only PR: no gate rows required" "$(body 'none' '')"

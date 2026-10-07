@@ -175,7 +175,11 @@ check_design_doc_scenarios() {
           grep -qxF -- "$name" <<<"$tests" || problems+=("$doc: $id names the test \"$name\", which isn't the full name of a test in its test file(s).")
         done <<<"$names" ;;
       n/a|accepted)
-        grep -qE '[A-Za-z]{3,}' <<<"$evidence" || problems+=("$doc: $id is '$status' with no reason.") ;;
+        grep -qE '[A-Za-z]{3,}' <<<"$evidence" || problems+=("$doc: $id is '$status' with no reason.")
+        # An existing-code ID is not answered by the size of the diff: n/a must say what was searched.
+        if [[ "$status" == n/a ]] && grep -qx "$id" <<<"$search_ids" && ! grep -qE '^[[:space:]]*searched:[[:space:]]*.{10,}' <<<"$evidence"; then
+          problems+=("$doc: $id is marked [search] in $SCENARIOS, so its 'n/a' must start with 'searched:' followed by what was searched and found (10+ characters).")
+        fi ;;
       open)
         grep -qE '#[0-9]+|FR[0-9]+' <<<"$evidence" || problems+=("$doc: $id is 'open' with no owner (FRn or #task).") ;;
       *) problems+=("$doc: $id has status '$status'; use covered, n/a, open or accepted.") ;;
@@ -185,9 +189,12 @@ check_design_doc_scenarios() {
   ((${#missing[@]})) && problems+=("$doc doesn't answer ${#missing[@]} scenario ID(s): ${missing[*]}. Add a row for each to its '## Scenarios' table.")
 }
 
+# IDs whose catalogue row carries the [search] marker: they are about code that already exists.
+search_ids=""
 check_scenarios() {
   local ids master_ids removed doc line named id
   ids=$(catalogue_ids "$merge")
+  search_ids=$(git show "$merge:$SCENARIOS" 2>/dev/null | grep -E '^\| [A-Z]+-[0-9]+ \|.*\[search\]' | grep -oE '^\| [A-Z]+-[0-9]+' | grep -oE '[A-Z]+-[0-9]+' || true)
   master_ids=$(catalogue_ids "$MASTER")
   if [[ -z "$ids" ]]; then
     [[ -n "$master_ids" ]] && problems+=("$SCENARIOS is missing or empty: scenario IDs are never removed.")
@@ -212,6 +219,42 @@ check_scenarios() {
   for id in $named; do
     grep -qx "$id" <<<"$ids" || problems+=("'**Scenarios:**' names $id, which isn't in $SCENARIOS: add it there first.")
   done
+}
+
+# Data-removal register (DATA-1): every file that deletes, overwrites, hands over or expires user data is a row in
+# docs/data-removals.md with a verdict and, for 'breaks', an owner; every row names a file that exists.
+REGISTER=docs/data-removals.md
+SERVER_REMOVAL='ExecuteDelete|ExecuteUpdate|ExecuteSql|DELETE FROM|\.Remove\(|\.RemoveRange\(|TRUNCATE|DROP TABLE|DROP COLUMN|\.OwnerId = '
+PHONE_REMOVAL='writeAsString\(|\.rename\(|\.delete\(|deleteSync\(|removeWhere\(|\.removeAt\(|\.removeRange\(|\.clear\(\)'
+trim() { local v=$1; v="${v#"${v%%[![:space:]]*}"}"; printf '%s' "${v%"${v##*[![:space:]]}"}"; }
+check_data_removals() {
+  local found register listed file path verdict owner
+  found=$( { git -c core.quotePath=false grep -lE "$SERVER_REMOVAL" "$merge" -- 'api/*.cs' ':(exclude)api/*/Migrations/*' 2>/dev/null || true
+             git -c core.quotePath=false grep -lE "$PHONE_REMOVAL" "$merge" -- 'mobile/lib/shared/*.dart' 2>/dev/null || true; } \
+           | sed 's/^[^:]*://' | sort -u)
+  register=$(git show "$merge:$REGISTER" 2>/dev/null || true)
+  if [[ -z "$register" ]]; then
+    [[ -n "$found" ]] && problems+=("$REGISTER is missing: list every file that deletes, overwrites, hands over or expires user data.")
+    return
+  fi
+  listed=""
+  while IFS='|' read -r _ file _ verdict owner _; do
+    file=$(trim "${file//\`/}"); verdict=$(trim "$verdict"); owner=$(trim "$owner")
+    [[ "$file" =~ ^(api|mobile|tests)/[^[:space:]]+$ ]] || continue
+    grep -qxF -- "$file" <<<"$listed" && problems+=("$REGISTER lists $file more than once: keep one row, so no verdict is hidden.")
+    listed+="$file"$'\n'
+    [[ "$(git cat-file -t "$merge:$file" 2>/dev/null)" == blob ]] || problems+=("$REGISTER lists $file, which isn't a file: remove the row.")
+    if [[ "$verdict" =~ ^keeps\ (#[0-9]+|none\ —\ .{3,})$ ]]; then :
+    elif [[ "$verdict" =~ ^breaks\ #[0-9]+$ ]]; then
+      grep -qE '^(FR[0-9]+|#[0-9]+)$' <<<"$owner" || problems+=("$REGISTER: $file 'breaks' a requirement but has no owner (FRn or #task).")
+    else
+      problems+=("$REGISTER: $file has verdict '$verdict'; use 'keeps #N', 'keeps none — <reason>' or 'breaks #N'.")
+    fi
+  done <<<"$register"
+  while IFS= read -r file; do
+    [[ -n "$file" ]] && ! grep -qxF -- "$file" <<<"$listed" \
+      && problems+=("$file deletes, overwrites, hands over or expires data but isn't in $REGISTER: add a row with its verdict.")
+  done <<<"$found"
 }
 
 fr=""
@@ -261,6 +304,7 @@ if [[ -n "$fr" ]]; then
 fi
 
 check_scenarios
+check_data_removals
 
 if (( ${PR_FILES:-0} > MAX_FILES || lines > MAX_LINES )) && ! grep -q '^Size exception:' <<<"$body"; then
   problems+=("PR is ${PR_FILES:-0} files / ${lines} lines (limit ~${MAX_FILES} / ~${MAX_LINES}). Split it, or add a 'Size exception: <reason, agreed with the owner>' line.")

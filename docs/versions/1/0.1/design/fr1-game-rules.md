@@ -272,8 +272,8 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | SRV-1 | accepted | D2: a redeploy mid-walk judges the rest of the walk by the new rules until FR9 |
 | SRV-2 | accepted | Deploy the server before an app release that adds a field (record, "Decisions that must stay true") |
 | SRV-3 | n/a | `GET /api/rules` only reads |
-| SRV-4 | n/a | FR1 changes no schema |
-| SRV-5 | n/a | FR1 seeds nothing |
+| SRV-4 | open | #201: startup code that rewrites data exists — `DbInitializer.cs:103` deletes every player's explored hexes on each start after the first (audit A2) |
+| SRV-5 | open | #201: bot users and bot land are seeded in every environment, Production included (audit A3) |
 | SRV-6 | n/a | The reply is five fixed fields |
 | SRV-7 | n/a | `GET /api/rules` only reads |
 | SRV-8 | n/a | FR1 keeps no totals |
@@ -299,7 +299,7 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | CHEAT-4 | open | FR5: the limit is still 30 km/h, not 20–25 km/h (kept by the owner until FR5) |
 | CHEAT-5 | n/a | Replay detection is FR5's |
 | CHEAT-6 | covered | `tests/MyLoop.V01.Tests/FR1/ClientRulesTests.cs` "Client_rules_contain_no_anti_cheat_numbers"; `mobile/test/v0_1/fr1/game_rules_test.dart` "the app never knows anti-cheat numbers" |
-| LEG-1 | n/a | The old anti-cheat constants were deleted (#204); no old rules code runs |
+| LEG-1 | open | #201: stealing and the hourly decay deletion of land still run, against requirement #43 (audit E5) |
 | LEG-2 | open | #201: stale comments in `GameRules.cs` ("resuming after a pause", "(#37)", the `SkipNeighbors` description) |
 | LEG-3 | open | #201: the `SkipNeighbors` test proves an effect only outside the shipped range |
 | LEG-4 | n/a | Every FR1 test runs in CI (`ci.yml`: `test/v0_1` and `tests/MyLoop.V01.Tests`) |
@@ -311,6 +311,8 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The rows marked 
 | LEG-10 | n/a | `RulesController` only calls `IRuleSettings` |
 | LEG-11 | n/a | FR1 adds no config files |
 | LEG-12 | n/a | FR1 adds no user-facing text or achievements |
+| DATA-1 | open | #201: `docs/data-removals.md` lists every removal path; the rows marked `breaks` (startup wipe, stealing, decay) are fixed by the bug task for B2 |
+| DATA-2 | n/a | searched: `grep -n -i 'ever lost' requirements.md` and `grep -n 'never loses land' requirements.md` — two prose promises (FR6 and FR15), now numbered as requirement #43 |
 | API-1 | covered | `tests/MyLoop.V01.Tests/FR1/ContractTests.cs` "Server_sends_exactly_the_shared_client_rules_sample"; `mobile/test/v0_1/fr1/contract_test.dart` "the app knows exactly the fields the server sends". Dates, time zones and ids don't apply: the rules reply has none |
 | API-2 | covered | `mobile/test/v0_1/fr1/game_rules_test.dart` "built-in copy matches the server rules in appsettings.json" |
 | API-3 | open | #201: the contract test serialises in the test, not through the real HTTP pipeline |
