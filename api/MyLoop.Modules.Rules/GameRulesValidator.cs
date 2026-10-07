@@ -8,30 +8,28 @@ namespace MyLoop.Modules.Rules;
 /// </summary>
 internal sealed class GameRulesValidator : IValidateOptions<GameRules>
 {
-    // Upper limits catch a typo such as 500 instead of 50. Each sits a few times above the shipped
-    // value, so tuning still has room, and well below a 10× slip.
+    // Upper limits catch a typo such as 500 instead of 50. Each sits at most 5× above the shipped
+    // value (appsettings.json), so tuning still has room and a 10× slip stops startup.
     private const double MaxClosureDistanceMeters = 200;
-    private const double MaxLoopPoints = 500;
-    private const double MaxLoopAreaSquareMeters = 1_000_000;
+    private const double MaxLoopPoints = 100;
+    private const double MaxLoopAreaSquareMeters = 25_000;
     private const double MaxAccuracyThresholdMeters = 200;
     private const double MaxSpeedLimitMetersPerSecond = 15;
-    private const double MaxDriftMarginMeters = 200;
-    private const double MaxHopMeters = 1_000;
-    private const double MaxSamplingIntervalSeconds = 60;
-    private const double MaxBearingStdDevDegrees = 45;
+    private const double MaxDriftMarginMeters = 150;
+    private const double MaxHopMeters = 300;
+    private const double MaxSamplingIntervalSeconds = 25;
+    private const double MaxBearingStdDevDegrees = 10;
 
     public ValidateOptionsResult Validate(string? name, GameRules rules)
     {
         var failures = new List<string>();
 
-        // Written as !(in range) so NaN fails too; IsFinite rejects ±Infinity, which would pass a
-        // plain "greater than 0" and turn a check off.
-        void Positive(double value, string path, double max = double.MaxValue)
+        // Written as !(in range) so NaN fails too. The upper limit rejects +Infinity, which would pass a
+        // plain "greater than 0" and turn a check off; -Infinity fails "greater than 0".
+        void Positive(double value, string path, double max)
         {
-            if (!(double.IsFinite(value) && value > 0 && value <= max))
-                failures.Add(max == double.MaxValue
-                    ? $"{GameRules.SectionName}:{path} must be greater than 0"
-                    : $"{GameRules.SectionName}:{path} must be greater than 0 and at most {max}");
+            if (!(value > 0 && value <= max))
+                failures.Add($"{GameRules.SectionName}:{path} must be greater than 0 and at most {max}");
         }
 
         void NotNegative(double value, string path, double max)
@@ -46,7 +44,7 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
         }
 
         // Version only grows, one step per change, so it has no upper limit.
-        Positive(rules.Version, nameof(rules.Version));
+        if (rules.Version <= 0) failures.Add($"{GameRules.SectionName}:{nameof(rules.Version)} must be greater than 0");
 
         Positive(rules.Loop.ClosureDistanceMeters, "Loop:ClosureDistanceMeters", MaxClosureDistanceMeters);
         Positive(rules.Loop.MinPoints, "Loop:MinPoints", MaxLoopPoints);

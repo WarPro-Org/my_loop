@@ -66,7 +66,7 @@ Every tunable number lives in one place so the rules can be tuned from real test
 - FR1 builds the settings system and moves the numbers today's code uses: loop-closing distance, minimum loop
   points and size, GPS accuracy threshold, and the speed numbers today's anti-cheat uses. Exact values are tuned from
   real test walks.
-- Every setting has an upper limit a few times its shipped value, so a typo (500 instead of 50) stops the server at
+- Every setting has an upper limit at most 5× its shipped value, so a typo (500 instead of 50) stops the server at
   startup instead of running with it. `NaN` and `Infinity` are rejected too.
 - Each later FR adds its own settings when it is built: auto-end thresholds (FR2), short-gap limits and safety-alarm
   delay (FR4), speed checks over gaps (FR5), guest inactivity period (FR12).

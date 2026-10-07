@@ -82,23 +82,23 @@ public class GameRulesTests
     [InlineData("GameRules:AntiCheat:GpsSamplingIntervalSeconds", "0", "AntiCheat:GpsSamplingIntervalSeconds must be greater than 0")]
     [InlineData("GameRules:AntiCheat:DurationToleranceFactor", "1.5", "AntiCheat:DurationToleranceFactor must be above 0 and at most 1")]
     [InlineData("GameRules:AntiCheat:MinBearingStdDev", "0", "AntiCheat:MinBearingStdDev must be greater than 0")]
-    // ±Infinity would pass "greater than 0" and switch a check off; NaN fails every comparison.
+    // +Infinity would pass "greater than 0" and switch a check off (the upper limit rejects it); NaN fails every comparison.
     [InlineData("GameRules:AntiCheat:MaxSpeedMetersPerSecond", "Infinity", "AntiCheat:MaxSpeedMetersPerSecond must be greater than 0")]
     [InlineData("GameRules:Loop:ClosureDistanceMeters", "-Infinity", "Loop:ClosureDistanceMeters must be greater than 0")]
     [InlineData("GameRules:Gps:AccuracyThresholdMeters", "NaN", "Gps:AccuracyThresholdMeters must be greater than 0")]
     [InlineData("GameRules:AntiCheat:MaxSpeedViolationRate", "NaN", "AntiCheat:MaxSpeedViolationRate must be above 0")]
-    // Upper limits: one step above each limit fails (a typo like 500 instead of 50).
+    // Upper limits: one step above each limit fails, so a 10× typo (500 instead of 50) stops startup.
     [InlineData("GameRules:Loop:ClosureDistanceMeters", "200.01", "Loop:ClosureDistanceMeters must be greater than 0 and at most 200")]
-    [InlineData("GameRules:Loop:MinPoints", "501", "Loop:MinPoints must be greater than 0 and at most 500")]
-    [InlineData("GameRules:Loop:SkipNeighbors", "501", "Loop:SkipNeighbors must be 0 or more and at most 500")]
-    [InlineData("GameRules:Loop:MinAreaSquareMeters", "1000000.1", "Loop:MinAreaSquareMeters must be greater than 0 and at most 1000000")]
+    [InlineData("GameRules:Loop:MinPoints", "101", "Loop:MinPoints must be greater than 0 and at most 100")]
+    [InlineData("GameRules:Loop:SkipNeighbors", "101", "Loop:SkipNeighbors must be 0 or more and at most 100")]
+    [InlineData("GameRules:Loop:MinAreaSquareMeters", "25000.1", "Loop:MinAreaSquareMeters must be greater than 0 and at most 25000")]
     [InlineData("GameRules:Gps:AccuracyThresholdMeters", "500", "Gps:AccuracyThresholdMeters must be greater than 0 and at most 200")]
     [InlineData("GameRules:AntiCheat:MaxSpeedMetersPerSecond", "15.01", "AntiCheat:MaxSpeedMetersPerSecond must be greater than 0 and at most 15")]
     [InlineData("GameRules:AntiCheat:MaxAverageSpeedMetersPerSecond", "15.01", "AntiCheat:MaxAverageSpeedMetersPerSecond must be greater than 0 and at most 15")]
-    [InlineData("GameRules:AntiCheat:GpsDriftMarginMeters", "200.01", "AntiCheat:GpsDriftMarginMeters must be greater than 0 and at most 200")]
-    [InlineData("GameRules:AntiCheat:MaxDistanceBetweenPointsMeters", "1000.01", "AntiCheat:MaxDistanceBetweenPointsMeters must be greater than 0 and at most 1000")]
-    [InlineData("GameRules:AntiCheat:GpsSamplingIntervalSeconds", "60.01", "AntiCheat:GpsSamplingIntervalSeconds must be greater than 0 and at most 60")]
-    [InlineData("GameRules:AntiCheat:MinBearingStdDev", "45.01", "AntiCheat:MinBearingStdDev must be greater than 0 and at most 45")]
+    [InlineData("GameRules:AntiCheat:GpsDriftMarginMeters", "150.01", "AntiCheat:GpsDriftMarginMeters must be greater than 0 and at most 150")]
+    [InlineData("GameRules:AntiCheat:MaxDistanceBetweenPointsMeters", "300.01", "AntiCheat:MaxDistanceBetweenPointsMeters must be greater than 0 and at most 300")]
+    [InlineData("GameRules:AntiCheat:GpsSamplingIntervalSeconds", "25.01", "AntiCheat:GpsSamplingIntervalSeconds must be greater than 0 and at most 25")]
+    [InlineData("GameRules:AntiCheat:MinBearingStdDev", "10.01", "AntiCheat:MinBearingStdDev must be greater than 0 and at most 10")]
     public void Invalid_value_stops_startup_and_names_the_setting(string key, string value, string expectedPath)
     {
         var ex = Assert.Throws<OptionsValidationException>(
@@ -119,14 +119,15 @@ public class GameRulesTests
 
     [Theory]
     [InlineData("GameRules:Loop:ClosureDistanceMeters", "200")]
-    [InlineData("GameRules:Loop:MinPoints", "500")]
-    [InlineData("GameRules:Loop:MinAreaSquareMeters", "1000000")]
+    [InlineData("GameRules:Loop:MinPoints", "100")]
+    [InlineData("GameRules:Loop:MinAreaSquareMeters", "25000")]
     [InlineData("GameRules:Gps:AccuracyThresholdMeters", "200")]
     [InlineData("GameRules:AntiCheat:MaxAverageSpeedMetersPerSecond", "15")]
-    [InlineData("GameRules:AntiCheat:GpsDriftMarginMeters", "200")]
-    [InlineData("GameRules:AntiCheat:MaxDistanceBetweenPointsMeters", "1000")]
-    [InlineData("GameRules:AntiCheat:GpsSamplingIntervalSeconds", "60")]
-    [InlineData("GameRules:AntiCheat:MinBearingStdDev", "45")]
+    [InlineData("GameRules:AntiCheat:GpsDriftMarginMeters", "150")]
+    [InlineData("GameRules:AntiCheat:MaxDistanceBetweenPointsMeters", "300")]
+    [InlineData("GameRules:AntiCheat:GpsSamplingIntervalSeconds", "25")]
+    [InlineData("GameRules:AntiCheat:MinBearingStdDev", "10")]
+    [InlineData("GameRules:Loop:SkipNeighbors", "100")]
     public void Value_at_its_upper_limit_is_allowed(string key, string value)
     {
         Assert.NotNull(Build(ShippedWith(key, value)).GetRequiredService<IRuleSettings>().Current);
