@@ -15,7 +15,7 @@
 
 ## Findings
 
-No blockers. Seven minor findings, all in docs and tasks. The code and tests match what the docs claim. Each is
+No blockers. Eight minor findings, all in docs and tasks. The code and tests match what the docs claim. Each is
 fixed in the close-out PR #231 or in task #201 at close-out step 4.
 
 1. **The record was out of date.**
@@ -29,8 +29,9 @@ fixed in the close-out PR #231 or in task #201 at close-out step 4.
    `MaxSpeedViolationRate` is capped at 1, which is 20× its shipped 0.05, and `Version` has no limit. Reworded in #231.
 3. **GAME-13 (open, owner FR8) was missing from FR8's spec section.** It is the 500-point preview cap against the
    server's 10,000, and different earth radii. Bullet added in #231.
-4. **The design doc was stale in four places:**
-   - the header and PR list;
+4. **The design doc was stale in five places:**
+   - the header;
+   - the PR list;
    - the startup-check paragraph (no upper limits, `NaN`/`Infinity` or `RulesStartupCheck`);
    - the contract-test risk row (it still said "not the real HTTP pipeline");
    - no section on the work after the blind audit.
@@ -44,8 +45,11 @@ fixed in the close-out PR #231 or in task #201 at close-out step 4.
 
    Fixed at close-out step 4.
 6. **#201's check-in log named commit hashes that aren't on master.** #229 and #230 were rebase-merged, so master
-   holds copies under new hashes: `b80f69e` to `599c9be` for #229, and `023abcf` and `c058acf` for #230. Fixed at
+   holds copies under new hashes: `b80f69e` to `599c9be` for #229, and `023abcf` and `c058acf` for #230. CLAUDE.md
+   says the repo allows only squash merges, so the merge method and the rule disagree. The hashes are fixed at
    close-out step 4.
+8. **Found while reviewing the close-out PR:** the LIFE-10 and NET-8 rows quoted two plain phrases in double
+   quotes, which "PR rules" reads as test names. The quotes were removed in #231.
 7. **The spec status line still said "reopened".** Set to done in #231 (close-out step 3).
 
 ## Acceptance criteria in #201

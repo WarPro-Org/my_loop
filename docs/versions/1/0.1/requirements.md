@@ -222,7 +222,8 @@ Depends on: FR3, FR4, FR5.
   loop"), with the gap drawn on the map.
 - The result screen also shows what was explored, and any section rejected as too fast (see FR5).
 - The preview and the server use the same limits: today the preview sends at most 500 points while the server
-  allows 10,000, and the phone and the server use different earth radii (found in FR1, scenario GAME-13).
+  allows 10,000, and distances use different earth radii (phone 6,378,137 m via geolocator, server 6,371,000 m;
+  found in FR1, scenario GAME-13).
 
 Depends on: FR5, FR6, FR7.
 
