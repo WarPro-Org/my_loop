@@ -1,7 +1,7 @@
 # Bug B1 — Other players' land, names and activity are visible (breaks single-player 0.1)
 
 **Status:** approved by the owner 2026-09-29 (Bug Gate 1); task #223. Found by the 2026-09-29 blind audit (A1).
-**Scenarios:** PRIV-1, PRIV-2, PRIV-6, LEG-1 (`docs/scenarios.md`).
+**Scenarios:** PRIV-1, PRIV-2, PRIV-6, PRIV-7, LEG-1, LEG-12 (`docs/scenarios.md`).
 
 ## Symptom
 
@@ -56,7 +56,24 @@ Two PRs, server first, so users' data is protected as soon as the server deploys
 
 **Not in this fix (each has an owner):** a claim reply still shows that a hex belonged to someone (`WasStolen`, the `cooldown` skip, `StolenFromOthers`). That goes away when stealing is removed, which FR6 owns. The block and report routes answer 404 for an unknown id, so they reveal whether an id exists; FR12 owns them. Ranks and counts still show that other players exist: the caller's own `MyRank` on the leaderboard (kept on purpose above), and `CurrentRank` and `TotalPlayers` on the profile and `Rank` in game-state (`UserService.cs:213-229`, `UsersController.cs:374-388, 403`). FR11 owns all four, the leaderboard's `MyRank` included: the 0.1 profile (#37) has no rank, and no 0.1 feature needs a leaderboard, so FR11 removes the rank and the leaderboard endpoint together. FR11's design doc must answer PRIV-6, so "PR rules" makes it face this. `TotalHexesStolen` in game-state and in the stats delta go with stealing (FR6). All of these are scenario PRIV-6.
 
-**PR 2 — app:** hide the leaderboard tab, the tap-through to other players' profiles and the in-app theft alert, and move live updates to the personal group.
+**PR 2 — app:**
+1. **Leaderboard:** the "Ranks" tab and its screen are removed. The bottom bar is Home, Achievements and the profile drawer. The home tip and card that pointed to the leaderboard are removed.
+2. **Other players' profiles:** the profile screen, its route and the map popup's "View profile" button are removed.
+3. **Sign-up text:** no longer says the name "is shown to other players".
+4. **In-app theft alert:** removed. The server stopped sending the previous owner in PR 1, so it could no longer fire.
+5. **Empty inbox text:** no longer promises an alert "when your territory is stolen".
+6. **Live updates:** no app change is needed. The app joins its personal group (`JoinUserGroup`) when it connects, and PR 1 sends every update there. A capture arrives as `HexOwnershipChanged`, a lost hex as `HexesReleased`.
+
+**Left in the app, each with an owner (LEG-1):**
+- The app still calls `JoinRegion` for the map's regions. The server joins nothing, and the map's poll back-off still reads these joins. FR8 (the map) removes them together.
+- The notification inbox stays: the profile keeps it (#38). Alerts saved before this fix can still name another player, and nothing new is written to it (`addTheftAlert` has no caller and is kept for FR11). FR11 decides the inbox and clears those alerts (PRIV-7).
+- The Home "Rank" tile and its rank sheet (`home_tab.dart`, `_RankSheet`, `ApiService.getLeaderboard`) still show the player's rank in their city, country and world, which says other players exist. FR11 removes them with the rank fields (PRIV-6).
+- Text that describes features outside 0.1 (LEG-12):
+  - achievements about ranks and rivals (`achievements.dart`) and the "PvP" and "Leaderboard" achievement categories (`achievement.dart`), shown on the Achievements tab — FR11, which decides what the profile and its tabs keep;
+  - Home tips and cards about other players nearby or teaming up with friends (`home_tab.dart`) — FR14 (onboarding and tips);
+  - tips and cards about stealing, the post-walk "Stolen from others" row (`celebration_dialog.dart`, fed by the server's `stolenFromOthers`) and the "steal a hex" daily mission (`daily_mission.dart`, shown on Home) — FR6.
+- Block and report (`player_actions_menu.dart`) can no longer be opened, because no other player's name is shown. FR12 owns them with the block and report routes.
+- Map code for other players' hexes, and tips about stealing, remain. The server no longer sends other players' hexes. FR8 owns the map and FR6 owns stealing.
 
 ## Tests that will prove it (each proven red with its fix removed)
 
@@ -70,5 +87,8 @@ Two PRs, server first, so users' data is protected as soon as the server deploys
 | PRIV-1 | The stolen-hex push text contains no other player's name |
 | PRIV-1 | The lost-hexes list holds no taker id or claim; a claimed step never names the previous owner |
 | PRIV-2 | The new owner's live update carries no previous owner id |
+| PRIV-1 (app) | The bottom bar has no leaderboard tab, and Achievements still opens and shows as selected |
+| PRIV-1 (app) | No code in `lib/` has a leaderboard or other-player profile screen or route, and nothing writes a theft alert |
+| PRIV-2 (app) | A capture with no previous owner, and a lost hex, still reach the map |
 
-The tests live in `tests/MyLoop.V01.Tests/Bugs/B1/`, which CI runs.
+The server tests are in `tests/MyLoop.V01.Tests/Bugs/B1/` and the app tests in `mobile/test/v0_1/bugs/b1/`. CI runs both.

@@ -9,7 +9,6 @@ import 'package:myloop/features/auth/session_end_ui.dart';
 import 'package:myloop/features/auth/user_session_teardown.dart';
 import 'package:myloop/features/home/home_tab.dart';
 import 'package:myloop/features/journey/journey_controller.dart';
-import 'package:myloop/features/leaderboard/leaderboard_screen.dart';
 import 'package:myloop/features/achievements/achievements_screen.dart';
 import 'package:myloop/shared/models/player_titles.dart';
 import 'package:myloop/shared/services/user_state.dart';
@@ -23,6 +22,17 @@ final homeScaffoldKey = GlobalKey<ScaffoldState>();
 /// Controls FAB visibility — set to false when modals/sheets are open.
 final homeFabVisible = ValueNotifier<bool>(true);
 
+/// The bottom-bar tab for [location]: 0 Home, 1 Achievements. 0.1 is single-player, so there is
+/// no leaderboard tab (bug B1). Shared by the tab stack and [HomeBottomNav], so they never disagree.
+@visibleForTesting
+int homeTabIndexFor(String location) => location == _achievementsRoute ? _achievementsTab : _homeTab;
+
+const _homeRoute = '/home';
+const _achievementsRoute = '/achievements';
+const _homeTab = 0;
+const _achievementsTab = 1;
+const _profileDrawerTab = 2;
+
 /// The app shell scaffold providing bottom navigation and the journey FAB (home only).
 /// Uses IndexedStack to keep all tabs alive — eliminates the tab-switch glitch
 /// where old content would show for a frame during GoRouter's child swap.
@@ -32,10 +42,7 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final location = GoRouterState.of(context).uri.path;
-    int currentIndex = 0;
-    if (location == '/leaderboard') currentIndex = 1;
-    if (location == '/achievements') currentIndex = 2;
+    final currentIndex = homeTabIndexFor(GoRouterState.of(context).uri.path);
 
     return Scaffold(
       key: homeScaffoldKey,
@@ -43,12 +50,11 @@ class HomeScreen extends ConsumerWidget {
         index: currentIndex,
         children: const [
           HomeTab(),
-          LeaderboardScreen(),
           AchievementsScreen(),
         ],
       ),
       endDrawer: const ProfileDrawer(),
-      floatingActionButton: currentIndex == 0
+      floatingActionButton: currentIndex == _homeTab
         ? ValueListenableBuilder<bool>(
             valueListenable: homeFabVisible,
             builder: (_, visible, child) => visible ? child! : const SizedBox.shrink(),
@@ -57,7 +63,7 @@ class HomeScreen extends ConsumerWidget {
         : const SizedBox.shrink(),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       floatingActionButtonAnimator: _NoAnimationFabAnimator(),
-      bottomNavigationBar: _BottomNav(currentIndex: currentIndex),
+      bottomNavigationBar: HomeBottomNav(currentIndex: currentIndex),
     );
   }
 }
@@ -559,10 +565,11 @@ class _JourneyButtonState extends ConsumerState<_JourneyButton> with SingleTicke
   }
 }
 
-/// Bottom navigation bar: Home, Ranks, Achievements.
-class _BottomNav extends ConsumerWidget {
+/// Bottom navigation bar: Home, Achievements, and the profile drawer.
+@visibleForTesting
+class HomeBottomNav extends ConsumerWidget {
   final int currentIndex;
-  const _BottomNav({required this.currentIndex});
+  const HomeBottomNav({super.key, required this.currentIndex});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -572,13 +579,11 @@ class _BottomNav extends ConsumerWidget {
       currentIndex: currentIndex,
       onTap: (index) {
         switch (index) {
-          case 0:
-            context.go('/home');
-          case 1:
-            context.go('/leaderboard');
-          case 2:
-            context.go('/achievements');
-          case 3:
+          case _homeTab:
+            context.go(_homeRoute);
+          case _achievementsTab:
+            context.go(_achievementsRoute);
+          case _profileDrawerTab:
             // Open side drawer instead of navigating
             homeScaffoldKey.currentState?.openEndDrawer();
         }
@@ -588,11 +593,6 @@ class _BottomNav extends ConsumerWidget {
           icon: Icon(Icons.home_outlined, size: 24),
           activeIcon: Icon(Icons.home, size: 28),
           label: 'Home',
-        ),
-        const BottomNavigationBarItem(
-          icon: Icon(Icons.leaderboard_outlined, size: 24),
-          activeIcon: Icon(Icons.leaderboard, size: 28),
-          label: 'Ranks',
         ),
         const BottomNavigationBarItem(
           icon: Icon(Icons.emoji_events_outlined, size: 24),

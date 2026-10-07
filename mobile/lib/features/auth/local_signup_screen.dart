@@ -118,7 +118,7 @@ class _LocalSignupScreenState extends State<LocalSignupScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'At least 2 characters. This is shown to other players.',
+                'At least 2 characters.',
                 style: TextStyle(fontSize: 12, color: AppColors.grey),
               ),
 

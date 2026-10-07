@@ -47,7 +47,6 @@ const _proTips = [
   'Walk during off-peak hours to claim territory unopposed.',
   'The closer your loop closes, the cleaner your capture.',
   'Small daily walks add up — consistency beats one big walk.',
-  'Check the leaderboard to see who\'s near your territory.',
   'Walking 200m is the minimum to register a claim.',
   'Hexagons near landmarks are highly contested!',
   'Your trail captures hexes even without closing a loop.',
@@ -1868,14 +1867,6 @@ class _InfoReelsState extends ConsumerState<_InfoReels> {
           'Free territory waiting! Be the first to walk there and claim it all.',
       gradient: [Color(0xFF00D4AA), Color(0xFF00897B)],
       hook: 'GRAB FREE HEXES',
-    ),
-    _ReelData(
-      emoji: '🏆',
-      title: 'Climb the leaderboard!',
-      body:
-          'One good walk could move you up several ranks. Check who\'s ahead!',
-      gradient: [Color(0xFFF59E0B), Color(0xFFD97706)],
-      hook: 'CLIMB RANKS',
     ),
     _ReelData(
       emoji: '⚔️',

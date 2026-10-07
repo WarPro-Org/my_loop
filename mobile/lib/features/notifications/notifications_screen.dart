@@ -61,9 +61,6 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                   const Text('🔔', style: TextStyle(fontSize: 48)),
                   const SizedBox(height: 12),
                   Text('No notifications yet', style: TextStyle(color: AppColors.grey, fontSize: 16)),
-                  const SizedBox(height: 4),
-                  Text('You\'ll be alerted when your territory is stolen.',
-                      style: TextStyle(color: AppColors.greyLight, fontSize: 13)),
                 ],
               ),
             )
