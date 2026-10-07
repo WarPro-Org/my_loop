@@ -25,7 +25,7 @@ public sealed class GameRules
 /// <summary>When a path counts as a closed loop, and which loops are big enough to capture.</summary>
 public sealed class LoopRules
 {
-    /// <summary>How close the path must come back to an earlier point to close a loop. Also used for resuming after a pause.</summary>
+    /// <summary>How close the path must come back to an earlier point to close a loop.</summary>
     public double ClosureDistanceMeters { get; init; }
 
     /// <summary>Fewest GPS points a loop must span, so jitter while standing still never closes one.</summary>
@@ -55,7 +55,7 @@ public sealed class AntiCheatRules
     /// <summary>
     /// Fastest sustained average speed over a batch. Intentionally a little above
     /// <see cref="MaxSpeedMetersPerSecond"/>: averaging cancels GPS noise, so this still catches
-    /// vehicles without rejecting fast runners (#37).
+    /// vehicles without rejecting fast runners.
     /// </summary>
     public double MaxAverageSpeedMetersPerSecond { get; init; }
 
