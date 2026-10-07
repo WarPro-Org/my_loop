@@ -227,6 +227,8 @@ make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "$GOOD_ROWS"
 expect fail "n/a on a [search] ID without 'searched:'" "$(body 'none' '')" "NET-2 is marked [search]"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/searched: grep -rn Delete api/ — only the registered files}"
 expect pass "n/a on a [search] ID that says what was searched" "$(body 'none' '')"
+make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/reads only/searched:}"
+expect fail "searched: with nothing after it" "$(body 'none' '')" "NET-2 is marked [search]"
 make_scenarios "NET-1 NET-2 NET-3 NET-4" "NET-1 NET-2 NET-3 NET-4" "${GOOD_ROWS/NET-2|n\/a|reads only/NET-2|open|FR5 owns it}"
 expect pass "a [search] ID answered open with an owner" "$(body 'none' '')"
 SEARCH=""
@@ -270,6 +272,16 @@ make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | keeps none — a 
 expect pass "keeps none with a reason, and an ownership change is a removal pattern" "$(body "$ALL_RUN" '')"
 make_register "" 'cell.OwnerId = userId;'
 expect fail "an ownership change that is not in the register" "$(body "$ALL_RUN" '')" "Services/Purge.cs deletes, overwrites, hands over or expires data"
+make_register "$PURGE"$'\n'"$PURGE" 'await db.Users.ExecuteDeleteAsync();'
+expect fail "a file listed twice" "$(body "$ALL_RUN" '')" "lists api/MyLoop.Api/Services/Purge.cs more than once"
+make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | breaks #43abc | FR6 |' 'await db.Users.ExecuteDeleteAsync();'
+expect fail "a verdict with text after the requirement number" "$(body "$ALL_RUN" '')" "has verdict 'breaks #43abc'"
+make_register "" 'await db.Users.ExecuteUpdateAsync(s => s.SetProperty(u => u.OwnerId, x));'
+expect fail "an ExecuteUpdate that is not in the register" "$(body "$ALL_RUN" '')" "Services/Purge.cs deletes, overwrites"
+make_register "" 'await db.Database.ExecuteSqlRawAsync("UPDATE x SET y = 1");'
+expect fail "raw SQL that is not in the register" "$(body "$ALL_RUN" '')" "Services/Purge.cs deletes, overwrites"
+make_register "$PURGE" 'await db.Users.ExecuteDeleteAsync();' 'await file.writeAsString(text);'
+expect fail "a phone file that rewrites a file and is not in the register" "$(body "$ALL_RUN" '')" "mobile/lib/shared/services/cache.dart deletes"
 make_register '| `api/MyLoop.Api/Services/Purge.cs` | purges | keeps none — | - |' 'await db.Users.ExecuteDeleteAsync();'
 expect fail "keeps none without a reason" "$(body "$ALL_RUN" '')" "has verdict 'keeps none —'"
 make_register "$PURGE" 'await db.Users.ExecuteDeleteAsync();' 'await file.delete();'

@@ -358,14 +358,14 @@ claim; the owner's review and the review records in the PR are what keep claims 
     - `covered` names an existing test file and a test name found in it;
     - `n/a` and `accepted` give a reason;
     - `open` names an owner;
-    - `n/a` on a `[search]` ID starts with `searched:`.
-
-  - Every PR: every file with a delete, overwrite, ownership change or expiry (the patterns are in the script) is a
-    row in `docs/data-removals.md`, every row names a file that exists, a verdict `keeps #N` / `breaks #N`, and an
-    owner for `breaks`.
+    - `n/a` on a `[search]` ID starts with `searched:` and says what was searched (10+ characters).
 
     Claude-made and FR PRs that change code also need a `**Scenarios:**` line naming known IDs, or
     `none — <reason>`.
+  - Every PR: every file with a delete, update, raw SQL, file rewrite or ownership change matching the patterns in
+    the script (listed in `docs/data-removals.md`, with their blind spots) is one row there. Each row names a file
+    that exists, appears once, has a verdict `keeps #N`, `keeps none — <reason>` or `breaks #N`, and an owner for
+    `breaks`.
   - Any PR over the size limit needs a `Size exception:` line.
   - Bot PRs are skipped.
 

@@ -177,8 +177,8 @@ check_design_doc_scenarios() {
       n/a|accepted)
         grep -qE '[A-Za-z]{3,}' <<<"$evidence" || problems+=("$doc: $id is '$status' with no reason.")
         # An existing-code ID is not answered by the size of the diff: n/a must say what was searched.
-        if [[ "$status" == n/a ]] && grep -qx "$id" <<<"$search_ids" && ! grep -qE '^[[:space:]]*searched:' <<<"$evidence"; then
-          problems+=("$doc: $id is marked [search] in $SCENARIOS, so its 'n/a' must start with 'searched:' and say what was searched and found.")
+        if [[ "$status" == n/a ]] && grep -qx "$id" <<<"$search_ids" && ! grep -qE '^[[:space:]]*searched:[[:space:]]*.{10,}' <<<"$evidence"; then
+          problems+=("$doc: $id is marked [search] in $SCENARIOS, so its 'n/a' must start with 'searched:' followed by what was searched and found (10+ characters).")
         fi ;;
       open)
         grep -qE '#[0-9]+|FR[0-9]+' <<<"$evidence" || problems+=("$doc: $id is 'open' with no owner (FRn or #task).") ;;
@@ -224,13 +224,13 @@ check_scenarios() {
 # Data-removal register (DATA-1): every file that deletes, overwrites, hands over or expires user data is a row in
 # docs/data-removals.md with a verdict and, for 'breaks', an owner; every row names a file that exists.
 REGISTER=docs/data-removals.md
-SERVER_REMOVAL='ExecuteDelete|DELETE FROM|\.Remove\(|\.RemoveRange\(|TRUNCATE|DROP TABLE|DROP COLUMN|\.OwnerId = '
-PHONE_REMOVAL='\.delete\(|deleteSync\(|removeWhere\(|\.removeAt\(|\.removeRange\(|\.clear\(\)'
+SERVER_REMOVAL='ExecuteDelete|ExecuteUpdate|ExecuteSql|DELETE FROM|\.Remove\(|\.RemoveRange\(|TRUNCATE|DROP TABLE|DROP COLUMN|\.OwnerId = '
+PHONE_REMOVAL='writeAsString\(|\.rename\(|\.delete\(|deleteSync\(|removeWhere\(|\.removeAt\(|\.removeRange\(|\.clear\(\)'
 trim() { local v=$1; v="${v#"${v%%[![:space:]]*}"}"; printf '%s' "${v%"${v##*[![:space:]]}"}"; }
 check_data_removals() {
   local found register listed file path verdict owner
-  found=$( { git grep -lE "$SERVER_REMOVAL" "$merge" -- 'api/*.cs' ':(exclude)api/*/Migrations/*' 2>/dev/null || true
-             git grep -lE "$PHONE_REMOVAL" "$merge" -- 'mobile/lib/shared/services/*.dart' 'mobile/lib/shared/state/*.dart' 2>/dev/null || true; } \
+  found=$( { git -c core.quotePath=false grep -lE "$SERVER_REMOVAL" "$merge" -- 'api/*.cs' ':(exclude)api/*/Migrations/*' 2>/dev/null || true
+             git -c core.quotePath=false grep -lE "$PHONE_REMOVAL" "$merge" -- 'mobile/lib/shared/*.dart' 2>/dev/null || true; } \
            | sed 's/^[^:]*://' | sort -u)
   register=$(git show "$merge:$REGISTER" 2>/dev/null || true)
   if [[ -z "$register" ]]; then
@@ -241,6 +241,7 @@ check_data_removals() {
   while IFS='|' read -r _ file _ verdict owner _; do
     file=$(trim "${file//\`/}"); verdict=$(trim "$verdict"); owner=$(trim "$owner")
     [[ "$file" =~ ^(api|mobile|tests)/[^[:space:]]+$ ]] || continue
+    grep -qxF -- "$file" <<<"$listed" && problems+=("$REGISTER lists $file more than once: keep one row, so no verdict is hidden.")
     listed+="$file"$'\n'
     [[ "$(git cat-file -t "$merge:$file" 2>/dev/null)" == blob ]] || problems+=("$REGISTER lists $file, which isn't a file: remove the row.")
     if [[ "$verdict" =~ ^keeps\ (#[0-9]+|none\ —\ .{3,})$ ]]; then :
