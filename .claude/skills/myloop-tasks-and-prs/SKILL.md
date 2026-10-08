@@ -1,6 +1,6 @@
 ---
 name: myloop-tasks-and-prs
-description: MyLoop's rules for GitHub tasks, branches, PRs and merges: task format and sections, keeping tasks and linked items in sync, branch names, PR size, stacked PR merges, going through the gate rows one by one, and what the "PR rules" check enforces. Use before creating or updating a task, opening, describing or merging a PR, or filling a PR's gate section.
+description: MyLoop's rules for GitHub tasks, branches, PRs and merges: task format and sections, keeping tasks and linked items in sync, branch names, PR size, stacked PR merges, going through the gate rows one by one, and what the "PR rules" check enforces. Use before writing a commit message (Task line), creating or updating a task, opening, describing or merging a PR, or filling a PR's gate section.
 origin: MyLoop (moved from CLAUDE.md to keep it small)
 ---
 

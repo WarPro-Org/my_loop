@@ -80,6 +80,7 @@ the story of why, so nothing there has to be read to follow the rules.
 - The Flutter app follows the same idea: features depend on abstractions (e.g. `ILocationSource`), not concrete plugins.
 
 ---
+
 ## How we work
 
 **Chat style**
@@ -91,9 +92,11 @@ the story of why, so nothing there has to be read to follow the rules.
 - Requirements live in `docs/versions/<release>/<version>/requirements.md` (e.g. `docs/versions/1/0.1/`).
 - Requirements are numbered FR1, FR2, … in build order. Work happens strictly in that order.
 - The spec is updated first; code follows the spec. Any change of plan updates the spec before the code.
+
 **Stay on the goal**
 - Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
 - Still design for extension (interfaces, modules, versioned data) so later FRs add code instead of rewriting it.
+
 **Tests during the 0.x rebuild**
 - The old test suites and coverage gates are paused in CI (the old test project is still compiled). CI runs the build,
   `flutter analyze`, CodeQL, and the 0.1 user-story tests (`tests/MyLoop.V01.Tests`, `mobile/test/v0_1`) once they exist.
@@ -123,11 +126,13 @@ here. They are not gate skills: they never go in the gate tables or a PR's "Skil
 
 ## Branch & PR Workflow
 
-- Branch format: FR work uses `v0.1/frN-<part>` (see Planning Chat & User Stories); everything else uses
+- Branch format: FR work uses `v0.1/frN-<part>` (see `myloop-tasks-and-prs`); everything else uses
   `{username}/{short-description}` (e.g. `ashukla/fix-login-flow`)
 - **Never push directly to `master`** — branch protection is enforced
 - All changes require a PR with at least 1 approval before merging
 - Keep PRs focused — one concern per PR
+- Every commit message ends with a `Task: #N` line (the FR task, or a process or bug task; #198 for a one-off
+  small fix), and a PR stays near 15 files / 400 changed lines. Details: `myloop-tasks-and-prs`
 
 ---
 
