@@ -54,6 +54,11 @@ starting it. "PR rules" fails a PR that adds a docs folder or a top-level docs f
 | Anything iOS-facing | `docs/compliance/` |
 | Closing an FR | the version's `audits/` and `records/` |
 
+**Before changing or fixing a file, find the FRs that own it:** search the records for the file's name and for
+each folder above it (e.g. `grep -rl -e game_rules_provider.dart -e shared/rules/ docs/versions/*/*/records/`) and
+read every record that matches, above all its "Decisions that must stay true". A change that breaks one of those
+is a change of plan: the spec and that record are updated first.
+
 Only for background: `docs/product/` (the beta's product spec and design log; `requirements.md` wins where they
 disagree), `docs/design/` (beta design reviews), `docs/learnings/` (the story behind rules).
 
