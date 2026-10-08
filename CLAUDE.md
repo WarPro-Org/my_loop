@@ -81,9 +81,7 @@ the story of why, so nothing there has to be read to follow the rules.
 
 ---
 
-## Planning Chat & User Stories (Spec-Driven Development)
-
-Applies when planning versions, discussing requirements, or creating tasks.
+## How we work
 
 **Chat style**
 - Keep every response short, plain, and easy to read. No walls of text.
@@ -95,158 +93,9 @@ Applies when planning versions, discussing requirements, or creating tasks.
 - Requirements are numbered FR1, FR2, … in build order. Work happens strictly in that order.
 - The spec is updated first; code follows the spec. Any change of plan updates the spec before the code.
 
-**Scenario catalogue (`docs/scenarios.md`)** — the one list of every edge case. "PR rules" checks it on every PR.
-- **Look it up every time:**
-  - planning a requirement (Gate 1), going through every ID;
-  - the design doc (Gate 2), whose `## Scenarios` table answers every ID;
-  - each code PR, whose `**Scenarios:**` line names the IDs it covers or changes;
-  - every review, which checks the PR against those IDs;
-  - closing an FR, when no row of its table is left `open` with that FR (`FRn`) or its task (`#N`) as owner.
-- **`n/a` on an existing-code ID needs a search:** an ID marked `[search]` is about code that already exists. Answer
-  `n/a` only after searching the whole code base, written as `searched: <what> — <result>`. "My change doesn't do
-  this" is not an answer. "PR rules" checks the prefix; the reviewer checks the search was real.
-- **Data-removal register (`docs/data-removals.md`, DATA-1):** every file that deletes, overwrites, hands over or
-  expires user data is listed with a verdict (`keeps #N` or `breaks #N` plus an owner). A PR that adds such code adds
-  its row in the same PR.
-- **Keep it growing without being asked:** any finding that no ID covers (a review, audit, bug, test failure or
-  user report) becomes a new ID in the PR that records or fixes it. The same PR answers the new ID in every design
-  doc. IDs are never deleted.
-- A planning or design agent that isn't sure whether an ID applies marks it `open` with an owner, never `n/a`.
-
-**User stories (GitHub tasks)**
-- One task per requirement (FR). Task title: `0.1 > FR1 > <short title>`. PR title: `0.1 > FR1 (k/N) > <short title>`,
-  with "Part k of N" in the description.
-- Body is short — readable in under a minute. At creation it has the sections below; while the work runs it grows
-  the later sections in the order set under "Task sections" (Keep tasks up to date):
-  - **Story:** As a …, I want …, so that …
-  - **What:** what we will build (2–4 bullets).
-  - **Why:** the reason, with requirement IDs (e.g. `#20`).
-  - **How:** the approach in 2–4 bullets — no code.
-  - **Acceptance criteria:** a checklist that can be tested. If the story adds state covered by
-    `state-lifecycle-consistency`, the criteria cover every app moment in that skill's matrix. The user must never be the one to find a missing case.
-- Show the draft to the user and create the task **only after they approve it**.
-
-**Branch and merge per requirement**
-- Every FR gets its own branch named with version and title: `v0.1/fr1-configurable-game-settings`.
-- Work is pushed there and opened as its own PR.
-- A PR merges into `master` only after (1) an independent agent review and (2) the user's own review.
-- **Every check-in gets an independent agent review.** Order for every change:
-  Pre-Check-in skills → commit and push → update the task → independent agent review against the task and the
-  requirement (short, human-style — see below) → fix what it finds (and review the fix) → Pre-PR skills → the user's final review → merge.
-  Never ask the user to review work the agent hasn't reviewed.
-- Keep each PR small enough to review: about **15 files / 400 changed lines**. Split a bigger FR into
-  several PRs (e.g. server module → server wiring → app), each on its own `v0.1/frN-<part>` branch.
-- Stacked PRs (each based on the previous one's branch) are merged **in order**. This repo allows only squash merges,
-  so after each merge: retarget the next PR to `master`, merge `master` into its branch, check build and tests, then
-  push (pushing after the retarget makes CI run against `master`).
-  - Keep each next branch up to date: after every check-in on a parent, merge the parent into the next branch.
-    Then the next branch already holds every parent fix, and a conflict with `master` is only the parent's own
-    lines coming back in squashed form.
-  - Before resolving, check `git diff <parent's final commit> <next branch>` shows only the next PR's own changes;
-    if not, merge the parent's final commit in first.
-  - Per conflicting file: keep the next branch's version only if `git diff <parent's final commit> master -- <file>`
-    is empty (the conflict is only the parent's squashed lines). Otherwise another PR changed it too: resolve by
-    hand and keep both changes. Never drop a line the parent or another PR changed.
-
-**Keep tasks up to date (no info lost)** — applies while building and merging, not only while planning.
-- **FR task** ends with a `## Progress` section:
-  - a table: PR | what it does (one line) | status (merge commit once merged);
-  - under it, a check-in log grouped by PR: `commit — what changed and why`, one line each, clear without the chat.
-    Every check-in is in the log; commits with the same purpose may share a line (`a1b2c3d, e4f5a6b — …`).
-- **Every check-in is attached to its task:** each commit message ends with a `Task: #N` line, so GitHub lists it on
-  the task's timeline, and the PR that carries it links the task. Every commit has a task: the FR task, or a
-  process or bug task created before the first commit (the parent version task for a one-off small fix). Rules that
-  come out of closing an FR may ride on its close-out PR under the FR task; the parent task gets a "—" row for
-  them.
-- **Task sections, in this order:** Summary (once the FR is done) · Story · What · Why · How · Decisions · Left to
-  later FRs · Acceptance criteria · Process notes · Progress. Decisions hold only what shapes the app (behaviour, data,
-  contracts, limits) with the reason. Process mishaps and record gaps go in Process notes, one line each.
-- **Parent version task** ends with a `## Progress` table: FR | task | what it does (one line) | status — no commit log.
-  Work not tied to an FR (process, bug fix) gets a row there with FR "—"; if it has its own task, that task gets
-  the FR-task format.
-- A PR closed without merging, or split, keeps its row: "Closed — replaced by #… because …".
-- Decisions and deviations (a value kept, work moved to a later FR) go in Decisions or Left to later FRs, with the
-  reason; process mishaps go in Process notes.
-- When: in the same turn as every check-in, PR opened or closed, review result and merge — before reporting to
-  the user. When a PR merges, tick the criteria it meets; after the last merge, close the task and mark it done in
-  the parent.
-- A change of plan updates the task's What / How / Acceptance criteria after the user agrees, together with the spec.
-- Write for someone reading it in 10 years: short, plain words, no chat references, no unexplained jargon; link PRs.
-
-**Closing an FR** — after its last PR merges, before telling the user it's done. The goal: someone (human or AI)
-working on the app years later, e.g. in version 100.2, can find this FR and understand its scope, what it built and
-what must stay true, in a few minutes.
-1. **Final audit on master:** an independent agent checks every spec line, acceptance criterion, design-doc matrix
-   cell, user situation and linked item (task, parent task, every PR, spec, design doc), re-running a "red when" per
-   test group. Findings are fixed in a new PR of the FR (or accepted by the owner) before the FR is closed.
-   It also runs a **blind audit**: 4–6 agents that are given only the version's `requirements.md` and the code, never
-   the task, design doc, PRs or record, each searching one area for every way it can go wrong. Every finding
-   becomes a `docs/scenarios.md` ID, or a row under an existing one. Save the report in
-   `docs/versions/<release>/<version>/audits/`.
-   **Triage once, then freeze.** Each finding is sorted once: it stays with this FR only if it is in code this FR
-   wrote and breaks this FR's own spec. Anything else goes to the later FR that builds or rebuilds that code (a
-   bullet in its spec section and an `open FRn` design-doc row) or to a bug task. After this triage the FR's list
-   is frozen: nothing found later is added to it — it goes to the owning FR or a bug task.
-2. **FR record:** `docs/versions/<release>/<version>/records/frN-<name>.md`, one page, for humans and AI agents:
-   - **Status** line with the task, spec, design doc and every PR;
-   - **Scope:** in and out;
-   - **What shapes the app:** a table of area → what exists → where (modules, endpoints, data and contracts,
-     settings, app state, key files);
-   - **Decisions that must stay true**, each with its reason;
-   - **Left to later FRs**, each naming the FR;
-   - **Known limits**;
-   - **How to change it** (e.g. tune a setting);
-   - **Tests that guard it**.
-
-   Facts only, no history. The design doc keeps the full matrix, risks and history, and points to the record.
-3. **Spec and design doc:** the FR's section in `requirements.md` gets `**Status:** done (task #N)` and the record's
-   path; the design doc's first lines point to the record.
-   Steps 2–3 go in one docs-only **close-out PR**: title `<version> > FRN > Close-out record`, a branch that is not
-   `vX.Y/frN-…` (it is not a numbered part, so the FR's PRs are not renumbered), a `Task: #N` line, and the usual
-   gates, independent review and owner merge. The record's Status line lists it. Steps 4–7 happen after it merges.
-4. **Task:** a Summary at the top (3–6 lines and the record's path), every criterion ticked with the PR that met it,
-   the Progress table with each merge commit, the check-in log complete; then close it.
-5. **Parent version task:** the FR row says done, with the record's path.
-6. **Branches:** delete the FR's merged branches, the close-out branch included. If the session can't delete them,
-   list them for the owner.
-7. **Report** to the user only after steps 1–6 hold.
-
-**Keeping records true later:** an FR record is a linked item for as long as the app exists. A later FR that
-changes something an earlier record states (a value, a behaviour, a limit, a deferred item it now builds) updates
-that record in the same PR, and its own record names the change.
-
-**Keep linked items in sync** — one piece of work touches the spec, the design doc, the FR task, the parent version
-task and every PR of that FR. When any of them changes, update all the others in the same turn:
-- The FR record (once the FR is closed) is one of these items.
-- A new PR for an FR renumbers all of its PRs to `(k/N)`, in merge order, in every title and in every
-  description's "Part k of N" line and PR list, including merged PRs. For example, 3 PRs become 5 when a design
-  doc and a fix PR are added.
-- New findings (gaps, decisions, extra work) go into the design doc, the FR task's What / How / Decisions /
-  Acceptance criteria, and the Progress table, not only into chat or a PR.
-- A PR's status changes (opened, reviewed, merged, closed) update the FR task and the parent task.
-- Before reporting to the owner, check each linked item says the same thing.
-
 **Stay on the goal**
 - Build only what the current FR needs. No settings, endpoints or code "for later" — each FR adds its own.
 - Still design for extension (interfaces, modules, versioned data) so later FRs add code instead of rewriting it.
-
-**Code reviews by an agent**
-- Whenever the user asks for a new agent to review code, the agent reviews like a human teammate would:
-  short, on point, plain language — no long technical essays.
-- For each problem: **what is wrong**, **how it affects the app for the user**, and **what to change** — a few lines each.
-- Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
-- Reading the diff is not enough. The reviewer also:
-  - checks every commit in the PR ends with a `Task: #N` line, and reports any that doesn't;
-  - checks the PR against every `docs/scenarios.md` ID its area touches; any finding that no ID covers is reported
-    as "new scenario" and gets an ID in the fix;
-  - checks the PR's gate section against the changed files and every row of both gate tables, and reports a row
-    that applies but wasn't run, or a "Not applicable" whose reason is wrong, as a finding;
-  - for state covered by `state-lifecycle-consistency`, checks each changed reader against every moment in that
-    skill's matrix and reports any moment nobody handled;
-  - works through the checklist of every gate skill the PR lists as run — always including `solid-architecture`
-    for production C# or Dart — and reports each box that fails, so no skill is checked only by the author;
-  - re-runs at least one of the author's "red when Y is removed" checks per new test, breaking code only in a
-    scratch worktree (`git worktree add <tmp> HEAD`, removed afterwards) — a test that stays green guards nothing.
 
 **Tests during the 0.x rebuild**
 - The old test suites and coverage gates are paused in CI (the old test project is still compiled). CI runs the build,
@@ -255,97 +104,35 @@ task and every PR of that FR. When any of them changes, update all the others in
   Exception: lifecycle-matrix tests (`state-lifecycle-consistency`) land in the same commit as the reader they cover.
 - Where a gate below says run `dotnet test` / `flutter test`, run all 0.1 user-story tests plus build and `flutter analyze`.
 
----
+**Requirement and design gates (SRDP).** Applies to every task — bugs, features, refactors and small changes. Never
+skip a gate. Gate approval is the user saying anything like "yeah ok", "ok next", "looks good".
+- **Bugs (2 gates):** a Bug Report the user approves before any code → the fix, regression tests, and `dotnet test`,
+  `flutter test` and `flutter analyze` passing.
+- **Features and refactors (3 gates):** Gate 1 requirement grill (one question at a time, through every
+  `docs/scenarios.md` ID) → Gate 2 design doc `docs/versions/<release>/<version>/design/frN-<name>.md`, approved when
+  the owner merges it → Gate 3 code matching the design, tests and the Pre-PR skills.
 
-## Socratic Requirement & Design Protocol (SRDP)
+**Workflow skills — load the one for the step before doing it.** They hold the full procedures that used to live
+here. They are not gate skills: they never go in the gate tables or a PR's "Skills run".
 
-**Applies to every task — bugs, features, refactors, and small changes. Never skip a gate. Gate approval is signalled by the user saying anything like "yeah ok", "ok next", "this seems ok", "looks good", etc.**
-
----
-
-### Bugs → Lightweight Track (2 gates)
-
-#### Bug Gate 1 — Bug Report Doc (before touching any code)
-
-Produce a Bug Report covering:
-- **Symptom:** What is observed vs. what is expected.
-- **Reproduction steps:** Exact sequence to trigger the bug.
-- **Root cause hypothesis:** Where in the code the fault likely lives, and why. Cite file paths.
-- **Blast radius:** What else could break if this area is changed.
-- **Fix plan:** The proposed change in plain English — no code yet.
-- **Lifecycle matrix rows** (if the bug is in state covered by `state-lifecycle-consistency`): the affected rows,
-  each with the test that will prove it. On the bug track this report is the matrix's home.
-
-Do not write code until the user approves the Bug Report.
-
-#### Bug Gate 2 — Implementation + Verification
-
-- Implement the fix exactly as described in the approved Bug Report. Any deviation must be called out before committing.
-- Write regression tests that would have caught this bug.
-- Run: `dotnet test` (API), `flutter test` (mobile), `flutter analyze` (mobile).
-- Gate does not close until all three pass.
-
----
-
-### Features & Refactors → Full Track (3 gates)
-
-#### Gate 1 — Requirement Grill (loop until approved)
-
-Role: strict Senior PM + Software Architect. Do not write code or design docs.
-
-Interrogate the request on:
-- Edge cases and failure modes
-- Offline durability and retry behaviour
-- Battery and GPS constraints (mobile)
-- Security and anti-cheat surface
-- .NET ↔ Flutter contract boundaries (field names, types, H3 CellId, UserId, game constants)
-- Concurrency and race conditions
-- EF migration atomicity
-- Every ID in `docs/scenarios.md`: say which apply to this requirement; a question no ID covers becomes a new ID
-
-Ask one sharp question at a time. Do not advance until requirements are unambiguous and the user approves.
-
-#### Gate 2 — Design Document (loop until approved)
-
-Write a Design Doc only after Gate 1 is approved. Must include:
-
-- **API changes:** Exact endpoint paths, HTTP verbs, request/response DTOs with field names and types.
-- **DB schema changes:** Table/column changes and the EF migration plan, including rollback strategy.
-- **SignalR changes:** Hub method names and payload shapes.
-- **Riverpod state impact:** Which providers change, what they hold, how they are invalidated.
-- **Cross-stack contract table:** Side-by-side field name + type mapping for every .NET ↔ Flutter boundary touched.
-- **Known risk checklist:** Race conditions, offline edge cases, anti-cheat gaps — each either mitigated or explicitly accepted.
-- **Lifecycle matrix** (for state covered by `state-lifecycle-consistency`): every reader × every app moment, each with its test or
-  an agreed "accepted" — see `state-lifecycle-consistency`.
-- **`## Scenarios` table:** every ID in `docs/scenarios.md`, each `covered` (test file in backticks and the test's
-  name in double quotes), `n/a` (reason), `open` (owner FR or task) or `accepted` (where the owner approved it). "PR rules" fails when an ID is missing.
-- **`## Early blind audit`:** before the design doc goes to review, 2–3 agents are given only the requirement and the
-  code it builds on (never the draft design) and each searches one area for every way it can go wrong: failure
-  replies, bad and extreme values, settings that do nothing or contradict each other, hard-coded numbers. Every
-  finding becomes a `docs/scenarios.md` ID (or a row under one) and a row in the `## Scenarios` table. The report is
-  saved in `docs/versions/<release>/<version>/audits/` and this section links it; "PR rules" fails a new design doc
-  without it. The blind audit at close-out then only checks what this pass missed.
-
-Do not write implementation code until the user explicitly approves the Design Doc. The doc lives at
-`docs/versions/<release>/<version>/design/frN-<name>.md`; approval = the owner merges its PR into master. If the user proposes an alternative design, critique it against the approved Gate 1 requirements before accepting it.
-
-#### Gate 3 — Implementation + Verification
-
-- Write production code matching the approved Design Doc exactly. Call out any deviation before committing.
-- Write comprehensive tests: unit, integration, and widget tests as appropriate.
-- Run: `dotnet test` (API), `flutter test` (mobile), `flutter analyze` (mobile).
-- Run all relevant Pre-PR skills from the skill gate table below.
-- Gate does not close until tests are green, lint is clean, and skills are run.
+| Before … | Load |
+|---|---|
+| planning a requirement, writing a Bug Report or design doc, answering scenario IDs | `myloop-srdp-gates` |
+| creating or updating a task, branching, opening, describing or merging a PR, stacked PRs | `myloop-tasks-and-prs` |
+| reviewing a commit or PR (and in every reviewer agent's prompt) | `myloop-agent-review` |
+| closing an FR, or changing something an earlier FR's record states | `myloop-closing-an-fr` |
 
 ---
 
 ## Branch & PR Workflow
 
-- Branch format: FR work uses `v0.1/frN-<part>` (see Planning Chat & User Stories); everything else uses
+- Branch format: FR work uses `v0.1/frN-<part>` (see `myloop-tasks-and-prs`); everything else uses
   `{username}/{short-description}` (e.g. `ashukla/fix-login-flow`)
 - **Never push directly to `master`** — branch protection is enforced
 - All changes require a PR with at least 1 approval before merging
 - Keep PRs focused — one concern per PR
+- Every commit message ends with a `Task: #N` line (the FR task, or a process or bug task; #198 for a one-off
+  small fix), and a PR stays near 15 files / 400 changed lines. Details: `myloop-tasks-and-prs`
 
 ---
 
@@ -359,58 +146,21 @@ stop and say so instead of checking in. The PR description lists every gate row 
 box or write "Skills run" from memory or the template. A gate done by hand is written as "by hand", not as the
 skill. After a new commit, gates that depend on the code run again.
 
-**Checklist — go through it every time** (the rules above are spread across this file; this is the one list):
+**Checklist — go through it every time** (the one list; details are in the workflow skills):
 
 | Step | Before … | Must be true |
 |---|---|---|
 | 1 | writing FR code | Requirement agreed (Gate 1), including a pass through every `docs/scenarios.md` ID; design doc `docs/versions/<release>/<version>/design/frN-<name>.md` merged after the owner approved it (Gate 2) |
 | 2 | each commit | Pre-Check-in skills that apply have run; the lifecycle matrix tests for readers this commit touches are in it |
-| 3 | after each push | Linked items synced (see "Keep linked items in sync"); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
-| 4 | opening a PR | A code PR has its `**Scenarios:**` line (IDs covered or changed, or `none — <reason>`); gate rows gone through **one by one** (below); the skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
+| 3 | after each push | Linked items synced (`myloop-tasks-and-prs`); independent review of **this** commit, whose report ends with `REVIEWED <commit>`; findings fixed and the fix reviewed |
+| 4 | opening a PR | A code PR has its `**Scenarios:**` line (IDs covered or changed, or `none — <reason>`); gate rows gone through **one by one** (`myloop-tasks-and-prs`); the skills that apply have run on the head commit; `scripts/verify.sh` passed on it (this is `verification-loop` for MyLoop); description names each, truthfully, and lists every review under `## Independent review` as `REVIEWED <commit> — <result>` |
 | 5 | asking the owner to review / merging | Steps 1–4 hold on the current head commit; CI and "PR rules" green |
-| 6 | calling an FR done | No `## Scenarios` row is `open` with this FR (`FRn`) or its task (`#N`) as owner; "Closing an FR" steps 1–7 hold (final audit, record merged, spec, design doc, task, parent task, branches) |
+| 6 | calling an FR done | No `## Scenarios` row is `open` with this FR (`FRn`) or its task (`#N`) as owner; `myloop-closing-an-fr` steps 1–7 hold (final audit, record merged, spec, design doc, task, parent task, branches) |
 
-**Going through the gate rows.** Never pick rows by what the PR is "about": a one-line comment edit in a Dart file
-or a test still triggers the Dart and test rows. List the changed files (`git diff --name-only master...HEAD`), then
-take **every** row of both gate tables in turn. Each skill ends up either in "Skills run" (invoked on the head
-commit) or on its own line ``- Not applicable: `<skill>` — <reason>``. A file that matches a row's pattern in
-`.github/gate-rows.tsv` means that skill applies, and "PR rules" fails without it. A row no file pattern can
-decide (state kept across launches, error handling, hex counts, anti-cheat logic) is judged by what the change does.
-
-**Enforced on GitHub** — so a forgotten step shows up as a red check the owner sees. It can't catch a false
-claim; the owner's review and the review records in the PR are what keep claims honest.
-- **CI** proves build, tests and analyze on every commit (`scripts/verify.sh` runs the same steps locally).
-- **"PR rules"** (`.github/workflows/pr-rules.yml`, re-runs when the description is edited). The script always
-  comes from master (for a stacked PR: as long as its base branch's `pr-rules.yml` is unchanged from master),
-  so a PR can't loosen the check that judges it. A PR stacked on another branch gets the
-  check only once that branch has the workflow, and every PR does once it is retargeted to master. **A missing
-  "PR rules" check counts as not passed.**
-  - Claude-made PRs (session link in the body, or a `claude/` branch) and FR PRs need the gate section, a
-    filled "Skills run", and a line starting `REVIEWED <commit>` for the **latest** commit. Every push turns it red until that commit is reviewed and recorded.
-  - If such a PR changes code (anything but `docs/`, `.claude/` and `*.md`): every skill a changed file requires
-    (`.github/gate-rows.tsv`, plus the removals gate for a deleted file and `verification-loop` always) is in
-    "Skills run", and every skill in the two gate tables is named, as run or ``- Not applicable: `<skill>` — <reason>``.
-  - FR PRs (branch `vX.Y/frN-…`) need a task link line, "Part k of N" matching the title's `(k/N)`, and FR N's
-    design doc already merged into master. A docs-only PR that adds the design doc is the exception. When the
-    design doc merges, re-run "PR rules" on the FR's open PRs (a push or a description edit does it).
-  - Every PR: `docs/scenarios.md` keeps every ID it had on master. Every FR design doc's `## Scenarios` table
-    answers every ID exactly once, outside comments and code fences:
-    - `covered` names an existing test file and a test name found in it;
-    - `n/a` and `accepted` give a reason;
-    - `open` names an owner;
-    - `n/a` on a `[search]` ID starts with `searched:` and says what was searched (10+ characters).
-
-    Claude-made and FR PRs that change code also need a `**Scenarios:**` line naming known IDs, or
-    `none — <reason>`.
-  - Every PR: every file with a delete, update, raw SQL, file rewrite or ownership change matching the patterns in
-    the script (listed in `docs/data-removals.md`, with their blind spots) is one row there. Each row names a file
-    that exists, appears once, has a verdict `keeps #N`, `keeps none — <reason>` or `breaks #N`, and an owner for
-    `breaks`.
-  - Every PR: a design doc new on this PR has a `## Early blind audit` section linking a saved report under
-    `audits/` (it doesn't check that the report belongs to that FR).
-  - Every PR: every docs folder, top-level docs file and kind of version subfolder is named in the Docs map.
-  - Any PR over the size limit needs a `Size exception:` line.
-  - Bot PRs are skipped.
+"PR rules" (`.github/workflows/pr-rules.yml`) checks what a machine can: the gate section and skills, `REVIEWED`
+for the latest commit, the Scenarios tables, the data-removal register, early blind audits, the Docs map and PR size.
+What it enforces in full, and how to go through the gate rows: `myloop-tasks-and-prs`. **A missing or red "PR rules"
+check counts as not passed.**
 
 ---
 
