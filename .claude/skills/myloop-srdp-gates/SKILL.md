@@ -85,7 +85,7 @@ Do not write implementation code until the user explicitly approves the Design D
 - Write production code matching the approved Design Doc exactly. Call out any deviation before committing.
 - Write comprehensive tests: unit, integration, and widget tests as appropriate.
 - Run: `dotnet test` (API), `flutter test` (mobile), `flutter analyze` (mobile).
-- Run all relevant Pre-PR skills from the skill gate table below.
+- Run all relevant Pre-PR skills from the skill gate table in CLAUDE.md.
 - Gate does not close until tests are green, lint is clean, and skills are run.
 
 ## Scenario catalogue
