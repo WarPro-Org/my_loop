@@ -20,8 +20,8 @@ None besides the one that adds this page.
 ## Waiting on the owner
 
 - Make "PR rules" a required status check on `master`, so a red check blocks merging (#230–#232 merged red).
-- Pick squash or rebase merges and make the repo setting and CLAUDE.md agree (#229–#234 were rebase-merged;
-  CLAUDE.md says squash only).
+- Pick squash or rebase merges and make the repo setting and the `myloop-tasks-and-prs` skill agree (#229–#234
+  were rebase-merged; the skill says squash only).
 - Delete the old FR1 branches (this session can't): `v0.1/fr1-configurable-game-settings`, `v0.1/fr1-design-doc`,
   `v0.1/fr1a-rules-module-api`, `v0.1/fr1b-server-uses-rules`, `v0.1/fr1c-app-uses-rules`,
   `v0.1/fr1d-fixes-contract-tests`, `v0.1/fr1f-spec-updates`, `v0.1/fr1g-audit-gaps`, `v0.1/fr1g-audit-server`,
