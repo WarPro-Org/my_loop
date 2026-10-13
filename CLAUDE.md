@@ -46,6 +46,7 @@ starting it. "PR rules" fails a PR that adds a docs folder or a top-level docs f
 
 | Activity | Read first |
 |---|---|
+| Starting any session | `docs/status.md` — where things stand, open PRs, next step, owner to-dos (the start-of-session hook prints it) |
 | Planning a version or FR (Gate 1) | the version's `requirements.md` (`docs/versions/<release>/<version>/`), `docs/scenarios.md`, the records of earlier FRs (`records/`), `docs/decisions/` |
 | Writing a design doc (Gate 2) | the above, plus `docs/architecture/`, `docs/data-removals.md` and the version's `audits/` |
 | Coding (Gate 3) | the FR's design doc (`design/`), the records of FRs whose code it touches, `docs/architecture/`, `docs/runbooks/` for migrations and deploys |
@@ -131,6 +132,8 @@ here. They are not gate skills: they never go in the gate tables or a PR's "Skil
 - **Never push directly to `master`** — branch protection is enforced
 - All changes require a PR with at least 1 approval before merging
 - Keep PRs focused — one concern per PR
+- A PR that changes where things stand (an FR step, a PR opened or merged, an owner to-do done) updates
+  `docs/status.md` in the same PR, written as the state after it merges
 - Every commit message ends with a `Task: #N` line (the FR task, or a process or bug task; #198 for a one-off
   small fix), and a PR stays near 15 files / 400 changed lines. Details: `myloop-tasks-and-prs`
 

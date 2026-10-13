@@ -11,6 +11,7 @@ lives here and versions alongside the code it describes.
 | `architecture/` | How the system actually works — system overview, claim pipeline, spatial model, real-time contract, and the full [frontend↔backend reference](architecture/frontend-backend-reference.md) (every endpoint, SignalR hub, and provider mapping). |
 | `product/` | Product & technical [spec](product/spec.md) and the game-design [decision log](product/design-log.md) — what we're building and why. |
 | `versions/` | Per-version functional requirements, agreed before design or code — start at the [versions index](versions/README.md). Each version folder holds `requirements.md` and `design/` (FR design docs), `records/` (one page per finished FR), `audits/` (audit reports) and `bugs/` (bug reports). |
+| `status.md` | Where things stand right now: current FR and step, open PRs, next action, owner to-dos. Printed into every session by `.claude/hooks/session-start.sh`. |
 | `scenarios.md` | The catalogue of every edge case; every FR design doc answers each ID. |
 | `data-removals.md` | Every file that deletes, overwrites, hands over or expires user data, with its verdict. |
 | `design/` | Design reviews from the multiplayer beta (before 0.1). |
