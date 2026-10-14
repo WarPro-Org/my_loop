@@ -38,7 +38,7 @@ Features are numbered in the order they should be built. Each one only depends o
 | Order | Feature | Why here |
 |-------|---------|----------|
 | FR1 | Configurable game settings | Every rule below reads its numbers from here. |
-| FR2 | Walk session: start, pause, stop | Nothing can be recorded until a walk exists. |
+| FR2 | Walk session: start and stop | Nothing can be recorded until a walk exists. |
 | FR3 | GPS recording and offline sync | The raw path every later feature works on. |
 | FR4 | Tracking gaps and safety alarm | Makes the recorded path trustworthy when tracking breaks. |
 | FR5 | Anti-cheat speed checks | Removes invalid sections before anything is captured or explored. |
@@ -89,22 +89,55 @@ Every tunable number lives in one place so the rules can be tuned from real test
 
 Depends on: nothing.
 
-## FR2 — Walk session: start, pause, stop
+## FR2 — Walk session: start and stop
 
 - **[#30]** A walk starts only when the user taps "Start walk". There is no automatic start — location is tracked only
   while a walk is running.
 - **[#42]** A walk can't start without the location permission it needs (and notification permission for the safety
   alarm, which the user can decline). If location permission is removed mid-walk, the walk ends and is saved, and the
   app tells the user why.
+  - "While using the app" is enough on both phones; the app never asks for "Always". iPhone tracks in the background
+    with the location background mode and the blue indicator; Android with a foreground service and its notification.
+  - Notification permission is asked at the first walk start. If the user says no, the walk still starts; walk-ended
+    messages then show only inside the app.
+  - If location is denied for good, the app explains how to fix it. It never jumps to Settings on its own (scenario
+    DEV-1; today `location_service.dart` does).
+  - The app checks the permission again when it comes back to the front. GPS turned off mid-walk counts as removed.
 - **[#31]** Standing still doesn't break a walk (coffee, traffic lights, a chat).
-- **[#32]** There is a Pause button. Nothing is recorded while paused. On resume, if the user is within the
-  loop-closing distance of where they paused, the loop carries on; otherwise the loop starts fresh. How long the pause
-  lasted doesn't matter.
+- **[#32]** Dropped (owner decision, Gate 1 of FR2): there is no Pause button. A user who needs a break taps Stop and
+  starts a new walk; stops under 30 minutes need nothing (#31, #34). Dropping it removes the resume rule and the
+  walk splitting it needed.
 - **[#33]** A walk ends when the user taps "Stop".
+  - Stop asks "End walk?" first. If the current stretch hasn't closed a loop yet, it also says its land won't be
+    captured.
 - **[#34]** A forgotten walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves
   for a long time (around 30 minutes). The app notifies them that the walk was saved.
+  - Vehicle: faster than 25 km/h for 3 minutes. Still: not moving more than the loop-closing distance for 30 minutes,
+    whether or not GPS fixes arrive. All three numbers are settings (FR1 rulebook).
+  - The walk's end time is moved back to when the fast or still stretch began, so it isn't counted in the walk's time
+    or distance. Times come from the GPS fixes, not the phone clock.
+  - The message is a local notification when the app is in the background (a new notification package; FR4's alarm
+    reuses it).
+- **[#45]** If the app is closed mid-walk (the phone kills it, it crashes, or the phone restarts), the walk ends at its
+  last recorded point, as if the user had tapped Stop then. Everything up to that point is kept (#35, #43); nothing
+  after it counts. There is no resume. On the next launch the app tells the user the walk ended early and when.
+- **[#46]** Signing out mid-walk ends and saves the walk first. Each account's walks and diaries are kept apart on the
+  phone, so the next person to sign in never sees or sends them (the lesson of bug #110).
+- **[#44]** Every walk has a diary, written to the phone the moment "Start walk" is tapped, so a walk that went wrong
+  can be looked into later. It holds no locations, only:
+  - walk ID, start and end time, rules version, app version, permissions at start;
+  - every event with its time and reason: stopped by the user, auto-ended and why, location removed, GPS off, app
+    closed (last time seen alive), signed out, start failed, no GPS for a while.
+
+  FR2 writes the diary on the phone; FR3 sends it to the server; FR9 keeps it with the walk; FR12 deletes it with the
+  account. The phone deletes its copy only after the server confirms it has it.
 - **[#35]** When a walk ends, these are kept: explored hexes, any loops closed during the walk, and the walk record
   (path, distance, time). Land from an unfinished last stretch that never closed is not captured.
+- Left to later FRs (agreed with the owner):
+  - Starting a walk offline stays blocked until FR3 (today `journey_controller.dart` refuses to start without the
+    server). The diary itself works offline.
+  - Until FR5 lowers the server's speed limit from 30 km/h, points sent live during a 25–30 km/h stretch still count on
+    the server, even though the phone moves the walk's end time back.
 
 Depends on: FR1.
 
@@ -127,6 +160,8 @@ Depends on: FR1.
 - **[#12]** Weak GPS is flagged at that moment — as a message on screen, or in the tracking notification when the app is
   in the background — with no buzz.
 - Tracking keeps working with the screen off, the phone in a pocket, or another app (e.g. WhatsApp) open.
+- Walk diaries (#44, from FR2) are sent to the server with the walk's points, and the phone deletes its copy only
+  after the server confirms it. A walk can start offline (FR2 still blocks it).
 
 Depends on: FR1, FR2.
 
@@ -145,6 +180,8 @@ Depends on: FR1, FR2.
   - Backup: if a walk that was sending points to the server goes quiet, the server sends a push notification.
   - At the start of a walk, the app checks whether this phone can support the alarm. If it can't, the app tells the
     user up front and shows how to fix it (e.g. turn off battery optimisation for MyLoop).
+  - Since FR2, a walk whose app was closed ends at its last point and can't be resumed (#45). FR4 decides what
+    "tap to resume" means then (e.g. "Tracking stopped, your walk was saved. Tap to start a new one").
 
 Depends on: FR2, FR3.
 
@@ -160,6 +197,8 @@ Depends on: FR2, FR3.
   max speed × sampling interval + GPS drift, and the server refuses to start otherwise (moved from FR1, scenario
   IN-7). Today's values break this (60 m against 8.33 × 5 + 30 = 71.65 m), so FR5 sets them together with the new
   speed limit. The smoothness minimums in the path check become settings (LEG-5).
+- Once the speed limit is 25 km/h or lower, the server also drops the fast stretch FR2's auto-end cuts off (#34; left
+  open by FR2).
 - **[#15]** Only the section that was too fast is rejected, not the whole walk. The app tells the user ("This section was
   too fast to count") but never reveals the exact speed limit.
 
@@ -238,6 +277,7 @@ Depends on: FR5, FR6, FR7.
   - Each walk stores a fingerprint of the full rule set that judged it (every setting, including the server-only
     anti-cheat ones), not only the version number: a setting can change without a version bump, and FR1's fingerprint
     covers only the settings sent to the phone (#20; left open by FR1).
+  - Each walk keeps its diary (#44, from FR2).
 - **[#39]** Opening a past walk from walk history shows the same result screen as when it ended: the path, what was
   captured, what was explored, and any "you were X m from closing" hint.
 
@@ -284,6 +324,7 @@ Depends on: FR9, FR10.
   else's until they sign in.
 - **[#40]** Deleting an account deletes everything — walks, captured land, explored hexes and the passport. Nothing is
   left behind.
+  - That includes walk diaries (#44), on the server and on the phone.
 
 Depends on: FR9, FR10.
 
@@ -332,7 +373,7 @@ No 0.1 work beyond FR9.
 | #1 | Scope | #15 | FR5 | #29 | FR10 |
 | #2 | FR6 | #16 | FR15 | #30 | FR2 |
 | #3 | FR6 | #17 | FR15 | #31 | FR2 |
-| #4 | FR6 | #18 | FR15 | #32 | FR2 |
+| #4 | FR6 | #18 | FR15 | #32 | dropped |
 | #5 | FR7 | #19 | FR9 | #33 | FR2 |
 | #6 | FR6 | #20 | FR1 + FR9 | #34 | FR2 |
 | #7 | FR3 + FR6 | #21 | FR12 | #35 | FR2 |
@@ -343,4 +384,5 @@ No 0.1 work beyond FR9.
 | #12 | FR3 | #26 | FR10 | #40 | FR12 |
 | #13 | FR5 | #27 | FR10 | #41 | FR13 |
 | #14 | FR5 | #28 | FR10 | #42 | FR2 |
-| #43 | FR6 | | | | |
+| #43 | FR6 | #44 | FR2 | #45 | FR2 |
+| #46 | FR2 | | | | |
