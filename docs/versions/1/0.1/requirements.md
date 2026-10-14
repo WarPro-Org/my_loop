@@ -93,8 +93,8 @@ Depends on: nothing.
 
 - **[#30]** A walk starts only when the user taps "Start walk". There is no automatic start — location is tracked only
   while a walk is running.
-- **[#42]** A walk can't start without the location permission it needs (and notification permission for the safety
-  alarm, which the user can decline). If location permission is removed mid-walk, the walk ends and is saved, and the
+- **[#42]** A walk can't start without location permission. Notification permission (for walk-ended messages and the
+  safety alarm) is asked but optional. If location permission is removed mid-walk, the walk ends and is saved, and the
   app tells the user why.
   - "While using the app" is enough on both phones; the app never asks for "Always". iPhone tracks in the background
     with the location background mode and the blue indicator; Android with a foreground service and its notification.
@@ -112,10 +112,12 @@ Depends on: nothing.
     captured.
 - **[#34]** A forgotten walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves
   for a long time (around 30 minutes). The app notifies them that the walk was saved.
-  - Vehicle: faster than 25 km/h for 3 minutes. Still: not moving more than the loop-closing distance for 30 minutes,
-    whether or not GPS fixes arrive. All three numbers are settings (FR1 rulebook).
-  - The walk's end time is moved back to when the fast or still stretch began, so it isn't counted in the walk's time
-    or distance. Times come from the GPS fixes, not the phone clock.
+  - Vehicle: faster than 25 km/h for 3 minutes. Still: not moving more than 50 m for 30 minutes, whether or not GPS
+    fixes arrive. All four numbers are settings of their own (FR1 rulebook); the 50 m is not the loop-closing distance,
+    so tuning loop closure never changes auto-end.
+  - The 3- and 30-minute counts run on the phone's elapsed-time clock (it keeps counting when no fixes arrive). The
+    walk's end time is then moved back to the GPS time of the last fix before the fast or still stretch, so the
+    stretch isn't counted in the walk's time or distance.
   - The message is a local notification when the app is in the background (a new notification package; FR4's alarm
     reuses it).
 - **[#45]** If the app is closed mid-walk (the phone kills it, it crashes, or the phone restarts), the walk ends at its
@@ -180,6 +182,7 @@ Depends on: FR1, FR2.
   - Backup: if a walk that was sending points to the server goes quiet, the server sends a push notification.
   - At the start of a walk, the app checks whether this phone can support the alarm. If it can't, the app tells the
     user up front and shows how to fix it (e.g. turn off battery optimisation for MyLoop).
+  - Since FR2, 30 minutes with no GPS fix ends the walk (#34), so FR4's gap rules (#10) cover only shorter gaps.
   - Since FR2, a walk whose app was closed ends at its last point and can't be resumed (#45). FR4 decides what
     "tap to resume" means then (e.g. "Tracking stopped, your walk was saved. Tap to start a new one").
 
@@ -318,7 +321,8 @@ Depends on: FR9, FR10.
   Apple or Google.
   - Unlinked guests are deleted after a period of inactivity.
   - If the Apple or Google account a guest links already belongs to a MyLoop user, the two are merged: the guest's
-    walks, explored hexes and land move into the existing account, and the guest account is deleted.
+    walks (with their diaries, #44), explored hexes and land move into the existing account, and the guest account is
+    deleted.
 - Guests get the game rules like signed-in users (`GET /api/rules` must accept a guest; left open by FR1).
 - **[#22]** Guests can walk, explore and capture. When rivals arrive, a guest's land stays private and can't take anyone
   else's until they sign in.

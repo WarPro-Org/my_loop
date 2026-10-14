@@ -152,7 +152,7 @@ checked by a machine.
 | GAME-12 | Exploration between points | Every hex the path crosses counts | audit C8 |
 | GAME-13 | Phone preview vs server result | Same limits, same maths (earth radius, point caps), a replay test | audit A8, C10 |
 | GAME-14 | End of walk | The result is always sent and queued, never skipped because the preview failed | audit A8 |
-| GAME-15 | Pause, and a forgotten walk (vehicle speed, or barely moving for a long time) | Pause records nothing; auto-end saves the walk and tells the user | audit D8 |
+| GAME-15 | A forgotten walk (vehicle speed, or barely moving for a long time); there is no Pause (#32 dropped in FR2) | Auto-end saves the walk, its end time moved back, and tells the user | audit D8 |
 | GAME-16 | Hexes inside a loop vs hexes the path crossed | Only crossed hexes count as explored; a loop's inside is captured, not explored | audit C8 |
 
 ## CHEAT — anti-cheat
