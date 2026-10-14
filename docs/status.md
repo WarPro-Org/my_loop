@@ -4,18 +4,20 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 (an FR step, a PR opened or merged, an owner to-do done) updates this page in the same PR, written as the state
 **after** that PR merges. Keep it under a screen: details live in the linked items.
 
-**Last updated:** 2026-10-13, with the PR that added this page.
+**Last updated:** 2026-10-14, with FR2's spec PR (1/6).
 
 ## Now
 
 - **Version:** 0.1 (single-player rebuild). Spec: `docs/versions/1/0.1/requirements.md`. Parent task: #198.
 - **FR1** (game rules): done, closed 2026-10-07. Record: `docs/versions/1/0.1/records/fr1-game-rules.md`.
-- **Next:** FR2 (walk session: start, pause, stop), Gate 1 requirement grill. Load `myloop-srdp-gates` first. No
-  task, design doc or branch exists yet.
+- **FR2** (walk session: start and stop), task #236: Gate 1 decisions are in the spec (Pause dropped; walk diary #44,
+  closed app ends the walk #45, sign-out #46).
+- **Next:** finish FR2's Gate 1 pass through the `docs/scenarios.md` IDs (LIFE done; NET to STORE left), then the
+  design doc `design/fr2-walk-session.md` with its early blind audit (Gate 2). Load `myloop-srdp-gates` first.
 
 ## Open PRs
 
-None besides the one that adds this page.
+None.
 
 ## Waiting on the owner
 
