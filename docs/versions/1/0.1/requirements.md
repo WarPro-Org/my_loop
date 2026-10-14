@@ -112,9 +112,11 @@ Depends on: nothing.
     captured.
 - **[#34]** A forgotten walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves
   for a long time (around 30 minutes). The app notifies them that the walk was saved.
-  - Vehicle: faster than 25 km/h for 3 minutes. Still: not moving more than 50 m for 30 minutes, whether or not GPS
+  - Vehicle: faster than 35 km/h for 3 minutes. 35 is clearly a vehicle and well above any anti-cheat limit, so the
+    phone, which must know it, gives nothing away about the server's speed limit (#15, scenario CHEAT-6). Still: not moving more than 50 m for 30 minutes, whether or not GPS
     fixes arrive. All four numbers are settings of their own (FR1 rulebook); the 50 m is not the loop-closing distance,
-    so tuning loop closure never changes auto-end.
+    so tuning loop closure never changes auto-end. The server refuses to start if the 50 m is below the GPS accuracy
+    threshold, because then GPS jitter keeps resetting the count and a forgotten walk never ends (scenario IN-7).
   - The 3- and 30-minute counts run on the phone's elapsed-time clock (it keeps counting when no fixes arrive). The
     walk's end time is then moved back to the GPS time of the last fix before the fast or still stretch, so the
     stretch isn't counted in the walk's time or distance.
@@ -132,14 +134,17 @@ Depends on: nothing.
     closed (last time seen alive), signed out, start failed, no GPS for a while.
 
   FR2 writes the diary on the phone; FR3 sends it to the server; FR9 keeps it with the walk; FR12 deletes it with the
-  account. The phone deletes its copy only after the server confirms it has it.
+  account on the server. The phone deletes its copy only after the server confirms it has it, or when the account is
+  deleted (FR2).
+  - A diary that can't be written (phone full) never blocks or ends a walk: the line is kept in memory and tried again
+    with the next one (scenario DEV-5).
+  - Until FR3 sends diaries, a debug-only screen shows them on the phone; release builds don't have it (scenario
+    LEG-6).
 - **[#35]** When a walk ends, these are kept: explored hexes, any loops closed during the walk, and the walk record
   (path, distance, time). Land from an unfinished last stretch that never closed is not captured.
 - Left to later FRs (agreed with the owner):
   - Starting a walk offline stays blocked until FR3 (today `journey_controller.dart` refuses to start without the
     server). The diary itself works offline.
-  - Until FR5 lowers the server's speed limit from 30 km/h, points sent live during a 25–30 km/h stretch still count on
-    the server, even though the phone moves the walk's end time back.
 
 Depends on: FR1.
 
@@ -200,8 +205,6 @@ Depends on: FR2, FR3.
   max speed × sampling interval + GPS drift, and the server refuses to start otherwise (moved from FR1, scenario
   IN-7). Today's values break this (60 m against 8.33 × 5 + 30 = 71.65 m), so FR5 sets them together with the new
   speed limit. The smoothness minimums in the path check become settings (LEG-5).
-- Once the speed limit is 25 km/h or lower, the server also drops the fast stretch FR2's auto-end cuts off (#34; left
-  open by FR2).
 - **[#15]** Only the section that was too fast is rejected, not the whole walk. The app tells the user ("This section was
   too fast to count") but never reveals the exact speed limit.
 

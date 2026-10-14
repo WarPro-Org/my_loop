@@ -10,10 +10,11 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 
 - **Version:** 0.1 (single-player rebuild). Spec: `docs/versions/1/0.1/requirements.md`. Parent task: #198.
 - **FR1** (game rules): done, closed 2026-10-07. Record: `docs/versions/1/0.1/records/fr1-game-rules.md`.
-- **FR2** (walk session: start and stop), task #236: Gate 1 decisions are in the spec (Pause dropped; walk diary #44,
-  closed app ends the walk #45, sign-out #46).
-- **Next:** finish FR2's Gate 1 pass through the `docs/scenarios.md` IDs (LIFE done; NET to STORE left), then the
-  design doc `design/fr2-walk-session.md` with its early blind audit (Gate 2). Load `myloop-srdp-gates` first.
+- **FR2** (walk session: start and stop), task #236: Gate 1 done and approved 2026-10-14. Decisions are in the spec
+  (Pause dropped; walk diary #44, closed app ends the walk #45, sign-out #46). The answer for every
+  `docs/scenarios.md` ID is in a comment on #236.
+- **Next:** FR2's design doc `design/fr2-walk-session.md` with its early blind audit (Gate 2), built from those
+  answers. Load `myloop-srdp-gates` first.
 
 ## Open PRs
 
