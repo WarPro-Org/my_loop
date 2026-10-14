@@ -4,7 +4,7 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 (an FR step, a PR opened or merged, an owner to-do done) updates this page in the same PR, written as the state
 **after** that PR merges. Keep it under a screen: details live in the linked items.
 
-**Last updated:** 2026-10-14, with FR2's spec PR (1/6).
+**Last updated:** 2026-10-14, with FR2's design doc PR (2/7).
 
 ## Now
 
@@ -13,8 +13,8 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 - **FR2** (walk session: start and stop), task #236: Gate 1 done and approved 2026-10-14. Decisions are in the spec
   (Pause dropped; walk diary #44, closed app ends the walk #45, sign-out #46). The answer for every
   `docs/scenarios.md` ID is in a comment on #236.
-- **Next:** the owner answers the eight decisions (O1–O8) in FR2's design doc `design/fr2-walk-session.md` and
-  approves it by merging (Gate 2). Early blind audit: `audits/2026-10-14-fr2-early-blind-audit.md`. Then PR 3/6
+- **Next:** the owner answers the ten decisions (O1–O10) in FR2's design doc `design/fr2-walk-session.md` and
+  approves it by merging (Gate 2). Early blind audit: `audits/2026-10-14-fr2-early-blind-audit.md`. Then PR 3/7
   (server settings) on `v0.1/fr2-server-settings`; the server deploys before the app.
 
 ## Open PRs
