@@ -22,7 +22,7 @@ doc merges; merging it is the owner's approval (CLAUDE.md, Gate 2).
    Notifications are asked for but optional.
 2. **Stop.** Stop asks "End walk?", and warns you if your current loop isn't closed yet.
 3. **Forgotten walks end on their own.** If you drive off (faster than 35 km/h for 3 minutes) or leave the phone
-   still (within 50 m for 30 minutes), the walk ends, its end time goes back to when that started, and you're told.
+   still (within 50 m — 75 m with O3 — for 30 minutes), the walk ends, its end time goes back to when that started, and you're told.
 4. **Accidents end the walk where it stopped.** If the app is closed (the phone kills it, it crashes, the phone
    restarts), location is removed, GPS is turned off, or you sign out, the walk ends at its last point. Your trail
    up to that point is kept; for a closed app, the land inside loops you closed waits for FR6 (owner decision O1).
@@ -56,7 +56,7 @@ Each one comes from the early blind audit. The recommendation is what this doc i
 |---|---|---|---|
 | O1 | A closed app ends the walk at its last point (#45), but today the land inside closed loops is sent only when Stop is tapped, from a path kept in memory. Keep it, or accept the loss for now? | **Accept until FR6.** Trail hexes are kept (they're sent while walking); the land inside loops closed before the app was closed is lost until FR6, whose server finds loops in the points it already stored. FR2 doesn't build a path store that FR6 makes useless | Saving the full path is FR3's "every point saved" work, and FR6 removes the need |
 | O2 | Moving the end time back after a drive or a still stretch: the points sent during that stretch stay on the server | **Accept.** Driving points above 30 km/h are already rejected by the server's speed check; a still phone adds almost no points (the noise floor drops them). The phone takes the stretch out of the walk's time, distance and path | Undoing sent points needs server work that FR5/FR9 own |
-| O3 | The still rule's 50 m equals the GPS accuracy threshold (50 m), so two allowed fixes can be 100 m apart and jitter keeps resetting the 30-minute count. And a radius alone can't tell a still phone from laps of a small block | **Raise the still radius to 75 m**, measured from the average of the stretch's fixes, with the startup check "at least 1.5× the accuracy threshold" (the two are then tuned together). **Add a fifth setting, `StillMaxWalkedMeters` = 500:** the stretch only counts as still if the walk's recorded path grew by less than 500 m in it. One fix outside the radius doesn't restart the count; two in a row do | Jitter from an indoor phone stays inside 75 m of the average and adds little path (the noise floor drops it); 30 minutes of laps adds about 2.5 km of path, so laps never count as still |
+| O3 | The still rule's 50 m equals the GPS accuracy threshold (50 m), so two allowed fixes can be 100 m apart and jitter keeps resetting the 30-minute count. And a radius alone can't tell a still phone from laps of a small block | **Raise the still radius to 75 m**, measured from the average of the stretch's fixes, with the startup check "at least 1.5× the accuracy threshold" (the two are then tuned together). **Add a fifth setting, `StillMaxWalkedMeters` = 500:** the stretch only counts as still if the walk's recorded path grew by less than 500 m in it. One fix outside the radius doesn't restart the count; two in a row do | Jitter from an indoor phone should stay inside 75 m of the average; laps add about 2.5 km of path in 30 minutes. **Risk:** how much path indoor jitter adds past the 10–25 m noise floor is unproven — if it reaches 500 m, a forgotten phone indoors never ends as still (the 30-minute no-GPS rule doesn't help, because fixes keep coming). So the number is checked against a real indoor trace before PR 6/7 merges; 1,000 m is the fallback, still well under laps |
 | O4 | A failed account deletion still wipes the walk's unsent points (audit W13) | **Fix in FR2:** stop the walk first as today, but clear its points and diary only after the server says the account is gone | FR2 touches this path anyway; the user keeps the account, so they keep the walk |
 | O5 | Notification permission is already asked at login (for push), and iOS shows the prompt once | **Change the spec to "asked at the first walk start if it hasn't been asked yet"** | The login ask stays until FR11 decides notifications; asking twice isn't possible on iOS |
 | O6 | Precise location turned off mid-walk: every fix is silently dropped and the walk would end 30 minutes later as "still" | **End the walk at once, saved, with the reason "precise location turned off"** — the same as location removed (#42) | The walk can't capture anything without precise location; a wrong "you stopped moving" is worse |
@@ -299,9 +299,11 @@ endpoint, no database change, no migration, no SignalR change.
 | `lastWalkEndProvider` | new | the last walk's end reason and time, until dismissed | dismissed, or sign-out |
 | `walkEndNotifierProvider` | new | `WalkEndNotifier` (real or fake) | never |
 
-**Values in a saved copy** (audit S6): the phone checks the auto-end fields of a saved or received copy against the
-same lower and upper limits as the server; a copy outside them is rejected like a wrongly typed one, so a corrupt
-"0 seconds" can't end every walk at once.
+**Values in a saved copy** (audit S6): the phone checks only that each auto-end field is a finite number above a
+hard sanity floor (speed above 0, times at least 60 s, distances above 0); a copy that fails is rejected like a
+wrongly typed one, so a corrupt "0 seconds" can't end every walk at once. The real limits stay the server's alone:
+a test fails if any phone floor is tighter than the server's lower limit, so widening a server limit later never
+locks installed phones on old rules.
 
 **Saved rules after the app update** (audit S21, O10): an old saved copy without the auto-end fields is no longer thrown
 away. `RulesStore.load` keeps its server values and tag and fills only the new auto-end fields from the built-in copy;
@@ -350,7 +352,7 @@ removed (`state-lifecycle-consistency`).
 | Android stops the app when permission is revoked | Mitigated: the closed-app check reads the permission and gives the right reason |
 | Unsent points cleared at sign-out | Owner decision O9 (recommended: keep the file) |
 | The map polls hexes every 30 s during a walk, also in the background (audit W31) | Accepted until FR8, which rebuilds the live map; FR2 adds no polling |
-| A partial wake lock is held for the whole walk (audit P28) | Accepted: geolocator needs it to keep tracking in the background |
+| A partial wake lock is held for the whole walk (audit P28) | Accepted: our own `enableWakeLock: true` (`location_service.dart:71`), kept on purpose for background tracking; FR2 doesn't change it |
 | Android 13+ hides the tracking notification when notifications are refused (audit P12) | Accepted: tracking still works; UNVERIFIED |
 | A tuned anti-cheat limit can come within a hair of 35 km/h | Accepted: the owner chose "above" with no margin; the startup check stops anything at or past it |
 | `flutter_local_notifications` clashes with firebase_messaging on iOS | Checked on a real iPhone before the notifications PR merges |
@@ -361,7 +363,7 @@ removed (`state-lifecycle-consistency`).
 | PR | What | Branch |
 |---|---|---|
 | 1/7 | Spec: Gate 1 decisions | `claude/great-pasteur-b4y728` |
-| 2/7 | This design doc and the early blind audit report, stacked on 1/7 | a second branch, with the owner's agreement (this session can push only to the first) |
+| 2/7 | This design doc and the early blind audit report, stacked on 1/7 — about 600 lines, so it carries a `Size exception:` line the owner agrees to (a design doc and its audit can't be split usefully) | a second branch, with the owner's agreement (this session can push only to the first) |
 | 3/7 | Server: `AutoEnd` settings and checks, `ClientRules`, contract sample, FR1 test and record lines | `v0.1/fr2-server-settings` |
 | 4/7 | Phone: rules model with the new fields, value checks and saved-copy upgrade (O10); walk diary store and debug viewer | `v0.1/fr2-diary` |
 | 5/7 | Phone: one-owner start and `endWalk`, Stop dialog, closed-app check | `v0.1/fr2-walk-end` |
@@ -428,7 +430,7 @@ filled in by the PR that adds it.
 | DEV-8 | open | #236: auto-end adds one one-shot timer, no periodic one; the `alive` diary line is at most once a minute |
 | DEV-9 | open | #236: auto-end uses only fixes that pass the accuracy threshold; the first-fix filter is FR3's |
 | DEV-10 | open | #236: vehicle needs the recorded path's average speed over 3 minutes, so one jump or burst can't trigger it and a jittering still phone can't either; `pos.speed` is never used |
-| IN-1 | open | #236: the four `AutoEnd` settings are rejected at startup when NaN or Infinity |
+| IN-1 | open | #236: every `AutoEnd` setting (four, five with O3) is rejected at startup when NaN or Infinity |
 | IN-2 | open | #236: each `AutoEnd` setting has a lower limit (speed above 0, 60 s, 300 s, 1.5× accuracy, 100 m walked) |
 | IN-3 | open | #236: each `AutoEnd` setting has an upper limit chosen so auto-end still does something (60 km/h, 600 s, 300 m, 3600 s, 2000 m) |
 | IN-4 | open | #236: a missing `AutoEnd` setting stops the server; the phone rejects a reply missing one of the auto-end fields |
@@ -441,7 +443,7 @@ filled in by the PR that adds it.
 | SRV-3 | n/a | no server write |
 | SRV-4 | n/a | searched: `api/` for startup code and migrations FR2 adds — none; FR2 has no schema change; the existing startup rewrite is FR7's |
 | SRV-5 | n/a | searched: `api/` and `appsettings*.json` for seed data FR2 adds — none; seeded bots are FR13's |
-| SRV-6 | n/a | no new endpoint; a diary grows by a few lines a walk |
+| SRV-6 | n/a | no new endpoint; a diary grows by about one line a minute of walking |
 | SRV-7 | n/a | no new endpoint |
 | SRV-8 | open | #236: when auto-end moves the end time back, the phone works out time and distance again from the kept points and their GPS times (O2) |
 | DATA-1 | open | #236: new register row for `walk_diary_store.dart` (deleted on account deletion, FR2; after the server confirms, FR3); `user_session_teardown.dart` and `journey_controller.dart` rows change with O4 and O9 |
