@@ -22,7 +22,8 @@ doc merges; merging it is the owner's approval (CLAUDE.md, Gate 2).
    Notifications are asked for but optional.
 2. **Stop.** Stop asks "End walk?", and warns you if your current loop isn't closed yet.
 3. **Forgotten walks end on their own.** If you drive off (faster than 35 km/h for 3 minutes) or leave the phone
-   still (within 50 m — 75 m with O3 — for 30 minutes), the walk ends, its end time goes back to when that started, and you're told.
+   still (within 50 m — 75 m with O3 — for 30 minutes), the walk ends, its end time goes back to when that started,
+   and you're told.
 4. **Accidents end the walk where it stopped.** If the app is closed (the phone kills it, it crashes, the phone
    restarts), location is removed, GPS is turned off, or you sign out, the walk ends at its last point. Your trail
    up to that point is kept; for a closed app, the land inside loops you closed waits for FR6 (owner decision O1).
