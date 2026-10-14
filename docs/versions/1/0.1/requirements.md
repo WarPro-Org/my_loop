@@ -112,13 +112,15 @@ Depends on: nothing.
     captured.
 - **[#34]** A forgotten walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves
   for a long time (around 30 minutes). The app notifies them that the walk was saved.
-  - Vehicle: faster than 35 km/h for 3 minutes. 35 is clearly a vehicle and above today's 30 km/h server limit and
-    FR5's planned 20–25 km/h, so the phone, which must know it, gives nothing away about the server's speed limit
-    (#15, scenario CHEAT-6). The server refuses to start unless the vehicle speed is above both of its own speed
-    limits (top speed and average speed), so a later tuning can't make the phone's number reveal them (IN-7). Still: not moving more than 50 m for 30 minutes, whether or not GPS
-    fixes arrive. All four numbers are settings of their own (FR1 rulebook); the 50 m is not the loop-closing distance,
-    so tuning loop closure never changes auto-end. The server refuses to start if the 50 m is below the GPS accuracy
-    threshold, because then GPS jitter keeps resetting the count and a forgotten walk never ends (scenario IN-7).
+  - Vehicle: faster than 35 km/h for 3 minutes. 35 is clearly a vehicle, above today's server limits (30 km/h top
+    speed, 32.4 km/h average speed) and FR5's planned 20–25 km/h, so the phone, which must know it, gives nothing
+    useful away about the server's limits (#15, scenario CHEAT-6). The server refuses to start unless the vehicle
+    speed is above both of its own speed limits, so a later tuning can't raise a server limit to or past the phone's
+    number (IN-7).
+  - Still: not moving more than 50 m for 30 minutes, whether or not GPS fixes arrive. All four numbers are settings
+    of their own (FR1 rulebook); the 50 m is not the loop-closing distance, so tuning loop closure never changes
+    auto-end. The server refuses to start if the 50 m is below the GPS accuracy threshold, because then GPS jitter
+    keeps resetting the count and a forgotten walk never ends (scenario IN-7).
   - The 3- and 30-minute counts run on the phone's elapsed-time clock (it keeps counting when no fixes arrive). The
     walk's end time is then moved back to the GPS time of the last fix before the fast or still stretch, so the
     stretch isn't counted in the walk's time or distance.
