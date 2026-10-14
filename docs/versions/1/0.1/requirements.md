@@ -112,8 +112,9 @@ Depends on: nothing.
     captured.
 - **[#34]** A forgotten walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves
   for a long time (around 30 minutes). The app notifies them that the walk was saved.
-  - Vehicle: faster than 35 km/h for 3 minutes. 35 is clearly a vehicle and well above any anti-cheat limit, so the
-    phone, which must know it, gives nothing away about the server's speed limit (#15, scenario CHEAT-6). Still: not moving more than 50 m for 30 minutes, whether or not GPS
+  - Vehicle: faster than 35 km/h for 3 minutes. 35 is clearly a vehicle and above today's 30 km/h server limit and
+    FR5's planned 20–25 km/h, so the phone, which must know it, gives nothing away about the server's speed limit
+    (#15, scenario CHEAT-6). Still: not moving more than 50 m for 30 minutes, whether or not GPS
     fixes arrive. All four numbers are settings of their own (FR1 rulebook); the 50 m is not the loop-closing distance,
     so tuning loop closure never changes auto-end. The server refuses to start if the 50 m is below the GPS accuracy
     threshold, because then GPS jitter keeps resetting the count and a forgotten walk never ends (scenario IN-7).
@@ -137,7 +138,8 @@ Depends on: nothing.
   account on the server. The phone deletes its copy only after the server confirms it has it, or when the account is
   deleted (FR2).
   - A diary that can't be written (phone full) never blocks or ends a walk: the line is kept in memory and tried again
-    with the next one (scenario DEV-5).
+    with the next one. The failure is logged and shown in the debug diary viewer, not to the user mid-walk (scenario
+    DEV-5).
   - Until FR3 sends diaries, a debug-only screen shows them on the phone; release builds don't have it (scenario
     LEG-6).
 - **[#35]** When a walk ends, these are kept: explored hexes, any loops closed during the walk, and the walk record
@@ -168,7 +170,8 @@ Depends on: FR1.
   in the background — with no buzz.
 - Tracking keeps working with the screen off, the phone in a pocket, or another app (e.g. WhatsApp) open.
 - Walk diaries (#44, from FR2) are sent to the server with the walk's points, and the phone deletes its copy only
-  after the server confirms it. A walk can start offline (FR2 still blocks it).
+  after the server confirms it (or on account deletion, FR2). FR3 decides whether FR2's debug-only diary viewer
+  stays once diaries reach the server. A walk can start offline (FR2 still blocks it).
 
 Depends on: FR1, FR2.
 
@@ -331,7 +334,7 @@ Depends on: FR9, FR10.
   else's until they sign in.
 - **[#40]** Deleting an account deletes everything — walks, captured land, explored hexes and the passport. Nothing is
   left behind.
-  - That includes walk diaries (#44), on the server and on the phone.
+  - That includes walk diaries (#44) on the server; the phone copy is deleted since FR2.
 
 Depends on: FR9, FR10.
 
