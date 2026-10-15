@@ -141,9 +141,10 @@ Depends on: nothing.
 - **[#45]** If the app is closed mid-walk (the phone kills it, it crashes, or the phone restarts), the walk ends at its
   last recorded point, as if the user had tapped Stop then. Everything up to that point is kept (#35, #43); nothing
   after it counts. There is no resume. On the next launch the app tells the user the walk ended early and when.
-  - So that completed loops survive a closed app, each loop is sent to the server the moment the phone sees it close,
-    not only at Stop. Only the open stretch since the last loop can be lost. A loop that couldn't be sent (offline) is
-    tried again when the walk ends; keeping it across an app close and resending it is FR3's.
+  - So that completed loops survive a closed app, each loop is sent to the server as soon as the phone sees it close
+    and the 3-minute vehicle check has covered it (a loop driven in a vehicle is never sent), not only at Stop. Only
+    the open stretch since the last loop can be lost. A loop that couldn't be sent (offline) is tried again when the
+    walk ends; keeping it across an app close and resending it is FR3's. A loop the server rejects is not resent.
 - **[#46]** Signing out mid-walk ends and saves the walk first. Each account's walks and diaries are kept apart on the
   phone, so the next person to sign in never sees or sends them (the lesson of bug #110).
   - Its unsent GPS points stay on the phone in that account's own file and go when the account signs in again;
