@@ -107,9 +107,9 @@ screen closed or the app in the background, so it can't use the screen's code (a
   - **Safe on the server.** It skips hexes the user already owns and folds every claim of one walk into one Claim
     (`TerritoryService.cs:96-118`, #56). Only the loop's own points are sent, so the old beta's distance XP isn't
     counted twice.
-  - **Failures.** A network failure, 401, 408, 429 or 5xx is kept in memory and resent by `endWalk`; keeping it across an app close
-    is FR3's. A 400 is the server's verdict on the data ("no hexes captured", the daily cap): it is final, never
-    resent, and gets a diary line `loopRejected` (NET-10).
+  - **Failures.** A network failure, 401, 408, 429 or 5xx is kept in memory and resent by `endWalk`; keeping it across
+    an app close is FR3's. A 400 is the server's verdict on the data ("no hexes captured", the daily cap): it is
+    final, never resent, and gets a diary line `loopRejected` (NET-10).
   - The Stop dialog's "loop isn't closed" warning uses the same `findLoops`.
 - The short-walk notice ("Walk a bit more") stays, but the walk still gets its diary lines (audit W10).
 - `startJourney` refuses while a walk is starting or running (audit W5), and a start that fails at any step goes back
