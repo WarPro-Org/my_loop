@@ -13,9 +13,10 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 - **FR2** (walk session: start and stop), task #236: Gate 1 done and approved 2026-10-14. Decisions are in the spec
   (Pause dropped; walk diary #44, closed app ends the walk #45, sign-out #46). The answer for every
   `docs/scenarios.md` ID is in a comment on #236.
-- **Next:** the owner answers the ten decisions (O1–O10) in FR2's design doc `design/fr2-walk-session.md` and
-  approves it by merging (Gate 2). Early blind audit: `audits/2026-10-14-fr2-early-blind-audit.md`. Then PR 3/7
-  (server settings) on `v0.1/fr2-server-settings`; the server deploys before the app.
+- **Next:** the owner answered the ten design decisions (O1–O10) on 2026-10-15; they are in the spec and the design
+  doc `design/fr2-walk-session.md`. The owner approves the doc by merging it (Gate 2); early blind audit:
+  `audits/2026-10-14-fr2-early-blind-audit.md`. Then PR 3/7 (server settings) on `v0.1/fr2-server-settings`; the
+  server deploys before the app.
 
 ## Open PRs
 

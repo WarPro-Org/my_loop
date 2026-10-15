@@ -98,31 +98,42 @@ Depends on: nothing.
   app tells the user why.
   - "While using the app" is enough on both phones; the app never asks for "Always". iPhone tracks in the background
     with the location background mode and the blue indicator; Android with a foreground service and its notification.
-  - Notification permission is asked at the first walk start. If the user says no, the walk still starts; walk-ended
-    messages then show only inside the app.
+  - Notification permission is asked at the first walk start, unless it was already asked (today's login asks it for
+    push). If the user says no, the walk still starts; warnings and walk-ended messages then show only inside the app.
+  - A short screen explains why before the first system location prompt ("MyLoop uses your location only while you
+    walk").
   - If location is denied for good, the app explains how to fix it. It never jumps to Settings on its own (scenario
     DEV-1; today `location_service.dart` does).
-  - The app checks the permission again when it comes back to the front. GPS turned off mid-walk counts as removed.
-- **[#31]** Standing still doesn't break a walk (coffee, traffic lights, a chat).
+  - The app checks the permission again when it comes back to the front. GPS turned off mid-walk, even briefly, and
+    precise location turned off mid-walk count as removed: the walk ends at once and says which it was.
+- **[#31]** Standing still for a short time doesn't break a walk (traffic lights, a short chat). Standing still for
+  10 minutes ends it (#34).
 - **[#32]** Dropped (owner decision, Gate 1 of FR2): there is no Pause button. A user who needs a break taps Stop and
-  starts a new walk; stops under 30 minutes need nothing (#31, #34). Dropping it removes the resume rule and the
+  starts a new walk; stops under 10 minutes need nothing (#31, #34). Dropping it removes the resume rule and the
   walk splitting it needed.
 - **[#33]** A walk ends when the user taps "Stop".
   - Stop asks "End walk?" first. If the current stretch hasn't closed a loop yet, it also says its land won't be
     captured.
-- **[#34]** A forgotten walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves
-  for a long time (around 30 minutes). The app notifies them that the walk was saved.
+- **[#34]** A walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves for 10
+  minutes. The app warns first, then tells them the walk was saved. There is no way to cancel: riding a vehicle is
+  never part of a walk, and there is no Pause.
   - Vehicle: faster than 35 km/h for 3 minutes. 35 is clearly a vehicle, above today's server limits (30 km/h top
     speed, 32.4 km/h average speed) and FR5's planned 20–25 km/h, so the phone, which must know it, gives nothing
     useful away about the server's limits (#15, scenario CHEAT-6). The server refuses to start unless the vehicle
     speed is above both of its own speed limits, so a later tuning can't raise a server limit to or past the phone's
-    number (IN-7).
-  - Still: not moving more than 50 m for 30 minutes, whether or not GPS fixes arrive.
-  - All four auto-end numbers (35 km/h, 3 min, 50 m, 30 min) are settings of their own (FR1 rulebook). The 50 m is
-    not the loop-closing distance, so tuning loop closure never changes auto-end. The server refuses to start if the
-    50 m is below the GPS accuracy threshold, because then GPS jitter keeps resetting the count and a forgotten walk
-    never ends (scenario IN-7).
-  - The 3- and 30-minute counts run on the phone's elapsed-time clock (it keeps counting when no fixes arrive). The
+    number (IN-7). The app then shows "Looks like you're in a vehicle. This walk ends in 10 s" with a countdown and no
+    cancel; at zero the walk ends with the vehicle stretch taken out. The whole walk is never deleted: what was walked
+    before the vehicle is kept (#35, #43), and the server already rejects every driving point.
+  - Still: within 75 m of where the user stopped (measured from the average of the GPS fixes) and under 250 m of path
+    walked, for 10 minutes, whether or not GPS fixes arrive. The 250 m cap stops laps of a small block counting as
+    still; it is checked against a real indoor walk before release (400 m if jitter adds more). After 5 minutes still:
+    "You've been still for 5 minutes. This walk ends in 5 minutes." After 9 minutes: a countdown from 60 to 0. Any
+    real movement resets the count. With the app in the background the warnings come as notifications.
+  - All five auto-end numbers (35 km/h, 3 min, 75 m, 250 m walked, 10 min) are settings of their own (FR1 rulebook).
+    The still radius is not the loop-closing distance, so tuning loop closure never changes auto-end. The server
+    refuses to start if the still radius is under 1.5× the GPS accuracy threshold, because then GPS jitter keeps
+    resetting the count and a forgotten walk never ends (scenario IN-7).
+  - The 3- and 10-minute counts run on the phone's elapsed-time clock (it keeps counting when no fixes arrive). The
     walk's end time is then moved back to the GPS time of the last fix before the fast or still stretch, so the
     stretch isn't counted in the walk's time or distance.
   - The message is a local notification when the app is in the background (a new notification package; FR4's alarm
@@ -130,8 +141,14 @@ Depends on: nothing.
 - **[#45]** If the app is closed mid-walk (the phone kills it, it crashes, or the phone restarts), the walk ends at its
   last recorded point, as if the user had tapped Stop then. Everything up to that point is kept (#35, #43); nothing
   after it counts. There is no resume. On the next launch the app tells the user the walk ended early and when.
+  - So that completed loops survive a closed app, each loop is sent to the server the moment the phone sees it close,
+    not only at Stop. Only the open stretch since the last loop can be lost. A loop that couldn't be sent (offline) is
+    tried again when the walk ends; keeping it across an app close and resending it is FR3's.
 - **[#46]** Signing out mid-walk ends and saves the walk first. Each account's walks and diaries are kept apart on the
   phone, so the next person to sign in never sees or sends them (the lesson of bug #110).
+  - Its unsent GPS points stay on the phone in that account's own file and go when the account signs in again;
+    sign-out no longer deletes them. Deleting the account deletes them, but only after the server confirms the
+    deletion: a failed deletion keeps the walk.
 - **[#44]** Every walk has a diary, written to the phone the moment "Start walk" is tapped, so a walk that went wrong
   can be looked into later. It holds no locations, only:
   - walk ID, start and end time, rules version, app version, permissions at start;
@@ -176,6 +193,8 @@ Depends on: FR1.
 - Walk diaries (#44, from FR2) are sent to the server with the walk's points, and the phone deletes its copy only
   after the server confirms it (or on account deletion, FR2). FR3 decides whether FR2's debug-only diary viewer
   stays once diaries reach the server. A walk can start offline (FR2 still blocks it).
+- A loop claim that FR2 couldn't send (offline when the loop closed and when the walk ended) is kept on the phone,
+  also across an app close, and sent when back online (#45, from FR2).
 
 Depends on: FR1, FR2.
 
@@ -194,7 +213,7 @@ Depends on: FR1, FR2.
   - Backup: if a walk that was sending points to the server goes quiet, the server sends a push notification.
   - At the start of a walk, the app checks whether this phone can support the alarm. If it can't, the app tells the
     user up front and shows how to fix it (e.g. turn off battery optimisation for MyLoop).
-  - Since FR2, 30 minutes with no GPS fix ends the walk (#34), so FR4's gap rules (#10) cover only shorter gaps.
+  - Since FR2, 10 minutes with no GPS fix ends the walk (#34), so FR4's gap rules (#10) cover only shorter gaps.
   - Since FR2, a walk whose app was closed ends at its last point and can't be resumed (#45). FR4 decides what
     "tap to resume" means then (e.g. "Tracking stopped, your walk was saved. Tap to start a new one").
 
