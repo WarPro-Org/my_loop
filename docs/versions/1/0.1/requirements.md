@@ -143,7 +143,7 @@ Depends on: nothing.
   after it counts. There is no resume. On the next launch the app tells the user the walk ended early and when.
   - So that completed loops survive a closed app, each loop is sent to the server as soon as the phone sees it close
     and the 3-minute vehicle check has covered it (a loop driven in a vehicle is never sent), not only at Stop. Only
-    the open stretch since the last loop can be lost. A loop that couldn't be sent (offline) is tried again when the
+    the open stretch since the last loop, and a loop closed in its last 3 minutes, can be lost. A loop that couldn't be sent (offline) is tried again when the
     walk ends; keeping it across an app close and resending it is FR3's. A loop the server rejects is not resent.
 - **[#46]** Signing out mid-walk ends and saves the walk first. Each account's walks and diaries are kept apart on the
   phone, so the next person to sign in never sees or sends them (the lesson of bug #110).

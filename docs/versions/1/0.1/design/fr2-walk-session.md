@@ -107,8 +107,8 @@ screen closed or the app in the background, so it can't use the screen's code (a
   - **Safe on the server.** It skips hexes the user already owns and folds every claim of one walk into one Claim
     (`TerritoryService.cs:96-118`, #56). Only the loop's own points are sent, so the old beta's distance XP isn't
     counted twice.
-  - **Failures.** A network failure or a 5xx is kept in memory and resent by `endWalk`; keeping it across an app close
-    is FR3's. A rejection is the server's verdict on the data ("no hexes captured", the daily cap): it is final, never
+  - **Failures.** A network failure, 401, 408, 429 or 5xx is kept in memory and resent by `endWalk`; keeping it across an app close
+    is FR3's. A 400 is the server's verdict on the data ("no hexes captured", the daily cap): it is final, never
     resent, and gets a diary line `loopRejected` (NET-10).
   - The Stop dialog's "loop isn't closed" warning uses the same `findLoops`.
 - The short-walk notice ("Walk a bit more") stays, but the walk still gets its diary lines (audit W10).
@@ -358,7 +358,7 @@ removed (`state-lifecycle-consistency`).
 | Disk full | Walk carries on; line written before the next one (R3) | write that throws, then works — red when the walk ends or the line is lost |
 | Sign-out mid-walk | `ended signedOut` online and offline; waiting loops sent when online; failed loop claims lost until FR3; diary and queue kept (R3) | sign-out while walking — red when the diary or queue is cleared or no end line |
 | Killed during a still warning or countdown | Relaunch ends the walk at the start of the still stretch if the diary shows one (`stillSince` in the `alive` line), else at the last `alive` fix (R1) | kill during the countdown — red when the still minutes are counted in the walk |
-| Offline when a loop closes | Claim kept in memory and resent by `endWalk`; a rejection is not resent (R3) | network failure then online — red when not resent; a 4xx verdict — red when resent |
+| Offline when a loop closes | Claim kept in memory and resent by `endWalk`; a rejection is not resent (R3) | network failure, 401, 408, 429 or 5xx then online — red when not resent; a 400 verdict (`ClaimsController` rejects every claim with 400) — red when resent |
 | Login as another account | Only that account's diary is read (R1) | two accounts on one phone — red when the other's open walk is found |
 | Account deleted | Diary deleted after the server confirms; kept when it fails (R3) | failed delete — red when the diary or queue is cleared |
 | Server rules change mid-walk | Pinned auto-end numbers stay for the walk (R4) | refresh mid-walk — red when the detector reads the live rules |
