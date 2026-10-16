@@ -148,9 +148,9 @@ Depends on: nothing.
     loop the server rejects is not resent.
 - **[#46]** Signing out mid-walk ends and saves the walk first. Each account's walks and diaries are kept apart on the
   phone, so the next person to sign in never sees or sends them (the lesson of bug #110).
-  - Its unsent GPS points stay on the phone in that account's own file and go when the account signs in again;
-    sign-out no longer deletes them. Deleting the account deletes them, but only after the server confirms the
-    deletion: a failed deletion keeps the walk.
+  - Its unsent GPS points stay on the phone in that account's own file and go with that account's next walk (at
+    sign-in from FR3); sign-out no longer deletes them. Deleting the account deletes them, but only after the server
+    confirms the deletion: a failed deletion keeps the walk.
 - **[#44]** Every walk has a diary, written to the phone the moment "Start walk" is tapped, so a walk that went wrong
   can be looked into later. It holds no locations, only:
   - walk ID, start and end time, rules version, app version, permissions at start;
@@ -196,7 +196,14 @@ Depends on: FR1.
   after the server confirms it (or on account deletion, FR2). FR3 decides whether FR2's debug-only diary viewer
   stays once diaries reach the server. A walk can start offline (FR2 still blocks it).
 - A loop claim that FR2 couldn't send (offline when the loop closed and when the walk ended) is kept on the phone,
-  also across an app close, and sent when back online (#45, from FR2).
+  also across an app close and sign-out, for its own account only, and sent when back online (#45, #46, from FR2).
+- Also left by FR2 (design `design/fr2-walk-session.md`, early blind audit):
+  - each account's kept step-claim file (and a killed walk's unsent points) is sent at launch and at sign-in, not
+    only with the next walk; files of accounts that never sign in again get a rule (audit W28);
+  - queued points carry the GPS fix's time, not the time the phone saved them (DEV-6, audit W21);
+  - a failed rewrite of the queue can send points twice and leave a `.tmp` file (audit W25), and its lines have no
+    format version (audit W26);
+  - a 4xx reply still deletes a batch's points from the phone (NET-10, audit W34).
 
 Depends on: FR1, FR2.
 
@@ -266,6 +273,9 @@ Depends on: FR1, FR3.
       distance from home (`DecayCleanupService.cs`, `GameConstants.cs`). The land part is removed; the
       streak-breaking part of the same job keeps running.
   - #43's "server restart" part is closed by FR7, which removes the startup step that deletes explored hexes.
+- Loop claims are judged only from points the server stored and speed-checked, never from the path the phone sends,
+  so a loop driven under FR2's 35 km/h vehicle rule but over the server's speed limit captures nothing (CHEAT-1; left
+  open by FR2, which sends each loop as it closes).
 
 Depends on: FR1, FR3.
 
@@ -297,6 +307,10 @@ Depends on: FR3, FR4, FR5.
 - The preview and the server use the same limits: today the preview sends at most 500 points while the server
   allows 10,000, and distances use different earth radii (phone 6,378,137 m via geolocator, server 6,371,000 m;
   found in FR1, scenario GAME-13).
+- The result screen also appears after a walk that didn't end with Stop: auto-end, a lost permission, a closed app
+  (FR2 shows today's celebration for these until then).
+- The live map stops polling for hexes while the app is in the background during a walk (today every 30 s; found in
+  FR2, audit W31, LIFE-5).
 
 Depends on: FR5, FR6, FR7.
 
