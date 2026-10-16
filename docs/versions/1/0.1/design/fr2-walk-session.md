@@ -116,8 +116,9 @@ screen closed or the app in the background, so it can't use the screen's code (a
     3 minutes before the app is closed is lost with the open stretch.
   - **Safe on the server.** It skips hexes the user already owns and folds every claim of one walk into one Claim
     (`TerritoryService.cs:96-118`, #56). Each loop claim carries only the loop's own points, but the end-of-walk
-    whole-path claim repeats them, so the old beta's distance XP is counted twice for looped distance — accepted
-    (risk table): XP is old beta code no 0.1 FR owns yet, left until an FR rebuilds or removes it, and no land is counted twice.
+    whole-path claim repeats them, so the old beta's distance XP is counted twice for looped distance — accepted (risk
+    table): XP is old beta code no 0.1 FR owns yet, left until an FR rebuilds or removes it, and no land is counted
+    twice.
   - **Failures.** A 400 is the server's verdict on the data ("no hexes captured", the daily cap): it is final, never
     resent, and gets a diary line `loopRejected` (NET-10). Every other failure — no network, a timeout, any other 4xx
     (401, 403, 404, 408, 409, 413, 429) or a 5xx — is kept in memory and resent by `endWalk`; keeping it across an
@@ -128,8 +129,8 @@ screen closed or the app in the background, so it can't use the screen's code (a
 - The short-walk notice ("Walk a bit more") stays, but the walk still gets its diary lines (audit W10).
 - `startJourney` refuses while a walk is starting or running (audit W5), and a start that fails at any step goes back
   to "not walking" with the diary line "start failed: <reason>" (audit W2, W3, W4). Order: diary `startTapped` →
-  permission (and the location pre-prompt) → notification ask (O5) → reachability check → first fix → FR1's
-  `ready` + `refreshWithin(walkStartRulesWait)` + pin. Every dialog comes before the pin, as FR1's D1 requires, so a refresh
+  permission (and the location pre-prompt) → notification ask (O5) → reachability check → first fix → FR1's `ready` +
+  `refreshWithin(walkStartRulesWait)` + pin. Every dialog comes before the pin, as FR1's D1 requires, so a refresh
   during a dialog isn't missed. The walk's start time is the GPS time of the first fix that passes the accuracy
   threshold (until FR3 filters the very first fix, DEV-9), and the path starts at that same fix, so no path point
   comes before the start time or lacks a time. The walk id and the diary's "start tapped" line are written first,
