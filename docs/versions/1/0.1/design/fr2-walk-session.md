@@ -57,7 +57,7 @@ Things a user will **not** get: no Pause button, and a closed app never resumes 
 |---|---|---|
 | O1 | Today a loop's land is sent only at Stop, from a path in memory, so a closed app loses every completed loop | **Keep completed loops.** Each loop is sent the moment the phone sees it close (after the 3-minute vehicle check); only the open stretch since the last loop can be lost. A loop that couldn't be sent is tried again at the end of the walk; keeping it across an app close is FR3's |
 | O2 | What happens to a walk that turns into a vehicle ride | **A vehicle is never part of a walk.** "Looks like you're in a vehicle. This walk ends in 10 s", a countdown, no cancel; then the walk ends with the vehicle stretch taken out. The owner first asked to delete the whole walk; that was dropped because it would delete honestly walked land (#35, #43), false alarms (a train, a GPS glitch) would wipe real walks, and the server already rejects every driving point |
-| O3 | How long "still" lasts, and how to tell still from jitter and from laps | **10 minutes**, warning at 5 minutes, a 60-second countdown in the last minute, no cancel. Still = within 75 m of the average of the fixes and under 250 m of recorded path, so jitter doesn't reset it and laps don't count as still. The 250 m is checked on a real indoor trace before PR 6/7 merges (400 m if jitter adds more; a slow lap at 3 km/h adds 500 m in 10 minutes). The startup check is "still radius at least 1.5× the accuracy threshold" |
+| O3 | How long "still" lasts, and how to tell still from jitter and from laps | **10 minutes**, warning at 5 minutes, a 60-second countdown in the last minute, no cancel. Still = within 75 m of the average of the fixes and under 250 m of recorded path, so jitter doesn't reset it and laps don't count as still. The 250 m is checked on a real indoor trace before PR 5/6 merges (400 m if jitter adds more; a slow lap at 3 km/h adds 500 m in 10 minutes). The startup check is "still radius at least 1.5× the accuracy threshold" |
 | O4 | A failed account deletion wipes the walk | **Fix in FR2:** points and diary are cleared only after the server confirms the deletion |
 | O5 | Notifications are already asked at login | **Ask at the first walk start only if never asked** |
 | O6 | Precise location turned off mid-walk | **Ends the walk at once**, saved, with that reason |
@@ -280,11 +280,11 @@ unit in the name, never `TimeSpan` (audit S2):
 - This makes the anti-cheat speeds' own cap (15 m/s) unreachable while the vehicle speed is 9.72: the FR1 test
   `Value_at_its_upper_limit_is_allowed` with `MaxAverageSpeedMetersPerSecond, "15"` (`GameRulesTests.cs:125`) is
   changed to raise the vehicle speed with it. The two settings are now tuned together (audit S8, S9).
-- **FR1 record lines that become false and are updated in PR 3/7** (`myloop-closing-an-fr`, keeping records true):
+- **FR1 record lines that become false and are updated in PR 2/6** (`myloop-closing-an-fr`, keeping records true):
   "What shapes the app → Settings" (`AntiCheat` (8), no `AutoEnd`); "API" (the 5 phone fields); "Left to later FRs →
   FR9" (the fingerprint covers "the 4 phone settings + version" — it now covers every `ClientRules` field, audit
   S18); "How to change a rule" (every setting "above 0 … at most 5×" — `AutoEnd` has lower limits, its own upper
-  limits and the two combination checks). PR 4/7 updates the record's "Saved copy" row (O10).
+  limits and the two combination checks). PR 3/6 updates the record's "Saved copy" row (O10).
 - A test fails when any `GameRules` number setting has no value check, so a later setting can't skip one
   (audit S4).
 
@@ -389,15 +389,16 @@ removed (`state-lifecycle-consistency`).
 
 | PR | What | Branch |
 |---|---|---|
-| 1/7 | Spec: Gate 1 decisions | `claude/great-pasteur-b4y728` |
-| 2/7 | This design doc and the early blind audit report, stacked on 1/7 — about 600 lines, so it carries a `Size exception:` line the owner agrees to (a design doc and its audit can't be split usefully) | a second branch, with the owner's agreement (this session can push only to the first) |
-| 3/7 | Server: `AutoEnd` settings and checks, `ClientRules`, contract sample, FR1 test and record lines | `v0.1/fr2-server-settings` |
-| 4/7 | Phone: rules model with the new fields, value checks and saved-copy upgrade (O10); walk diary store and debug viewer | `v0.1/fr2-diary` |
-| 5/7 | Phone: one-owner start and `endWalk`, each loop sent when it closes (`findLoops`), Stop dialog, closed-app check | `v0.1/fr2-walk-end` |
-| 6/7 | Phone: auto-end detector and notifications | `v0.1/fr2-auto-end` |
-| 7/7 | Phone: permissions; sign-out and account deletion (O4, O9); Info.plist, privacy manifest, compliance docs (O8) | `v0.1/fr2-permissions` |
+| 1/6 | Spec (Gate 1 and Gate 2 decisions), this design doc and the early blind audit report — docs only, about 1,000 lines, so it carries a `Size exception:` line the owner agrees to (the spec, the design and its audit are one approval) | `v0.1/fr2-design-doc` |
+| 2/6 | Server: `AutoEnd` settings and checks, `ClientRules`, contract sample, FR1 test and record lines | `v0.1/fr2-server-settings` |
+| 3/6 | Phone: rules model with the new fields, value checks and saved-copy upgrade (O10); walk diary store and debug viewer | `v0.1/fr2-diary` |
+| 4/6 | Phone: one-owner start and `endWalk`, each loop sent when it closes (`findLoops`), Stop dialog, closed-app check | `v0.1/fr2-walk-end` |
+| 5/6 | Phone: auto-end detector, warnings and notifications | `v0.1/fr2-auto-end` |
+| 6/6 | Phone: permissions; sign-out and account deletion (O4, O9); Info.plist, privacy manifest, compliance docs (O8) | `v0.1/fr2-permissions` |
 
-Each stays near 15 files / 400 lines; any that can't says so with a `Size exception:` line.
+Each code PR stays near 15 files / 400 lines; any that can't says so with a `Size exception:` line. Like FR1, the
+spec changes ride with the design doc: "PR rules" lets an FR branch merge before its design doc only when that PR
+adds the design doc.
 
 ## Early blind audit
 
