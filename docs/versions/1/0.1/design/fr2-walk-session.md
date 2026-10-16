@@ -389,7 +389,7 @@ removed (`state-lifecycle-consistency`).
 
 | PR | What | Branch |
 |---|---|---|
-| 1/6 | Spec (Gate 1 and Gate 2 decisions), this design doc and the early blind audit report — docs only, about 1,000 lines, so it carries a `Size exception:` line the owner agrees to (the spec, the design and its audit are one approval) | `v0.1/fr2-design-doc` |
+| 1/6 | Spec (Gate 1 and Gate 2 decisions), this design doc and the early blind audit report — docs only, about 750 lines, so it carries a `Size exception:` line the owner agrees to (the spec, the design and its audit are one approval) | `v0.1/fr2-design-doc` |
 | 2/6 | Server: `AutoEnd` settings and checks, `ClientRules`, contract sample, FR1 test and record lines | `v0.1/fr2-server-settings` |
 | 3/6 | Phone: rules model with the new fields, value checks and saved-copy upgrade (O10); walk diary store and debug viewer | `v0.1/fr2-diary` |
 | 4/6 | Phone: one-owner start and `endWalk`, each loop sent when it closes (`findLoops`), Stop dialog, closed-app check | `v0.1/fr2-walk-end` |
@@ -397,8 +397,8 @@ removed (`state-lifecycle-consistency`).
 | 6/6 | Phone: permissions; sign-out and account deletion (O4, O9); Info.plist, privacy manifest, compliance docs (O8) | `v0.1/fr2-permissions` |
 
 Each code PR stays near 15 files / 400 lines; any that can't says so with a `Size exception:` line. Like FR1, the
-spec changes ride with the design doc: "PR rules" lets an FR branch merge before its design doc only when that PR
-adds the design doc.
+spec changes ride with the design doc: they were written on the same branch, and on an FR branch "PR rules" lets a
+PR merge before its design doc only when that PR adds the design doc.
 
 ## Early blind audit
 
