@@ -4,19 +4,18 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 (an FR step, a PR opened or merged, an owner to-do done) updates this page in the same PR, written as the state
 **after** that PR merges. Keep it under a screen: details live in the linked items.
 
-**Last updated:** 2026-10-14, with FR2's design doc PR (2/7).
+**Last updated:** 2026-10-16, with FR2's spec and design doc PR (1/6).
 
 ## Now
 
 - **Version:** 0.1 (single-player rebuild). Spec: `docs/versions/1/0.1/requirements.md`. Parent task: #198.
 - **FR1** (game rules): done, closed 2026-10-07. Record: `docs/versions/1/0.1/records/fr1-game-rules.md`.
-- **FR2** (walk session: start and stop), task #236: Gate 1 done and approved 2026-10-14. Decisions are in the spec
-  (Pause dropped; walk diary #44, closed app ends the walk #45, sign-out #46). The answer for every
-  `docs/scenarios.md` ID is in a comment on #236.
-- **Next:** the owner answered the ten design decisions (O1–O10) on 2026-10-15; they are in the spec and the design
-  doc `design/fr2-walk-session.md`. The owner approves the doc by merging it (Gate 2); early blind audit:
-  `audits/2026-10-14-fr2-early-blind-audit.md`. Then PR 3/7 (server settings) on `v0.1/fr2-server-settings`; the
-  server deploys before the app.
+- **FR2** (walk session: start and stop), task #236: Gate 1 and Gate 2 done. Spec decisions (Pause dropped; walk
+  diary #44, closed app ends the walk #45, sign-out #46; auto-end in a vehicle or after 10 minutes still, with
+  warnings; each loop sent when it closes) and the approved design doc `design/fr2-walk-session.md` (owner decisions
+  O1–O10, early blind audit `audits/2026-10-14-fr2-early-blind-audit.md`) merged with PR 1/6.
+- **Next:** FR2 PR 2/6 (server `AutoEnd` settings) on `v0.1/fr2-server-settings`; the server deploys before the app.
+  Load `myloop-tasks-and-prs` first.
 
 ## Open PRs
 
