@@ -287,7 +287,8 @@ GPS time (`Position.timestamp`), never `pos.speed` (it reads 0 when missing — 
 - **The first location prompt (audit P7).** Today a new user meets the system location prompt during sign-up, on
   the set-home screen (`set_home_screen.dart:40-43`), with no explanation, and on iPhone a first "Don't allow" can't
   be asked again. Set-home stops asking: it only reads the current permission and, when location isn't allowed
-  yet, skips itself by running `_finishOnboarding` at once, which is what its "Skip for now" does today
+  yet or no position comes back (GPS off, `set_home_screen.dart:58-63`), skips itself by running
+  `_finishOnboarding` at once, which is what its "Skip for now" does today
   (`set_home_screen.dart:103-106`, `:216-219`; that button only shows once a position is found, and the
   no-permission state has only a Retry that could never work). FR13 removes the screen with home location (#23).
   So the first system prompt is always the one at "Start walk", after the explain screen (O8), and the explain
