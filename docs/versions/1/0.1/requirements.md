@@ -114,6 +114,8 @@ Depends on: nothing.
 - **[#33]** A walk ends when the user taps "Stop".
   - Stop asks "End walk?" first. If the current stretch hasn't closed a loop yet, it also says its land won't be
     captured.
+    To know that reliably, the phone gets the server's minimum loop area as one more rule (owner, 2026-10-17); it is a
+    loop rule, not an anti-cheat number.
 - **[#34]** A walk ends automatically if the user moves at vehicle speed for a few minutes, or barely moves for 10
   minutes. The app warns first, then tells them the walk was saved. There is no way to cancel: riding a vehicle is
   never part of a walk, and there is no Pause.

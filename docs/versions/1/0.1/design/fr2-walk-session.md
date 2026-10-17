@@ -3,8 +3,8 @@
 Task: #236. Requirement: `docs/versions/1/0.1/requirements.md` → FR2. Gate 1 answers for every scenario ID: the
 comment "Gate 1 — scenario answers" on #236. Early blind audit: `audits/2026-10-14-fr2-early-blind-audit.md`.
 
-**Status:** Gate 2 draft. The owner answered the ten decisions (O1–O10) on 2026-10-15; the spec and #236 carry
-them. Merging this doc is the owner's approval (CLAUDE.md, Gate 2).
+**Status:** Gate 2 draft. The owner answered the decisions O1–O10 on 2026-10-15 and O11 on 2026-10-17; the spec and
+#236 carry them. Merging this doc is the owner's approval (CLAUDE.md, Gate 2).
 
 ## FR2 in plain words
 
@@ -51,7 +51,7 @@ the capture rule (FR6).
 
 Things a user will **not** get: no Pause button, and a closed app never resumes the walk.
 
-## Owner decisions from the early blind audit (answered 2026-10-15)
+## Owner decisions from the early blind audit (answered 2026-10-15; O11 on 2026-10-17)
 
 | # | Question | Owner's answer |
 |---|---|---|
@@ -65,6 +65,7 @@ Things a user will **not** get: no Pause button, and a closed app never resumes 
 | O8 | Privacy manifest, purpose strings, location pre-prompt | **In FR2's permissions PR**: `PrivacyInfo.xcprivacy`; the "While using" string says tracking goes on with the screen off; a short screen before the first location prompt; `docs/compliance/` updated. The unused "Always" string is removed only if geolocator's iOS code doesn't reference the "Always" API (checked first; otherwise kept with honest wording) |
 | O9 | Sign-out deletes the walk's unsent points | **Keep them** in the account's own queue file; they go with that account's next walk (at sign-in from FR3). `ended signedOut` is written online and offline. The register row for `journey_controller.dart` changes |
 | O10 | The saved rules copy after the app update has no auto-end fields | **Keep its server values, drop its tag**, fill only the new fields from the built-in copy, so the next refresh is a full reply; the diary records the auto-end values the walk used |
+| O11 | The Stop warning needs to know whether the current loop is really closed, but the phone doesn't know the server's minimum loop size (FR1 kept it server-only because the phone didn't use it) | **Send it to the phone** (2026-10-17): `Loop:MinAreaSquareMeters` becomes a phone field. It is a loop rule, not a cheat number. The phone's loop check then drops loops the server would reject, so the warning is reliable and no too-small loop is sent |
 
 ## Decisions already approved (Gate 1)
 
@@ -107,8 +108,9 @@ screen closed or the app in the background, so it can't use the screen's code (a
   `preciseLocationOff`, `appClosed`, `signedOut`, `signedOutForced`, `accountDeleted`. Each has one user message;
   none says "anti-cheat" (NET-11).
 - **Each loop is sent when it closes (O1).** A new `LoopDetector.findLoops(path, rules)` returns each closed loop's
-  point range (today's `countLoops` only counts them and only triggers the server preview — audit W11). When it finds
-  a new loop, the controller sends that loop's path as a loop claim with the walk's `WalkSessionId`:
+  point range, keeping only loops at least `minLoopAreaSquareMeters` in area (O11), the server's own minimum (today's
+  `countLoops` only counts them, over-counts out-and-back paths and only triggers the server preview — audit W11).
+  When it finds a new loop, the controller sends that loop's path as a loop claim with the walk's `WalkSessionId`:
   - **Not while a vehicle could be involved.** A loop claim carries no times, so the server can't speed-check it.
     A loop is sent only once `VehicleSeconds` have passed after its last point with no vehicle verdict, and never if
     its own points (which carry GPS times) average above the vehicle speed; a loop inside a cut-off vehicle stretch
@@ -296,11 +298,11 @@ GPS time (`Position.timestamp`), never `pos.speed` (it reads 0 when missing — 
 ### Stop dialog (#33)
 
 - "End walk?" with "End" and "Keep walking".
-- The warning comes from the phone's own loop check, so it works offline: the controller keeps the path index where
-  the phone last found a loop; if points were walked after it, the dialog adds "Your current loop isn't closed. Land
-  inside it won't be captured." (audit W35). The phone doesn't know the server's minimum loop size (FR1 kept that
-  rule server-only), so the warning can treat a too-small loop as closed; the server stays the judge, and the
-  end-of-walk claim (step 4 of `endWalk`) still sends the whole path.
+- The warning comes from the phone's own loop check (`findLoops`, with the server's minimum loop area — O11), so it
+  works offline: the controller keeps the path index where the phone last found a loop; if points were walked after
+  it, the dialog adds "Your current loop isn't closed. Land inside it won't be captured." (audit W35). Walking up a
+  street and back is no loop, so it gets the warning. The server stays the judge, and the end-of-walk claim (step 4
+  of `endWalk`) still sends the whole path.
 
 ## How it works — server
 
@@ -319,6 +321,7 @@ unit in the name, never `TimeSpan` (audit S2). `VehicleSeconds` and `StillSecond
 | `AutoEnd:StillMaxWalkedMeters` | 250 (400 if the indoor trace needs it) | 100 to 1000; above `StillRadiusMeters` | yes |
 | `AutoEnd:StillSeconds` | 600 (10 min) | 300 to 1800 | yes |
 
+- `Loop:MinAreaSquareMeters` (5000, FR1's setting and limits, unchanged) is now also sent to the phone (O11).
 - `Version` goes from 1 to 2 (audit S17).
 - The upper limits are tighter than FR1's "5× shipped" on purpose: 5× would allow 175 km/h or 150 minutes, at which
   auto-end does nothing (audit S7). The lower limits stop a GPS jump or a red light from ending walks (audit S5).
@@ -335,8 +338,8 @@ unit in the name, never `TimeSpan` (audit S2). `VehicleSeconds` and `StillSecond
 
 ### API
 
-`GET /api/rules` keeps its path, sign-in, ETag and 304. `ClientRules` gains five fields. No other
-endpoint, no database change, no migration, no SignalR change.
+`GET /api/rules` keeps its path, sign-in, ETag and 304. `ClientRules` gains six fields: the five auto-end numbers and
+the minimum loop area (O11). No other endpoint, no database change, no migration, no SignalR change.
 
 ### Server ↔ phone contract
 
@@ -347,6 +350,7 @@ endpoint, no database change, no migration, no SignalR change.
 | `AutoEndStillRadiusMeters` | `autoEndStillRadiusMeters` | `autoEndStillRadiusMeters` | double |
 | `AutoEndStillSeconds` | `autoEndStillSeconds` | `autoEndStillSeconds` | int |
 | `AutoEndStillMaxWalkedMeters` | `autoEndStillMaxWalkedMeters` | `autoEndStillMaxWalkedMeters` | double |
+| `MinLoopAreaSquareMeters` (from `Loop:MinAreaSquareMeters`) | `minLoopAreaSquareMeters` | `minLoopAreaSquareMeters` | double (O11) |
 
 - The five FR1 fields stay. The shared sample `tests/contracts/client_rules.json` gains the new ones, each with a value
   no other field has, and the whole sample passes the startup checks (audit S19).
@@ -369,17 +373,18 @@ PR (`myloop-closing-an-fr`, keeping records true). Each FR1 test keeps its "red 
 | `GameRulesTests.Value_at_its_upper_limit_is_allowed` (`MaxAverageSpeedMetersPerSecond, "15"`) | the vehicle speed must stay above it | raises the vehicle speed with it | 2/6 |
 | `GameRulesTests.Value_at_its_upper_limit_is_allowed` (`AccuracyThresholdMeters, "200"`) | the still radius must be at least 1.5× it | raises the still radius with it | 2/6 |
 | `ClientRulesTests.Client_rules_contain_no_anti_cheat_numbers` | it fails on any name with "Speed" | allows exactly `AutoEndVehicleSpeedMetersPerSecond` | 2/6 |
-| `ClientRulesTests` same-values test, `ContractTests`, `RulesHttpTests` | they list the fields by hand | cover the five new fields | 2/6 |
+| `ClientRulesTests` same-values test, `ContractTests`, `RulesHttpTests` | they list the fields by hand | cover the six new fields | 2/6 |
 | `RulesModuleBoundaryTests` | a new public `AutoEndRules` class | added to the allowed public types | 2/6 |
 | phone `contract_test` ("knows exactly the fields"), `game_rules_test` (built-in = `appsettings.json`, "no anti-cheat numbers") | the sample and `Version` change | the Dart model, built-in copy (version 2) and these tests move in the same PR as the server, so it merges green | 2/6 |
 | `rules_consistency_test` walk tests (the walk keeps its rules, LIFE-1, LIFE-11, NET-3, LEG-8's exact 3 s D1, the permission dialog) | start now needs a signed-in user, reads the diary, writes `startTapped`, asks for notifications; `requestPermission` and `stopJourney` are replaced | a signed-in user with a fake diary and notifier; the 3 s limit still written out | 4/6, 6/6 |
 
 **FR1 record lines that change** (`records/fr1-game-rules.md`)
 - "What shapes the app": Settings (`AutoEnd` group), Server module (public types), Startup check (lower limits and
-  the two combination checks), API (ten phone fields), Phone state (refresh "after a walk" now comes from `endWalk`),
+  the two combination checks), API (eleven phone fields), Phone state (refresh "after a walk" now comes from `endWalk`),
   Walks (start also waits for the diary read and the notification ask, all before the pin), Saved copy (O10 upgrade,
   tag dropped) — PRs 2/6, 3/6, 4/6.
-- "Decisions that must stay true": "every phone field is required" gains the value floors (audit S6); "keeps the
+- "Decisions that must stay true": the minimum loop area is now sent to the phone (O11; FR1 had kept it server-only
+  because the phone didn't use it); "every phone field is required" gains the value floors (audit S6); "keeps the
   last rules the server sent" gains O10's exception — PR 3/6.
 - "Left to later FRs → FR9": the fingerprint covers every `ClientRules` field — PR 2/6.
 - "Known limits": loop claims sent mid-walk are judged by the server's rules at that moment (D2 per loop); claim
@@ -387,7 +392,7 @@ PR (`myloop-closing-an-fr`, keeping records true). Each FR1 test keeps its "red 
 - "How to change a rule": `AutoEnd`'s lower limits, its own upper limits, and the two combination checks — PR 2/6.
 
 **FR1 design doc** (`design/fr1-game-rules.md`): its Settings, Contract and Scenarios sections get a one-line note
-"changed by FR2 — see `design/fr2-walk-session.md`" (five fields, 14 settings and version 1 become ten fields, 19
+"changed by FR2 — see `design/fr2-walk-session.md`" (five fields, 14 settings and version 1 become eleven fields, 19
 settings and version 2; its LIFE-4 and GAME-15 rows are superseded by FR2's) — PR 2/6.
 
 ## Riverpod state impact
@@ -475,7 +480,7 @@ removed (`state-lifecycle-consistency`).
 | A tuned anti-cheat limit can come within a hair of 35 km/h | Accepted: the owner chose "above" with no margin; the startup check stops anything at or past it |
 | `flutter_local_notifications` clashes with firebase_messaging on iOS | Checked on a real iPhone before the notifications PR merges |
 | Mock walks can't test permission loss, vehicle speed or no fixes | Tests fake GPS at the plugin's platform layer instead (LEG-3); the mock gets no FR2 features. In debug builds the mock's pause and speed buttons will now trigger auto-end — accepted for a dev tool |
-| The phone's loop check doesn't know the server's minimum loop size, so it can send too-small loops (a 400, not resent) or miss loops | Mitigated: the end-of-walk claim still sends the whole path, so the server finds every loop; the cost is a few rejected sends |
+| The phone's loop check could cut a loop at different points than the server | Mitigated: the phone uses the server's minimum loop area (O11), and the end-of-walk claim still sends the whole path, so the server finds every loop; the cost is a rare rejected send |
 | A loop driven at 30–35 km/h is still claimed (a loop claim has no times, and the vehicle rule starts at 35) | Accepted until FR6, whose server judges loops only from stored, speed-checked points (FR6 spec) |
 | Distance XP counted twice for looped distance (each loop claim, then the whole-path claim) | Accepted: XP is old beta code no 0.1 FR owns yet, left until an FR rebuilds or removes it; hexes are never counted twice (the server skips owned hexes) |
 | A claim or drain stuck in the sign-in token step (FR1 known limit) | Mitigated: `walkEndSendLimit` (30 s) and a 5 s limit at sign-out; every request gets a bounded wait in FR3 |
@@ -588,7 +593,7 @@ filled in by the PR that adds it.
 | GAME-8 | n/a | FR2 doesn't change sending (FR3) |
 | GAME-9 | open | #236: equal or backwards fix times are skipped by the auto-end checks |
 | GAME-10 | open | #236: auto-end never deletes points; the server still judges them |
-| GAME-11 | open | #236: Stop warns from the phone's own loop check when the last stretch isn't closed; that stretch is never captured |
+| GAME-11 | open | #236: Stop warns from the phone's own loop check, which uses the server's minimum loop area (O11), when the last stretch isn't closed; that stretch is never captured |
 | GAME-12 | n/a | FR2 doesn't change exploration (FR7) |
 | GAME-13 | n/a | FR2 doesn't change the preview (FR8) |
 | GAME-14 | open | #236: each loop is sent when it closes; `endWalk` resends failed ones and sends the whole path once as a safety net, then drains, within a time limit; keeping a failed claim across an app close is FR3's |
@@ -612,7 +617,7 @@ filled in by the PR that adds it.
 | LEG-10 | open | #236: the diary and auto-end are their own classes; `journey_controller.dart` only wires them |
 | LEG-11 | n/a | no secrets |
 | LEG-12 | open | #236: no "Pause" text in the app outside the debug mock walk (searched `mobile/lib`) |
-| API-1 | open | #236: the auto-end fields, each with the unit in the name, double/int as in the contract table, tested against `tests/contracts/client_rules.json` |
+| API-1 | open | #236: the six new fields, each with the unit in the name, double/int as in the contract table, tested against `tests/contracts/client_rules.json` |
 | API-2 | open | #236: the server is the one source; the built-in copy is compared with `appsettings.json` field by field |
 | API-3 | open | #236: `RulesHttpTests` checks the auto-end fields over real HTTP |
 | STORE-1 | open | #236: `app-store-compliance` on the notifications and permissions PRs; privacy manifest and purpose strings (O8) |
