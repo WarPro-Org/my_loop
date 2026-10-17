@@ -64,7 +64,7 @@ Things a user will **not** get: no Pause button, and a closed app never resumes 
 | O7 | GPS switched off mid-walk, even briefly | **Ends the walk at once** |
 | O8 | Privacy manifest, purpose strings, location pre-prompt | **In FR2's permissions PR**: `PrivacyInfo.xcprivacy`; the "While using" string says tracking goes on with the screen off; a short screen before the first location prompt; `docs/compliance/` updated. The unused "Always" string is removed only if geolocator's iOS code doesn't reference the "Always" API (checked first; otherwise kept with honest wording) |
 | O9 | Sign-out deletes the walk's unsent points | **Keep them** in the account's own queue file; they go with that account's next walk (at sign-in from FR3). `ended signedOut` is written online and offline. The register row for `journey_controller.dart` changes |
-| O10 | The saved rules copy after the app update has no auto-end fields | **Keep its server values, drop its tag**, fill only the new fields from the built-in copy, so the next refresh is a full reply; the diary records the auto-end values the walk used |
+| O10 | The saved rules copy after the app update has none of the new fields | **Keep its server values, drop its tag**, fill only the new fields from the built-in copy, so the next refresh is a full reply; the diary records the auto-end values the walk used |
 | O11 | The Stop warning needs to know whether the current loop is really closed, but the phone doesn't know the server's minimum loop size (FR1 kept it server-only because the phone didn't use it) | **Send it to the phone** (2026-10-17): `Loop:MinAreaSquareMeters` becomes a phone field. It is a loop rule, not a cheat number. The phone's loop check then drops loops the server would reject, so the warning is reliable and no too-small loop is sent |
 
 ## Decisions already approved (Gate 1)
@@ -399,7 +399,7 @@ settings and version 2; its LIFE-4 and GAME-15 rows are superseded by FR2's) —
 
 | Provider | New or changed | Holds | Reset when |
 |---|---|---|---|
-| `gameRulesProvider` | changed | the rules, now with the auto-end fields | never (FR1) |
+| `gameRulesProvider` | changed | the rules, now with the six new fields | never (FR1) |
 | `journeyControllerProvider` | changed | walk state; one owner for start and end; the auto-end detector; the account's queue | sign-out (as today) |
 | `walkDiaryStoreProvider` | new | the signed-in account's diary store (one writer) | account change (a new store for the new account; the old file stays) |
 | `lastWalkEndProvider` | new | the last walk's end reason, end time and what it captured, until dismissed | dismissed, or sign-out |
@@ -527,7 +527,7 @@ filled in by the PR that adds it.
 | LIFE-5 | open | #236: auto-end runs on fixes, a one-shot deadline and scheduled notifications in the background; the 30 s hex poll that keeps running is FR8's |
 | LIFE-6 | open | #236: back to the app re-checks location access; removed, GPS off or precise off ends the walk |
 | LIFE-7 | open | #236: diary lines carry `v`; an old saved rules copy keeps its server values and gets the new fields (auto-end and minimum loop area) from the built-in copy, with its tag dropped (audit S21) |
-| LIFE-8 | open | #236: a bad diary line is skipped and shown as damaged in the debug viewer; a saved rules copy with out-of-range auto-end values is rejected (audit S6); no crash |
+| LIFE-8 | open | #236: a bad diary line is skipped and shown as damaged in the debug viewer; a saved rules copy with out-of-range values in the new fields is rejected (audit S6); no crash |
 | LIFE-9 | open | #236: one diary writer per account; one start or end at a time; one step-claim queue per account (audit W5, W22, W23) |
 | LIFE-10 | open | #236: no walk length limit; every walk timer is cancelled in `endWalk` |
 | LIFE-11 | open | #236: a start that fails at any step returns to "not walking" with a `startFailed` diary line (audit W2–W4) |
