@@ -203,8 +203,8 @@ Depends on: FR1.
   - each account's kept step-claim file (and a killed walk's unsent points) is sent at launch and at sign-in, not
     only with the next walk; files of accounts that never sign in again get a rule (audit W28);
   - queued points carry the GPS fix's time, not the time the phone saved them (DEV-6, audit W21);
-  - a failed rewrite of the queue can send points twice and leave a `.tmp` file (audit W25), and its lines have no
-    format version (audit W26);
+  - a failed rewrite of the queue can send points twice and leave a `.tmp` file (audit W25), its lines have no
+    format version (audit W26), and a failed save of a point (phone full) is not caught (audit W24);
   - a 4xx reply still deletes a batch's points from the phone (NET-10, audit W34).
 
 Depends on: FR1, FR2.

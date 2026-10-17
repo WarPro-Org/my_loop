@@ -4,7 +4,7 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 (an FR step, a PR opened or merged, an owner to-do done) updates this page in the same PR, written as the state
 **after** that PR merges. Keep it under a screen: details live in the linked items.
 
-**Last updated:** 2026-10-16, with FR2's spec and design doc PR (1/6).
+**Last updated:** 2026-10-17, with FR2's design fixes PR (2/7).
 
 ## Now
 
@@ -13,9 +13,10 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 - **FR2** (walk session: start and stop), task #236: Gate 1 and Gate 2 done. Spec decisions (Pause dropped; walk
   diary #44, closed app ends the walk #45, sign-out #46; auto-end in a vehicle or after 10 minutes still, with
   warnings; each loop sent when it closes) and the approved design doc `design/fr2-walk-session.md` (owner decisions
-  O1–O11, early blind audit `audits/2026-10-14-fr2-early-blind-audit.md`) merged with PR 1/6.
-- **Next:** FR2 PR 2/6 (server `AutoEnd` settings) on `v0.1/fr2-server-settings`; the server deploys before the app.
-  Load `myloop-tasks-and-prs` first.
+  O1–O11, early blind audit `audits/2026-10-14-fr2-early-blind-audit.md`) merged with PR 1/7 (#237). PR 2/7 fixed
+  eight gaps a re-check of the design found.
+- **Next:** FR2 PR 3/7 (server `AutoEnd` settings, the phone's rules model and the saved-copy upgrade O10) on
+  `v0.1/fr2-server-settings`; the server deploys before the app. Load `myloop-tasks-and-prs` first.
 
 ## Open PRs
 
@@ -23,6 +24,12 @@ None.
 
 ## Waiting on the owner
 
+- Before FR2 PR 3/7: give the cloud environment `dotnet` and `flutter`, so `scripts/verify.sh` can run (Network
+  access: allow `builds.dotnet.microsoft.com`; the setup script installs both).
+- Before FR2 PR 3/7 merges: the indoor walk test for the 250 m "still" cap, on a real phone (design, O3).
+- Before FR2 PR 6/7 merges, on a real iPhone: warnings while the app is suspended, the notification package next to
+  Firebase messaging, and whether a stopwatch keeps counting while the phone sleeps; on a real Android 13+ phone:
+  whether refusing notifications hides the tracking notification.
 - Make "PR rules" a required status check on `master`, so a red check blocks merging (#230–#232 merged red).
 - Pick squash or rebase merges and make the repo setting and the `myloop-tasks-and-prs` skill agree (#229–#234
   were rebase-merged; the skill says squash only).
