@@ -19,6 +19,8 @@ Moved word for word from CLAUDE.md, which keeps a one-paragraph summary.
 #### Bug Gate 1 — Bug Report Doc (before touching any code)
 
 Produce a Bug Report covering:
+- **For the user:** the three plain lines of CLAUDE.md "Explain every change from the user's side" (What you'll
+  notice / The problem today / The fix), before the technical sections.
 - **Symptom:** What is observed vs. what is expected.
 - **Reproduction steps:** Exact sequence to trigger the bug.
 - **Root cause hypothesis:** Where in the code the fault likely lives, and why. Cite file paths.
@@ -60,6 +62,8 @@ Ask one sharp question at a time. Do not advance until requirements are unambigu
 
 Write a Design Doc only after Gate 1 is approved. Must include:
 
+- **A plain-words section first** (e.g. FR2's "FR2 in plain words"): for each change, the three plain lines of
+  CLAUDE.md "Explain every change from the user's side".
 - **API changes:** Exact endpoint paths, HTTP verbs, request/response DTOs with field names and types.
 - **DB schema changes:** Table/column changes and the EF migration plan, including rollback strategy.
 - **SignalR changes:** Hub method names and payload shapes.
