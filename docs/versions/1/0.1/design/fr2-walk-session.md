@@ -411,13 +411,13 @@ make every wobble a loop); a copy that fails is rejected like a wrongly typed on
 every walk at once. The real limits stay the server's alone: a test fails if any phone floor is tighter than the
 server's lower limit, so widening a server limit later never locks installed phones on old rules.
 
-**Saved rules after the app update** (audit S21, O10): an old saved copy without the auto-end fields is no longer
-thrown away. `RulesStore.load` keeps its server values and fills only the new fields (auto-end and the minimum loop area) from the built-in copy,
-and **drops the saved tag**. The tag must go: with the server deployed first, an old app may already have saved the
-new server's tag while ignoring the fields it didn't know, so keeping it would earn a 304 and the phone would never
-get the server's auto-end values. With no tag, the next refresh gets a full reply. This keeps the FR1 decision "after
-an app update the phone keeps the last rules the server sent", with one exception written into the FR1 record: new
-fields come from the built-in copy until that full reply.
+**Saved rules after the app update** (audit S21, O10): an old saved copy without the new fields is no longer thrown
+away. `RulesStore.load` keeps its server values and fills only the new fields (auto-end and the minimum loop area)
+from the built-in copy, and **drops the saved tag**. The tag must go: with the server deployed first, an old app may
+already have saved the new server's tag while ignoring the fields it didn't know, so keeping it would earn a 304 and
+the phone would never get the server's values for the new fields. With no tag, the next refresh gets a full reply.
+This keeps the FR1 decision "after an app update the phone keeps the last rules the server sent", with one exception
+written into the FR1 record: new fields come from the built-in copy until that full reply.
 
 ## State consistency (every reader × every app moment)
 
