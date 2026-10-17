@@ -683,5 +683,5 @@ filled in by the PR that adds it.
 | LEG-12 | open | #236: no "Pause" text in the app outside the debug mock walk (searched `mobile/lib`) |
 | API-1 | covered | `tests/MyLoop.V01.Tests/FR1/ContractTests.cs` "Server_sends_exactly_the_shared_client_rules_sample"; `mobile/test/v0_1/fr1/contract_test.dart` "the app reads every field of the server sample" — the six new fields, each with the unit in the name, double/int as in the contract table |
 | API-2 | open | #236: the server is the one source; the built-in copy is compared with `appsettings.json` field by field; the loop maths copied into `findLoops` is checked by the shared loop paths (GAME-13) |
-| API-3 | open | #236: `RulesHttpTests` checks the six new fields over real HTTP |
+| API-3 | covered | `tests/MyLoop.V01.Tests/FR1/RulesHttpTests.cs` "Rules_reply_over_http_is_exactly_the_shared_sample" — the six new fields over real HTTP, compared with the shared sample |
 | STORE-1 | open | #236: `app-store-compliance` on the notifications and permissions PRs; privacy manifest and purpose strings (O8) |
