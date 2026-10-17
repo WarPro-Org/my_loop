@@ -405,14 +405,14 @@ settings and version 2; its LIFE-4 and GAME-15 rows are superseded by FR2's) —
 | `lastWalkEndProvider` | new | the last walk's end reason, end time and what it captured, until dismissed | dismissed, or sign-out |
 | `walkEndNotifierProvider` | new | `WalkEndNotifier` (real or fake) | never |
 
-**Values in a saved copy** (audit S6): the phone checks only that each auto-end field is a finite number above a
-hard sanity floor (speed above 0, times at least 60 s, distances above 0); a copy that fails is rejected like a
-wrongly typed one, so a corrupt "0 seconds" can't end every walk at once. The real limits stay the server's alone:
-a test fails if any phone floor is tighter than the server's lower limit, so widening a server limit later never
-locks installed phones on old rules.
+**Values in a saved copy** (audit S6): the phone checks only that each new field is a finite number above a hard
+sanity floor (speed above 0, times at least 60 s, distances and the minimum loop area above 0, so a corrupt 0 can't
+make every wobble a loop); a copy that fails is rejected like a wrongly typed one, so a corrupt "0 seconds" can't end
+every walk at once. The real limits stay the server's alone: a test fails if any phone floor is tighter than the
+server's lower limit, so widening a server limit later never locks installed phones on old rules.
 
 **Saved rules after the app update** (audit S21, O10): an old saved copy without the auto-end fields is no longer
-thrown away. `RulesStore.load` keeps its server values and fills only the new auto-end fields from the built-in copy,
+thrown away. `RulesStore.load` keeps its server values and fills only the new fields (auto-end and the minimum loop area) from the built-in copy,
 and **drops the saved tag**. The tag must go: with the server deployed first, an old app may already have saved the
 new server's tag while ignoring the fields it didn't know, so keeping it would earn a 304 and the phone would never
 get the server's auto-end values. With no tag, the next refresh gets a full reply. This keeps the FR1 decision "after
@@ -440,7 +440,7 @@ removed (`state-lifecycle-consistency`).
 | Background, screen off | Auto-end still fires on the next fix or deadline; `endAt` from fix times (R4) | fake clock and fixes with the app "paused" — red when the check needs the screen |
 | Back to the app | Access checked; removed → walk ends (R3) | resume with access off — red without the resume check |
 | App updated (diary format) | Lines with a known `v` load; a newer `v` is skipped (R1, R2) | v1 file read by the new reader — red when an old line is skipped |
-| App updated (saved rules without auto-end fields) | Server values kept, tag dropped; new fields from the built-in copy (R4) | old saved copy — red when the copy is thrown away or the old tag is kept |
+| App updated (saved rules without the new fields) | Server values kept, tag dropped; the new fields (auto-end and minimum loop area) from the built-in copy (R4) | old saved copy — red when the copy is thrown away or the old tag is kept |
 | Corrupt line | Skipped, `diaryDamaged` shown in the viewer, no crash (R1, R2) | garbage line — red when reading throws |
 | Two writers at once | One lock; no line lost (R3) | Stop and auto-end at the same moment — red when a line is missing or the walk ends twice |
 | Disk full | Walk carries on; line written before the next one (R3) | write that throws, then works — red when the walk ends or the line is lost |
@@ -526,7 +526,7 @@ filled in by the PR that adds it.
 | LIFE-4 | open | #236: a closed app ends the walk at the still-stretch start or last `alive` fix (#45); completed loops were already sent; sending the killed walk's unsent points at launch is FR3's |
 | LIFE-5 | open | #236: auto-end runs on fixes, a one-shot deadline and scheduled notifications in the background; the 30 s hex poll that keeps running is FR8's |
 | LIFE-6 | open | #236: back to the app re-checks location access; removed, GPS off or precise off ends the walk |
-| LIFE-7 | open | #236: diary lines carry `v`; an old saved rules copy keeps its server values and gets the new auto-end fields from the built-in copy (audit S21) |
+| LIFE-7 | open | #236: diary lines carry `v`; an old saved rules copy keeps its server values and gets the new fields (auto-end and minimum loop area) from the built-in copy, with its tag dropped (audit S21) |
 | LIFE-8 | open | #236: a bad diary line is skipped and shown as damaged in the debug viewer; a saved rules copy with out-of-range auto-end values is rejected (audit S6); no crash |
 | LIFE-9 | open | #236: one diary writer per account; one start or end at a time; one step-claim queue per account (audit W5, W22, W23) |
 | LIFE-10 | open | #236: no walk length limit; every walk timer is cancelled in `endWalk` |
@@ -568,7 +568,7 @@ filled in by the PR that adds it.
 | IN-1 | open | #236: every `AutoEnd` setting (five) is rejected at startup when NaN or Infinity |
 | IN-2 | open | #236: each `AutoEnd` setting has a lower limit (speed above 0, 60 s, 300 s, 1.5× accuracy, 100 m walked) |
 | IN-3 | open | #236: each `AutoEnd` setting has an upper limit chosen so auto-end still does something (60 km/h, 600 s, 300 m, 1800 s, 1000 m) |
-| IN-4 | open | #236: a missing `AutoEnd` setting stops the server; the phone rejects a reply missing one of the auto-end fields |
+| IN-4 | open | #236: a missing `AutoEnd` setting stops the server; the phone rejects a reply missing one of the six new fields |
 | IN-5 | open | #236: an old phone ignores the new fields (FR1 test); deploy order server first |
 | IN-6 | open | #236: each `AutoEnd` setting gets a test at its shipped value and its neighbours |
 | IN-7 | open | #236: startup checks: vehicle speed above both anti-cheat speeds; still radius at least 1.5× the accuracy threshold (O3); still walked distance above the still radius |
@@ -619,5 +619,5 @@ filled in by the PR that adds it.
 | LEG-12 | open | #236: no "Pause" text in the app outside the debug mock walk (searched `mobile/lib`) |
 | API-1 | open | #236: the six new fields, each with the unit in the name, double/int as in the contract table, tested against `tests/contracts/client_rules.json` |
 | API-2 | open | #236: the server is the one source; the built-in copy is compared with `appsettings.json` field by field |
-| API-3 | open | #236: `RulesHttpTests` checks the auto-end fields over real HTTP |
+| API-3 | open | #236: `RulesHttpTests` checks the six new fields over real HTTP |
 | STORE-1 | open | #236: `app-store-compliance` on the notifications and permissions PRs; privacy manifest and purpose strings (O8) |
