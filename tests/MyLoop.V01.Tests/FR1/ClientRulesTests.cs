@@ -19,7 +19,9 @@ public class ClientRulesTests
     [Fact]
     public void Client_rules_contain_no_anti_cheat_numbers()
     {
-        var names = typeof(ClientRules).GetProperties().Select(p => p.Name).ToList();
+        // The vehicle speed is a walk rule above both anti-cheat speeds (FR2), the only speed the app may know.
+        var names = typeof(ClientRules).GetProperties().Select(p => p.Name)
+            .Where(n => n != nameof(ClientRules.AutoEndVehicleSpeedMetersPerSecond)).ToList();
 
         Assert.DoesNotContain(names, n => n.Contains("Speed"));
         Assert.DoesNotContain(names, n => n.Contains("Violation"));
@@ -38,5 +40,11 @@ public class ClientRulesTests
         Assert.Equal(server.Loop.MinPoints, client.MinLoopPoints);
         Assert.Equal(server.Loop.SkipNeighbors, client.LoopSkipNeighbors);
         Assert.Equal(server.Gps.AccuracyThresholdMeters, client.GpsAccuracyThresholdMeters);
+        Assert.Equal(server.Loop.MinAreaSquareMeters, client.MinLoopAreaSquareMeters);
+        Assert.Equal(server.AutoEnd.VehicleSpeedMetersPerSecond, client.AutoEndVehicleSpeedMetersPerSecond);
+        Assert.Equal(server.AutoEnd.VehicleSeconds, client.AutoEndVehicleSeconds);
+        Assert.Equal(server.AutoEnd.StillRadiusMeters, client.AutoEndStillRadiusMeters);
+        Assert.Equal(server.AutoEnd.StillSeconds, client.AutoEndStillSeconds);
+        Assert.Equal(server.AutoEnd.StillMaxWalkedMeters, client.AutoEndStillMaxWalkedMeters);
     }
 }

@@ -23,6 +23,20 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
     private const double MaxSamplingIntervalSeconds = 25;
     private const double MaxBearingStdDevDegrees = 10;
 
+    // AutoEnd (FR2) has its own limits, tighter than 5× on purpose: 5× would allow 175 km/h or 150 minutes, at which
+    // auto-end does nothing. The lower limits stop a GPS jump or a red light from ending walks.
+    private const double MaxVehicleSpeedMetersPerSecond = 16.67; // 60 km/h
+    private const double MinVehicleSeconds = 60;
+    private const double MaxVehicleSeconds = 600;
+    private const double MaxStillRadiusMeters = 300;
+    private const double MinStillMaxWalkedMeters = 100;
+    private const double MaxStillMaxWalkedMeters = 1000;
+    private const double MinStillSeconds = 300;
+    private const double MaxStillSeconds = 1800;
+
+    // The still radius must stay well above GPS noise, or jitter alone would reset the still count.
+    private const double MinStillRadiusToAccuracyRatio = 1.5;
+
     public ValidateOptionsResult Validate(string? name, GameRules rules)
     {
         var failures = new List<string>();
@@ -41,6 +55,12 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
                 failures.Add($"{GameRules.SectionName}:{path} must be 0 or more and at most {max}");
         }
 
+        void Between(double value, string path, double min, double max)
+        {
+            if (!(value >= min && value <= max))
+                failures.Add($"{GameRules.SectionName}:{path} must be at least {min} and at most {max}");
+        }
+
         void Fraction(double value, string path)
         {
             if (!(value > 0 && value <= 1)) failures.Add($"{GameRules.SectionName}:{path} must be above 0 and at most 1");
@@ -50,6 +70,7 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
         static string Loop(string setting) => $"{nameof(GameRules.Loop)}:{setting}";
         static string Gps(string setting) => $"{nameof(GameRules.Gps)}:{setting}";
         static string AntiCheat(string setting) => $"{nameof(GameRules.AntiCheat)}:{setting}";
+        static string AutoEnd(string setting) => $"{nameof(GameRules.AutoEnd)}:{setting}";
 
         // Version only grows, one step per change, so it has no upper limit.
         if (rules.Version <= 0) failures.Add($"{GameRules.SectionName}:{nameof(rules.Version)} must be greater than 0");
@@ -70,6 +91,12 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
         Fraction(rules.AntiCheat.DurationToleranceFactor, AntiCheat(nameof(AntiCheatRules.DurationToleranceFactor)));
         Positive(rules.AntiCheat.MinBearingStdDev, AntiCheat(nameof(AntiCheatRules.MinBearingStdDev)), MaxBearingStdDevDegrees);
 
+        Positive(rules.AutoEnd.VehicleSpeedMetersPerSecond, AutoEnd(nameof(AutoEndRules.VehicleSpeedMetersPerSecond)), MaxVehicleSpeedMetersPerSecond);
+        Between(rules.AutoEnd.VehicleSeconds, AutoEnd(nameof(AutoEndRules.VehicleSeconds)), MinVehicleSeconds, MaxVehicleSeconds);
+        Positive(rules.AutoEnd.StillRadiusMeters, AutoEnd(nameof(AutoEndRules.StillRadiusMeters)), MaxStillRadiusMeters);
+        Between(rules.AutoEnd.StillMaxWalkedMeters, AutoEnd(nameof(AutoEndRules.StillMaxWalkedMeters)), MinStillMaxWalkedMeters, MaxStillMaxWalkedMeters);
+        Between(rules.AutoEnd.StillSeconds, AutoEnd(nameof(AutoEndRules.StillSeconds)), MinStillSeconds, MaxStillSeconds);
+
         CheckCombinations(rules, failures);
 
         return failures.Count == 0 ? ValidateOptionsResult.Success : ValidateOptionsResult.Fail(failures);
@@ -83,5 +110,21 @@ internal sealed class GameRulesValidator : IValidateOptions<GameRules>
         var antiCheat = rules.AntiCheat;
         if (antiCheat.MaxAverageSpeedMetersPerSecond < antiCheat.MaxSpeedMetersPerSecond)
             failures.Add($"{GameRules.SectionName}:{nameof(GameRules.AntiCheat)}:{nameof(AntiCheatRules.MaxAverageSpeedMetersPerSecond)} must not be below {nameof(AntiCheatRules.MaxSpeedMetersPerSecond)}");
+
+        // A vehicle ride must be faster than any walk the anti-cheat lets through, or auto-end would end real walks.
+        // Same unit on both sides, so no conversion.
+        var autoEnd = rules.AutoEnd;
+        var vehicleSpeed = $"{GameRules.SectionName}:{nameof(GameRules.AutoEnd)}:{nameof(AutoEndRules.VehicleSpeedMetersPerSecond)}";
+        if (!(autoEnd.VehicleSpeedMetersPerSecond > antiCheat.MaxSpeedMetersPerSecond))
+            failures.Add($"{vehicleSpeed} must be higher than {nameof(GameRules.AntiCheat)}:{nameof(AntiCheatRules.MaxSpeedMetersPerSecond)}");
+        if (!(autoEnd.VehicleSpeedMetersPerSecond > antiCheat.MaxAverageSpeedMetersPerSecond))
+            failures.Add($"{vehicleSpeed} must be higher than {nameof(GameRules.AntiCheat)}:{nameof(AntiCheatRules.MaxAverageSpeedMetersPerSecond)}");
+
+        if (!(autoEnd.StillRadiusMeters >= MinStillRadiusToAccuracyRatio * rules.Gps.AccuracyThresholdMeters))
+            failures.Add($"{GameRules.SectionName}:{nameof(GameRules.AutoEnd)}:{nameof(AutoEndRules.StillRadiusMeters)} must be {MinStillRadiusToAccuracyRatio} times {nameof(GameRules.Gps)}:{nameof(GpsRules.AccuracyThresholdMeters)} or more");
+
+        // A walked cap inside the radius would let laps within the radius count as still.
+        if (!(autoEnd.StillMaxWalkedMeters > autoEnd.StillRadiusMeters))
+            failures.Add($"{GameRules.SectionName}:{nameof(GameRules.AutoEnd)}:{nameof(AutoEndRules.StillMaxWalkedMeters)} must be higher than {nameof(AutoEndRules.StillRadiusMeters)}");
     }
 }
