@@ -3,8 +3,9 @@
 Task: #236. Requirement: `docs/versions/1/0.1/requirements.md` → FR2. Gate 1 answers for every scenario ID: the
 comment "Gate 1 — scenario answers" on #236. Early blind audit: `audits/2026-10-14-fr2-early-blind-audit.md`.
 
-**Status:** Gate 2 draft. The owner answered the decisions O1–O10 on 2026-10-15 and O11 on 2026-10-17; the spec and
-#236 carry them. Merging this doc is the owner's approval (CLAUDE.md, Gate 2).
+**Status:** approved (Gate 2): merged in #237 on 2026-10-17. The owner answered the decisions O1–O10 on 2026-10-15
+and O11 on 2026-10-17; the spec and #236 carry them. PR 2/7 fixed eight gaps a re-check found the same day (three
+audit findings answered only halfway, five new).
 
 ## FR2 in plain words
 
@@ -57,7 +58,7 @@ Things a user will **not** get: no Pause button, and a closed app never resumes 
 |---|---|---|
 | O1 | Today a loop's land is sent only at Stop, from a path in memory, so a closed app loses every completed loop | **Keep completed loops.** Each loop is sent the moment the phone sees it close (after the 3-minute vehicle check); only the open stretch since the last loop can be lost. A loop that couldn't be sent is tried again at the end of the walk; keeping it across an app close is FR3's |
 | O2 | What happens to a walk that turns into a vehicle ride | **A vehicle is never part of a walk.** "Looks like you're in a vehicle. This walk ends in 10 s", a countdown, no cancel; then the walk ends with the vehicle stretch taken out. The owner first asked to delete the whole walk; that was dropped because it would delete honestly walked land (#35, #43), false alarms (a train, a GPS glitch) would wipe real walks, and the server already rejects every driving point |
-| O3 | How long "still" lasts, and how to tell still from jitter and from laps | **10 minutes**, warning at 5 minutes, a 60-second countdown in the last minute, no cancel. Still = within 75 m of the average of the fixes and under 250 m of recorded path, so jitter doesn't reset it and laps don't count as still. The 250 m is checked on a real indoor trace before PR 2/6 merges (400 m if jitter adds more; a slow lap at 3 km/h adds 500 m in 10 minutes). The startup check is "still radius at least 1.5× the accuracy threshold" |
+| O3 | How long "still" lasts, and how to tell still from jitter and from laps | **10 minutes**, warning at 5 minutes, a 60-second countdown in the last minute, no cancel. Still = within 75 m of the average of the fixes and under 250 m of recorded path, so jitter doesn't reset it and laps don't count as still. The 250 m is checked on a real indoor trace before PR 3/7 merges (400 m if jitter adds more; a slow lap at 3 km/h adds 500 m in 10 minutes). The startup check is "still radius at least 1.5× the accuracy threshold" |
 | O4 | A failed account deletion wipes the walk | **Fix in FR2:** points and diary are cleared only after the server confirms the deletion |
 | O5 | Notifications are already asked at login | **Ask at the first walk start only if never asked** |
 | O6 | Precise location turned off mid-walk | **Ends the walk at once**, saved, with that reason |
@@ -86,8 +87,8 @@ screen closed or the app in the background, so it can't use the screen's code (a
   1. stops GPS and the walk's timers (sync, first, so nothing more is recorded);
   2. writes the diary's end line with the reason;
   3. trims the path and distance back to `endAt` when given (auto-end). To make this possible the controller keeps
-     each recorded path point's GPS time next to the path, and the walk's start time is the first accepted fix's GPS
-     time, so start and end come from the same clock (audit W21, P25);
+     each recorded path point's GPS time next to the path, and the walk's start time is the first fix's GPS time, so
+     start and end come from the same clock (audit W21, P25);
   4. sends any loop still waiting for the vehicle check if no vehicle stretch covers it, resends loops whose claim
      failed (see "Each loop is sent when it closes"), then sends the whole kept path once as today's end-of-walk
      claim. That last claim is a safety net: the server finds every loop in it, skips hexes already owned and folds it
@@ -110,6 +111,10 @@ screen closed or the app in the background, so it can't use the screen's code (a
 - **Each loop is sent when it closes (O1).** A new `LoopDetector.findLoops(path, rules)` returns each closed loop's
   point range, keeping only loops at least `minLoopAreaSquareMeters` in area (O11), the server's own minimum (today's
   `countLoops` only counts them, over-counts out-and-back paths and only triggers the server preview — audit W11).
+  It copies the server's loop maths: the loop finding and duplicate removal in `HexGridService.cs`, the area of
+  `GeoService.CalculatePolygonArea` and `GameConstants.MetersPerDegreeLat`. A shared file of test paths
+  (`tests/contracts/loop_paths.json`, each with its expected loop count) must give the same count from `findLoops`
+  and from the server's `ComputeCapturedTerritory(path).LoopCount`, so the two can't drift (GAME-13, API-2).
   When it finds a new loop, the controller sends that loop's path as a loop claim with the walk's `WalkSessionId`:
   - **Not while a vehicle could be involved.** A loop claim carries no times, so the server can't speed-check it.
     A loop is sent only once `VehicleSeconds` have passed after its last point with no vehicle verdict, and never if
@@ -125,7 +130,7 @@ screen closed or the app in the background, so it can't use the screen's code (a
     resent, and gets a diary line `loopRejected` (NET-10). Every other failure — no network, a timeout, any other 4xx
     (401, 403, 404, 408, 409, 413, 429) or a 5xx — is kept in memory and resent by `endWalk`; keeping it across an
     app close is FR3's.
-  - **Until PR 5/6 merges** (the vehicle check), loops are sent only at Stop, as today, so master never sends a loop
+  - **Until PR 6/7 merges** (the vehicle check), loops are sent only at Stop, as today, so master never sends a loop
     the vehicle check hasn't seen.
   - The Stop dialog's "loop isn't closed" warning uses the same `findLoops`.
 - The short-walk notice ("Walk a bit more") stays, but the walk still gets its diary lines (audit W10).
@@ -133,13 +138,19 @@ screen closed or the app in the background, so it can't use the screen's code (a
   to "not walking" with the diary line "start failed: <reason>" (audit W2, W3, W4). Order: diary `startTapped` →
   permission (and the location pre-prompt) → notification ask (O5) → reachability check → first fix → FR1's `ready` +
   `refreshWithin(walkStartRulesWait)` + pin. Every dialog comes before the pin, as FR1's D1 requires, so a refresh
-  during a dialog isn't missed. The walk's start time is the GPS time of the first fix that passes the accuracy
-  threshold (until FR3 filters the very first fix, DEV-9), and the path starts at that same fix, so no path point
-  comes before the start time or lacks a time. The walk id and the diary's "start tapped" line are written first,
-  before the reachability check, permission and first fix.
+  during a dialog isn't missed. The walk's start time is the GPS time of the first fix (today's
+  `getCurrentPosition`, which is checked against the accuracy threshold only from FR3, DEV-9), and the path starts at
+  that same fix, so no path point comes before the start time or lacks a time. The walk id and the diary's "start
+  tapped" line are written first, before the reachability check, permission and first fix.
 - One `StepClaimQueue` per account, owned by the controller across walks, so a stopped walk's last batch can't
-  overwrite the next walk's points (audit W22). The queue's other problems — a failed rewrite sending points twice and
-  leaving a `.tmp` file (audit W25), and lines with no format version (audit W26) — are FR3's, which rebuilds sending.
+  overwrite the next walk's points (audit W22). The queue's other problems — a failed point save (phone full) that
+  nothing catches (audit W24, `journey_controller.dart:292`), a failed rewrite sending points twice and leaving a
+  `.tmp` file (audit W25), and lines with no format version (audit W26) — are FR3's, which rebuilds sending.
+- **Walk time on screen (audit W30).** The walk's start and end times are GPS times (step 3 above), but the time
+  shown during the walk comes from a `Stopwatch` started at the first fix, never from the phone clock minus a GPS
+  time, so a phone whose clock is wrong can't show a wrong walk time. Today's 1-second timer in the controller
+  (`journey_controller.dart:589-597`) goes: the journey screen redraws the time once a second only while it is
+  showing, so nothing ticks for it in the background (DEV-8).
 - The app version comes from the new package `package_info_plus` (audit W1).
 
 ### The walk diary (#44)
@@ -191,11 +202,13 @@ screen closed or the app in the background, so it can't use the screen's code (a
 
 - At launch (and at login), once the signed-in account is known, the diary is read. Both can fire on a cold start,
   so the check runs once at a time through the diary's lock, and a walk that already has its `ended` line is
-  skipped. A walk with `startTapped` or `started` and no `ended` line was closed mid-walk.
+  skipped. So is the walk this app run started (the controller's current walk id), so a check that runs late, after
+  the user has tapped Start, can't end the running walk. A walk with `startTapped` or `started` and no `ended` line
+  was closed mid-walk.
 - `endWalk(appClosed)` writes `ended` with `endAt` = the start of the still stretch if the last `alive` line has a
   `stillSince`, else its `lastFixAt`; with no `alive` line, the `started` line's time, or the `startTapped` line's
   `at` if the walk never started (an empty walk the diary still records — audit P27).
-- Until PR 6/6 adds `checkAccess()`, the reason is always `appClosed`.
+- Until PR 7/7 adds `checkAccess()`, the reason is always `appClosed`.
 - If location permission is now off, the reason is `locationRemoved` instead, and if only approximate location is
   allowed, `preciseLocationOff`: Android stops the app when either is changed, so this is the only place those cases
   can be seen (audit P2).
@@ -234,11 +247,12 @@ GPS time (`Position.timestamp`), never `pos.speed` (it reads 0 when missing — 
   GPS or a lost precise location isn't reported as "you stopped moving" (audit
   P23). A start whose first fix never comes fails as `startFailed noFix` (today's 15 s limit).
 - **Clock:** the counts use a monotonic `Stopwatch` while the app runs, and one one-shot `Timer` set to the next
-  deadline. The only periodic timer is a 1-second ticker for a countdown on screen; it runs only during a countdown
-  and is cancelled by `endWalk` or by movement (DEV-8). After the phone suspends the app (possible on iOS when no fix
-  arrives — audit P14, UNVERIFIED), the check runs again on the next fix, on resume and at launch; because `endAt`
-  comes from fix times, a late check still ends the walk at the right time; the warnings were scheduled ahead as
-  notifications.
+  deadline. Auto-end's only periodic timer is a 1-second ticker for a countdown on screen; it runs only during a
+  countdown and is cancelled by `endWalk` or by movement (DEV-8). After the phone suspends the app (possible on iOS
+  when no fix arrives — audit P14, UNVERIFIED), the check runs again on the next fix, on resume and at launch;
+  because `endAt` comes from fix times, a late check still ends the walk at the right time; the warnings were
+  scheduled ahead as notifications. Whether a `Stopwatch` keeps counting while the phone sleeps is UNVERIFIED too
+  (audit P24); it is checked on a real iPhone before PR 6/7 merges.
 - **Warnings while the app is suspended.** Each warning and the "walk saved" message are also scheduled ahead of time
   as local notifications (`flutter_local_notifications` scheduled delivery), moved back whenever the user moves, and
   cancelled when the walk ends. So a suspended iPhone still shows them on time (audit P14), the same approach FR4's
@@ -255,10 +269,20 @@ GPS time (`Position.timestamp`), never `pos.speed` (it reads 0 when missing — 
   "Open settings" button the user taps; `restricted` says location is blocked on this phone (audit P8).
 - Opening the walk map only reads the current access and the last known position; it asks for permission only when
   the user taps "Start walk".
+- **The first location prompt (audit P7).** Today a new user meets the system location prompt during sign-up, on
+  the set-home screen (`set_home_screen.dart:40-43`), with no explanation, and on iPhone a first "Don't allow" can't
+  be asked again. The short explain screen (O8) comes before every system location prompt the app triggers, the
+  set-home one included, until FR13 removes the home screen (#23).
 - During a walk:
-  - **stream error:** run `checkAccess()`. Location off → `endWalk(locationRemoved)`; GPS off →
-    `endWalk(gpsOff)` (O7); precise off → `endWalk(preciseLocationOff)` (O6); still granted → diary `gpsError` and
-    carry on (iOS sends one generic error for all of these — audit P3);
+  - **stream error:** a "location services disabled" error (Android's error when GPS is turned off — audit P1) ends
+    the walk at once with `endWalk(gpsOff)`, even if GPS is already back on (O7: even briefly). Any other error runs
+    `checkAccess()`. Location off → `endWalk(locationRemoved)`; GPS off → `endWalk(gpsOff)` (O7); precise off →
+    `endWalk(preciseLocationOff)` (O6); still granted → diary `gpsError` and carry on (iOS sends one generic error
+    for all of these — audit P3);
+  - **first inaccurate fix:** the first fix that fails the accuracy threshold after an accepted one also runs
+    `checkAccess()` once (again only after another accepted fix). So precise location turned off while the app is
+    in the background ends the walk at once as `preciseLocationOff`, not 10 minutes later as `noGps` (O6). Whether
+    iOS sends a stream error in that case is UNVERIFIED, so this doesn't rely on one;
   - **stream ends** (`onDone`): treated like an error;
   - **back to the app** (`AppLifecycleListener.onResume`): `checkAccess()`, same outcomes (LIFE-6).
 - `requestPermission` no longer logs that "Always" is needed (audit W7).
@@ -287,7 +311,8 @@ GPS time (`Position.timestamp`), never `pos.speed` (it reads 0 when missing — 
   Online it also sends waiting loops and drains once, within a short limit (5 s) so a stuck send never holds sign-out
   open. Then it tears down as today, except that the account's step-claim queue file is kept (O9); the diary file is
   kept. Failed loop claims still in memory are lost until FR3 keeps them.
-- **Forced sign-out:** no token, so only the diary line (`signedOutForced`); the teardown follows.
+- **Forced sign-out:** `endWalk(signedOutForced)` stops GPS and writes the diary line but sends nothing (there is no
+  token); the teardown follows and, as at sign-out, keeps the account's queue file and diary (O9).
 - **Account deletion:** `endWalk(accountDeleted)` stops the walk (GPS and drain) first, as today; only after the
   server confirms the deletion, the queue is cleared and the diary file deleted (O4). A failed deletion keeps both;
   the diary's `ended accountDeleted` line then names a deletion that failed, the user sees "Your walk was saved.
@@ -329,7 +354,8 @@ unit in the name, never `TimeSpan` (audit S2). `VehicleSeconds` and `StillSecond
   `AntiCheat:MaxSpeedMetersPerSecond` and above `AntiCheat:MaxAverageSpeedMetersPerSecond` (same unit, no
   conversion); `StillRadiusMeters` at least 1.5× `Gps:AccuracyThresholdMeters` — at shipped values exactly 1.5×, so
   the accuracy threshold and the still radius are now tuned together; `StillMaxWalkedMeters` above
-  `StillRadiusMeters`.
+  `StillRadiusMeters`. So a test that puts the still radius at its upper limit (300) also raises
+  `StillMaxWalkedMeters` above 300, since it ships at 250.
 - This makes the anti-cheat speeds' own cap (15 m/s) unreachable while the vehicle speed is 9.73: the FR1 test
   `Value_at_its_upper_limit_is_allowed` with `MaxAverageSpeedMetersPerSecond, "15"` (`GameRulesTests.cs:125`) is
   changed to raise the vehicle speed with it. The two settings are now tuned together (audit S8, S9).
@@ -370,30 +396,30 @@ PR (`myloop-closing-an-fr`, keeping records true). Each FR1 test keeps its "red 
 
 | Test | Why | New form | PR |
 |---|---|---|---|
-| `GameRulesTests.Value_at_its_upper_limit_is_allowed` (`MaxAverageSpeedMetersPerSecond, "15"`) | the vehicle speed must stay above it | raises the vehicle speed with it | 2/6 |
-| `GameRulesTests.Value_at_its_upper_limit_is_allowed` (`AccuracyThresholdMeters, "200"`) | the still radius must be at least 1.5× it | raises the still radius with it | 2/6 |
-| `ClientRulesTests.Client_rules_contain_no_anti_cheat_numbers` | it fails on any name with "Speed" | allows exactly `AutoEndVehicleSpeedMetersPerSecond` | 2/6 |
-| `ClientRulesTests` same-values test, `ContractTests`, `RulesHttpTests` | they list the fields by hand | cover the six new fields | 2/6 |
-| `RulesModuleBoundaryTests` | a new public `AutoEndRules` class | added to the allowed public types | 2/6 |
-| phone `contract_test` ("knows exactly the fields"), `game_rules_test` (built-in = `appsettings.json`, "no anti-cheat numbers") | the sample and `Version` change | the Dart model, built-in copy (version 2) and these tests move in the same PR as the server, so it merges green | 2/6 |
-| `rules_consistency_test` walk tests (the walk keeps its rules, LIFE-1, LIFE-11, NET-3, LEG-8's exact 3 s D1, the permission dialog) | start now needs a signed-in user, reads the diary, writes `startTapped`, asks for notifications; `requestPermission` and `stopJourney` are replaced | a signed-in user with a fake diary and notifier; the 3 s limit still written out | 4/6, 6/6 |
+| `GameRulesTests.Value_at_its_upper_limit_is_allowed` (`MaxAverageSpeedMetersPerSecond, "15"`) | the vehicle speed must stay above it | raises the vehicle speed with it | 3/7 |
+| `GameRulesTests.Value_at_its_upper_limit_is_allowed` (`AccuracyThresholdMeters, "200"`) | the still radius must be at least 1.5× it, and the walked cap above the still radius | raises the still radius to 300 and `StillMaxWalkedMeters` above 300 with it | 3/7 |
+| `ClientRulesTests.Client_rules_contain_no_anti_cheat_numbers` | it fails on any name with "Speed" | allows exactly `AutoEndVehicleSpeedMetersPerSecond` | 3/7 |
+| `ClientRulesTests` same-values test, `ContractTests`, `RulesHttpTests` | they list the fields by hand | cover the six new fields | 3/7 |
+| `RulesModuleBoundaryTests` | a new public `AutoEndRules` class | added to the allowed public types | 3/7 |
+| phone `contract_test` ("knows exactly the fields"), `game_rules_test` (built-in = `appsettings.json`, "no anti-cheat numbers") | the sample and `Version` change | the Dart model, built-in copy (version 2) and these tests move in the same PR as the server, so it merges green | 3/7 |
+| `rules_consistency_test` walk tests (the walk keeps its rules, LIFE-1, LIFE-11, NET-3, LEG-8's exact 3 s D1, the permission dialog) | start now needs a signed-in user, reads the diary, writes `startTapped`, asks for notifications; `requestPermission` and `stopJourney` are replaced | a signed-in user with a fake diary and notifier; the 3 s limit still written out | 5/7, 7/7 |
 
 **FR1 record lines that change** (`records/fr1-game-rules.md`)
 - "What shapes the app": Settings (`AutoEnd` group), Server module (public types), Startup check (lower limits and
-  the two combination checks), API (eleven phone fields), Phone state (refresh "after a walk" now comes from `endWalk`),
-  Walks (start also waits for the diary read and the notification ask, all before the pin), Saved copy (O10 upgrade,
-  tag dropped) — PRs 2/6, 3/6, 4/6.
+  the two combination checks), API (eleven phone fields), Saved copy (O10 upgrade, tag dropped) — PR 3/7; Phone
+  state (refresh "after a walk" now comes from `endWalk`), Walks (start also waits for the diary read and the
+  notification ask, all before the pin) — PR 5/7.
 - "Decisions that must stay true": the minimum loop area is now sent to the phone (O11; FR1 had kept it server-only
-  because the phone didn't use it); "every phone field is required" gains the value floors (audit S6); "keeps the
-  last rules the server sent" gains O10's exception — PR 3/6.
-- "Left to later FRs → FR9": the fingerprint covers every `ClientRules` field — PR 2/6.
+  because the phone didn't use it) and "keeps the last rules the server sent" gains O10's exception — PR 3/7; "every
+  phone field is required" gains the value floors (audit S6) — PR 4/7.
+- "Left to later FRs → FR9": the fingerprint covers every `ClientRules` field — PR 3/7.
 - "Known limits": loop claims sent mid-walk are judged by the server's rules at that moment (D2 per loop); claim
-  sends inside `endWalk` and sign-out have their own limits — PR 4/6.
-- "How to change a rule": `AutoEnd`'s lower limits, its own upper limits, and the two combination checks — PR 2/6.
+  sends inside `endWalk` and sign-out have their own limits — PR 5/7.
+- "How to change a rule": `AutoEnd`'s lower limits, its own upper limits, and the two combination checks — PR 3/7.
 
 **FR1 design doc** (`design/fr1-game-rules.md`): its Settings, Contract and Scenarios sections get a one-line note
 "changed by FR2 — see `design/fr2-walk-session.md`" (five fields, 14 settings and version 1 become eleven fields, 19
-settings and version 2; its LIFE-4 and GAME-15 rows are superseded by FR2's) — PR 2/6.
+settings and version 2; its LIFE-4 and GAME-15 rows are superseded by FR2's) — PR 3/7.
 
 ## Riverpod state impact
 
@@ -453,6 +479,7 @@ removed (`state-lifecycle-consistency`).
 | Offline | Diary works; start blocked with today's message until FR3 (R1, R3) | offline start — red when no `startFailed offline` line |
 | Back online / reconnect, or a rules refresh fails (401, 5xx) | Accepted: FR1's tests cover the rules; the pinned auto-end numbers never change mid-walk (R4) | — |
 | Two closed-app checks at once (launch and login on a cold start) | One `ended` line (R1) | both triggers together — red when the walk gets two end lines |
+| A closed-app check that runs after the user tapped Start | The running walk is skipped (R1) | start a walk, then run the login check — red when the running walk gets an `ended` line |
 | Queue file at sign-out, account switch, relaunch | Kept for its account (O9); account B never reads or sends account A's file | sign-out then B signs in and walks — red when B's drain sends A's points or A's file is cleared |
 | Queue file at account deletion | Cleared only after the server confirms (O4) | failed delete — red when the queue is cleared |
 | Phone on a table outdoors (no fixes, no error) | Ends as `autoEndedStill`, not `noGps`, with the still warnings (R4) | silent stream for 10 min — red when the reason is `noGps` |
@@ -471,16 +498,16 @@ removed (`state-lifecycle-consistency`).
 | A bus or city car under 35 km/h never trips the vehicle rule; its points are rejected meanwhile | Accepted by the owner in Gate 1 (35 km/h, CHEAT-6); the still and no-GPS rules end it if it stops |
 | 10 minutes with no fixes (a long tunnel, an underground train, deep inside a building) ends a real walk as still | Accepted (O3): strict by owner decision; the neutral warnings come first ("We haven't seen you move…") |
 | A coffee stop over 10 minutes ends the walk | Accepted (O3): there is no Pause; the user starts a new walk |
-| iOS may suspend the app when no fix arrives, so the still check runs late | Mitigated: warnings and the "walk saved" message are scheduled ahead as notifications; the check re-runs on the next fix, resume and launch, and `endAt` comes from fix times. UNVERIFIED on a real phone — checked before PR 5/6 merges |
+| iOS may suspend the app when no fix arrives, so the still check runs late | Mitigated: warnings and the "walk saved" message are scheduled ahead as notifications; the check re-runs on the next fix, resume and launch, and `endAt` comes from fix times. UNVERIFIED on a real phone — checked before PR 6/7 merges |
 | Android stops the app when permission is revoked | Mitigated: the closed-app check reads the permission and gives the right reason |
 | Unsent points cleared at sign-out | Fixed by O9: the account's queue file is kept; it is sent with that account's next walk until FR3 sends it at sign-in |
 | The map polls hexes every 30 s during a walk, also in the background (audit W31) | Accepted until FR8, which rebuilds the live map; FR2 adds no polling |
 | A partial wake lock is held for the whole walk (audit P28) | Accepted: our own `enableWakeLock: true` (`location_service.dart:71`), kept on purpose for background tracking; FR2 doesn't change it |
-| Android 13+ hides the tracking notification when notifications are refused (audit P12) | Accepted: tracking still works; UNVERIFIED |
+| Android 13+ hides the tracking notification when notifications are refused (audit P12) | Accepted: tracking still works; UNVERIFIED — checked on a real Android 13+ phone before PR 6/7 merges |
 | A tuned anti-cheat limit can come within a hair of 35 km/h | Accepted: the owner chose "above" with no margin; the startup check stops anything at or past it |
 | `flutter_local_notifications` clashes with firebase_messaging on iOS | Checked on a real iPhone before the notifications PR merges |
 | Mock walks can't test permission loss, vehicle speed or no fixes | Tests fake GPS at the plugin's platform layer instead (LEG-3); the mock gets no FR2 features. In debug builds the mock's pause and speed buttons will now trigger auto-end — accepted for a dev tool |
-| The phone's loop check could cut a loop at different points than the server | Mitigated: the phone uses the server's minimum loop area (O11), and the end-of-walk claim still sends the whole path, so the server finds every loop; the cost is a rare rejected send |
+| The phone's loop check could cut a loop at different points than the server | Mitigated: the phone copies the server's loop maths and minimum loop area (O11), the shared loop paths (`tests/contracts/loop_paths.json`) fail when the two drift, and the end-of-walk claim still sends the whole path, so the server finds every loop; the cost is a rare rejected send |
 | A loop driven at 30–35 km/h is still claimed (a loop claim has no times, and the vehicle rule starts at 35) | Accepted until FR6, whose server judges loops only from stored, speed-checked points (FR6 spec) |
 | Distance XP counted twice for looped distance (each loop claim, then the whole-path claim) | Accepted: XP is old beta code no 0.1 FR owns yet, left until an FR rebuilds or removes it; hexes are never counted twice (the server skips owned hexes) |
 | A claim or drain stuck in the sign-in token step (FR1 known limit) | Mitigated: `walkEndSendLimit` (30 s) and a 5 s limit at sign-out; every request gets a bounded wait in FR3 |
@@ -489,23 +516,25 @@ removed (`state-lifecycle-consistency`).
 
 | PR | What | Branch |
 |---|---|---|
-| 1/6 | Spec (Gate 1 and Gate 2 decisions), this design doc and the early blind audit report — docs only, about 900 lines, so it carries a `Size exception:` line the owner agrees to (the spec, the design and its audit are one approval) | `v0.1/fr2-design-doc` |
-| 2/6 | Server `AutoEnd` settings and checks, `ClientRules`, the `appsettings.json` comment, and in the same PR the phone's `GameRules` model, built-in copy (version 2), contract sample and their tests, so it merges green; the FR1 tests, record lines and design-doc notes listed above. Before it merges: the indoor trace for `StillMaxWalkedMeters` (250 m, or 400 m), saved in `audits/` | `v0.1/fr2-server-settings` |
-| 3/6 | Phone: value floors and the saved-copy upgrade (O10, tag dropped); walk diary store, `package_info_plus`, debug viewer with its testable debug flag; register row for the diary store | `v0.1/fr2-diary` |
-| 4/6 | Phone: one start/end owner (start guard, one queue per account, `startTapped` first, `alive` lines), `endWalk` with the whole-path claim, post-walk refresh, result and send limits, `findLoops`, Stop dialog, closed-app check (reason `appClosed` until 6/6); loops still sent only at Stop | `v0.1/fr2-walk-end` |
-| 5/6 | Phone: auto-end detector, warnings and scheduled notifications (`flutter_local_notifications`), and loops sent as they close (needs the vehicle check) | `v0.1/fr2-auto-end` |
-| 6/6 | Phone: `checkAccess()` and the permission flow, pre-prompt, `accountDeleted` and the O4/O9 teardown changes (register rows for `user_session_teardown.dart` and `journey_controller.dart`, by method name), Info.plist, privacy manifest, compliance docs | `v0.1/fr2-permissions` |
+| 1/7 | Spec (Gate 1 and Gate 2 decisions), this design doc and the early blind audit report — docs only, about 900 lines, so it carries a `Size exception:` line the owner agrees to (the spec, the design and its audit are one approval). Merged as #237 | `v0.1/fr2-design-doc` |
+| 2/7 | Docs only: the eight gaps a re-check found on 2026-10-17, fixed in this doc, the spec's FR3 list and `docs/status.md` | `claude/funny-sagan-uwnkgz` (the session could push only there) |
+| 3/7 | Server `AutoEnd` settings and checks, `ClientRules`, the `appsettings.json` comment, and in the same PR the phone's `GameRules` model, built-in copy (version 2), contract sample and their tests, so it merges green; the saved-copy upgrade (O10, tag dropped), because the new required fields would otherwise make an updated app throw its saved server rules away; the FR1 tests, record lines and design-doc notes listed above. Before it merges: the indoor trace for `StillMaxWalkedMeters` (250 m, or 400 m), saved in `audits/` | `v0.1/fr2-server-settings` |
+| 4/7 | Phone: value floors; walk diary store, `package_info_plus`, debug viewer with its testable debug flag; register row for the diary store | `v0.1/fr2-diary` |
+| 5/7 | Phone: one start/end owner (start guard, one queue per account, `startTapped` first, `alive` lines, walk time from a stopwatch), `endWalk` with the whole-path claim, post-walk refresh, result and send limits, `findLoops` with the shared loop paths (`tests/contracts/loop_paths.json`), Stop dialog, closed-app check (reason `appClosed` until 7/7); loops still sent only at Stop | `v0.1/fr2-walk-end` |
+| 6/7 | Phone: auto-end detector, warnings and scheduled notifications (`flutter_local_notifications`), and loops sent as they close (needs the vehicle check) | `v0.1/fr2-auto-end` |
+| 7/7 | Phone: `checkAccess()` and the permission flow (the GPS-off error and the first inaccurate fix included), pre-prompt (before the set-home prompt too), `accountDeleted` and the O4/O9 teardown changes (register rows for `user_session_teardown.dart` and `journey_controller.dart`, by method name), Info.plist, privacy manifest, compliance docs | `v0.1/fr2-permissions` |
 
 Every merged PR leaves master working: features that need a later PR stay off until it lands, as written in each
-row. 5/6 and 6/6 are the likely ones to pass ~15 files / ~400 lines; if so they split (renumbering every PR, as
+row. 6/7 and 7/7 are the likely ones to pass ~15 files / ~400 lines; if so they split (renumbering every PR, as
 `myloop-tasks-and-prs` says) rather than carry a size exception. Like FR1, the spec changes ride with the design doc:
 they were written on the same branch, and on an FR branch "PR rules" lets a PR merge before its design doc only when
 that PR adds the design doc.
 
 **Checks outside the code, with where their result is kept:** the indoor trace for the walked cap (`audits/`, before
-2/6 merges); on a real iPhone, a suspended app's scheduled warnings, `flutter_local_notifications` next to
-firebase_messaging, and the hidden Android 13 tracking notification (in the PR description of 5/6, and the FR2
-record's Known limits at close-out).
+3/7 merges). Before 6/7 merges, on a real iPhone: a suspended app's scheduled warnings, `flutter_local_notifications`
+next to firebase_messaging, and whether a `Stopwatch` keeps counting while the phone sleeps (audit P24); on a real
+Android 13+ phone: the hidden tracking notification (audit P12). Results go in the PR description of 6/7 and the FR2
+record's Known limits at close-out. `docs/status.md` lists them under "Waiting on the owner".
 
 ## Early blind audit
 
@@ -520,7 +549,7 @@ filled in by the PR that adds it.
 
 | ID | Status | Evidence |
 |---|---|---|
-| LIFE-1 | open | #236: start waits until the diary is read, so a closed walk is found first |
+| LIFE-1 | open | #236: start waits until the diary is read, so a closed walk is found first; a check that runs after Start skips the running walk |
 | LIFE-2 | open | #236: no diary file means no open walk; start works as today |
 | LIFE-3 | open | #236: a half-written diary line is skipped and the next write starts on a new line (audit W24) |
 | LIFE-4 | open | #236: a closed app ends the walk at the still-stretch start or last `alive` fix (#45); completed loops were already sent; sending the killed walk's unsent points at launch is FR3's |
@@ -546,7 +575,7 @@ filled in by the PR that adds it.
 | AUTH-2 | open | #236: login reads only that account's diary file |
 | AUTH-3 | open | #236: diary and queue files are named by user id; a new account starts with none; a deleted account's files are deleted after the server confirms (O4, `accountDeleted`) |
 | AUTH-4 | open | FR12: guests don't exist yet |
-| AUTH-5 | open | #236: a forced sign-out writes `signedOutForced` and then tears down as today |
+| AUTH-5 | open | #236: a forced sign-out stops GPS, writes `signedOutForced` and then tears down as today, except that the account's queue file and diary are kept (O9) |
 | AUTH-6 | n/a | FR2 doesn't touch sign-in |
 | PRIV-1 | n/a | no new endpoint |
 | PRIV-2 | n/a | no hub change |
@@ -555,14 +584,14 @@ filled in by the PR that adds it.
 | PRIV-5 | open | #236: the walk is stopped (GPS and drain) before the delete request; the diary writer's lock is held while the file is deleted |
 | PRIV-6 | n/a | nothing about other players |
 | PRIV-7 | n/a | the diary only holds the user's own events |
-| DEV-1 | open | #236: `checkAccess()` never opens Settings; the screen explains and offers an "Open settings" button; restricted gets its own message (audit W6, P7–P9) |
-| DEV-2 | open | #236: stream error, stream end and resume run `checkAccess()`; location removed or GPS off ends the walk; Android's stop-on-revoke is caught by the closed-app check (audit P1–P4, P2) |
-| DEV-3 | open | #236: precise location turned off mid-walk ends the walk (O6); asking for precise location before a walk is FR3's |
+| DEV-1 | open | #236: `checkAccess()` never opens Settings; the screen explains and offers an "Open settings" button; restricted gets its own message; the explain screen comes before every system location prompt, the set-home one included (audit W6, P7–P9) |
+| DEV-2 | open | #236: stream error, stream end and resume run `checkAccess()`; Android's GPS-off error ends the walk at once, even if GPS is back on; location removed or GPS off ends the walk; Android's stop-on-revoke is caught by the closed-app check (audit P1–P4, P2) |
+| DEV-3 | open | #236: precise location turned off mid-walk ends the walk (O6), found on the first inaccurate fix too; asking for precise location before a walk is FR3's |
 | DEV-4 | open | #236: notifications asked at the first walk start if never asked (O5); refusing never blocks; messages then show in the app only |
-| DEV-5 | open | #236: a failed diary write keeps the line in memory and retries; the walk carries on; shown in the debug viewer |
-| DEV-6 | open | #236: auto-end uses GPS fix times and a monotonic clock; diary times are UTC; the queue's phone-clock `capturedAt` stays FR3's (audit W21) |
+| DEV-5 | open | #236: a failed diary write keeps the line in memory and retries; the walk carries on; shown in the debug viewer; a failed queue save is FR3's (audit W24) |
+| DEV-6 | open | #236: auto-end uses GPS fix times and a monotonic clock; the walk time on screen comes from a stopwatch, not the phone clock (audit W30); diary times are UTC; the queue's phone-clock `capturedAt` stays FR3's (audit W21) |
 | DEV-7 | open | #236: an OS kill is "app closed" (#45); a late auto-end check still ends at the fix time; the up-front warning is FR4's |
-| DEV-8 | open | #236: auto-end adds one one-shot timer; the only periodic one is a 1 s ticker during a countdown; the `alive` diary line is at most once a minute |
+| DEV-8 | open | #236: auto-end adds one one-shot timer and a 1 s ticker only during a countdown; the walk time redraws once a second only while the journey screen shows (today's background timer goes, audit W30); the `alive` diary line is at most once a minute |
 | DEV-9 | open | #236: auto-end uses only fixes that pass the accuracy threshold; the first-fix filter is FR3's |
 | DEV-10 | open | #236: vehicle needs the recorded path's average speed over 3 minutes, so one jump or burst can't trigger it and a jittering still phone can't either; `pos.speed` is never used |
 | IN-1 | open | #236: every `AutoEnd` setting (five) is rejected at startup when NaN or Infinity |
@@ -595,7 +624,7 @@ filled in by the PR that adds it.
 | GAME-10 | open | #236: auto-end never deletes points; the server still judges them |
 | GAME-11 | open | #236: Stop warns from the phone's own loop check, which uses the server's minimum loop area (O11), when the last stretch isn't closed; that stretch is never captured |
 | GAME-12 | n/a | FR2 doesn't change exploration (FR7) |
-| GAME-13 | n/a | FR2 doesn't change the preview (FR8) |
+| GAME-13 | open | #236: the phone's `findLoops` copies the server's loop and area maths; the shared loop paths (`tests/contracts/loop_paths.json`) must give the same loop count on both sides; the live preview stays FR8's |
 | GAME-14 | open | #236: each loop is sent when it closes; `endWalk` resends failed ones and sends the whole path once as a safety net, then drains, within a time limit; keeping a failed claim across an app close is FR3's |
 | GAME-15 | open | #236: no Pause (#32 dropped); vehicle (10 s warning) and still or no GPS (10 minutes, warnings at 5 minutes and in the last minute) end the walk, end time moved back, user told |
 | GAME-16 | n/a | FR2 doesn't change exploration (FR7) |
@@ -618,6 +647,6 @@ filled in by the PR that adds it.
 | LEG-11 | n/a | no secrets |
 | LEG-12 | open | #236: no "Pause" text in the app outside the debug mock walk (searched `mobile/lib`) |
 | API-1 | open | #236: the six new fields, each with the unit in the name, double/int as in the contract table, tested against `tests/contracts/client_rules.json` |
-| API-2 | open | #236: the server is the one source; the built-in copy is compared with `appsettings.json` field by field |
+| API-2 | open | #236: the server is the one source; the built-in copy is compared with `appsettings.json` field by field; the loop maths copied into `findLoops` is checked by the shared loop paths (GAME-13) |
 | API-3 | open | #236: `RulesHttpTests` checks the six new fields over real HTTP |
 | STORE-1 | open | #236: `app-store-compliance` on the notifications and permissions PRs; privacy manifest and purpose strings (O8) |
