@@ -89,6 +89,14 @@ the story of why, so nothing there has to be read to follow the rules.
 - One point and one question per turn. Wait for the answer before moving on.
 - Discuss a requirement fully and get the user's agreement **before** any work on it starts.
 
+**Explain every change from the user's side (owner rule, 2026-10-17)**
+- Every requirement, fix or change you describe to the owner (in chat, a Bug Report, a design doc's plain-words
+  part, and every PR description) gets, for each item, three short lines written as if to an end user of the app:
+  - **What you'll notice:** what changes for the person using the app.
+  - **The problem today:** what goes wrong for them now, or what they can't do.
+  - **The fix:** how we solve it, in everyday words.
+- No code names, file paths or jargon in those lines. Technical detail comes after them, separately.
+
 **Spec-driven order**
 - Requirements live in `docs/versions/<release>/<version>/requirements.md` (e.g. `docs/versions/1/0.1/`).
 - Requirements are numbered FR1, FR2, … in build order. Work happens strictly in that order.

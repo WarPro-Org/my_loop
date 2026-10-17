@@ -15,6 +15,8 @@ Moved word for word from CLAUDE.md. Every review report ends with `REVIEWED <com
 - Only real problems; no praise, no padding. If nothing is wrong, say so in one line.
 - Reading the diff is not enough. The reviewer also:
   - checks every commit in the PR ends with a `Task: #N` line, and reports any that doesn't;
+  - checks the PR description's "For the user" section (CLAUDE.md "Explain every change from the user's side")
+    gives every change its three plain lines, with no code names or jargon, and reports a missing or technical one;
   - checks the PR against every `docs/scenarios.md` ID its area touches; any finding that no ID covers is reported
     as "new scenario" and gets an ID in the fix;
   - checks the PR's gate section against the changed files and every row of both gate tables, and reports a row
