@@ -14,7 +14,7 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
   diary #44, closed app ends the walk #45, sign-out #46; auto-end in a vehicle or after 10 minutes still, with
   warnings; each loop sent when it closes) and the approved design doc `design/fr2-walk-session.md` (owner decisions
   O1–O11, early blind audit `audits/2026-10-14-fr2-early-blind-audit.md`) merged with PR 1/7 (#237). PR 2/7 fixed
-  eight gaps a re-check of the design found.
+  the gaps a re-check of the design and its review found.
 - **Next:** FR2 PR 3/7 (server `AutoEnd` settings, the phone's rules model and the saved-copy upgrade O10) on
   `v0.1/fr2-server-settings`; the server deploys before the app. Load `myloop-tasks-and-prs` first.
 
@@ -30,6 +30,8 @@ None.
 - Before FR2 PR 6/7 merges, on a real iPhone: warnings while the app is suspended, the notification package next to
   Firebase messaging, and whether a stopwatch keeps counting while the phone sleeps; on a real Android 13+ phone:
   whether refusing notifications hides the tracking notification.
+- Before FR2 PR 7/7 merges, on a real iPhone: turning off precise location with the app in the background ends the
+  walk with that reason.
 - Make "PR rules" a required status check on `master`, so a red check blocks merging (#230–#232 merged red).
 - Pick squash or rebase merges and make the repo setting and the `myloop-tasks-and-prs` skill agree (#229–#234
   were rebase-merged; the skill says squash only).
