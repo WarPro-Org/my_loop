@@ -101,7 +101,9 @@ Depends on: nothing.
   - Notification permission is asked at the first walk start, unless it was already asked (today's login asks it for
     push). If the user says no, the walk still starts; warnings and walk-ended messages then show only inside the app.
   - A short screen explains why before the first system location prompt ("MyLoop uses your location only while you
-    walk").
+    walk"). So that this is the first prompt, the sign-up screen that sets a home area no longer asks for location:
+    it uses location only if already allowed and otherwise offers its "Skip for now" (home location is removed in
+    FR13, #23).
   - If location is denied for good, the app explains how to fix it. It never jumps to Settings on its own (scenario
     DEV-1; today `location_service.dart` does).
   - The app checks the permission again when it comes back to the front. GPS turned off mid-walk, even briefly, and
@@ -204,7 +206,8 @@ Depends on: FR1.
     only with the next walk; files of accounts that never sign in again get a rule (audit W28);
   - queued points carry the GPS fix's time, not the time the phone saved them (DEV-6, audit W21);
   - a failed rewrite of the queue can send points twice and leave a `.tmp` file (audit W25), its lines have no
-    format version (audit W26), and a failed save of a point (phone full) is not caught (audit W24);
+    format version (audit W26), a failed save of a point (phone full) is not caught, and a half-written line spoils
+    the next point (audit W24);
   - a 4xx reply still deletes a batch's points from the phone (NET-10, audit W34).
 
 Depends on: FR1, FR2.
