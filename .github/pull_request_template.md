@@ -1,6 +1,11 @@
 Task: #<!-- number -->
 Design doc (FR work only): <!-- docs/versions/<release>/<version>/design/frN-<name>.md -->
 
+## For the user
+
+<!-- CLAUDE.md "Explain every change from the user's side": for each change, three plain lines as if to an end
+user — What you'll notice / The problem today / The fix. No code names, file paths or jargon. -->
+
 ## What & why
 
 <!-- Explain the "why", not just the "what". -->
