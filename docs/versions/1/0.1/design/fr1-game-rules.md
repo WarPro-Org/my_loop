@@ -96,6 +96,8 @@ them for its GPS filter and live loop estimate. Anti-cheat numbers never leave t
 
 **Settings** — `GameRules` in `appsettings.json`:
 
+*Changed by FR2 — see `design/fr2-walk-session.md`: eleven phone fields, 19 settings (an `AutoEnd` group), version 2.*
+
 | Section | Setting | Value | Sent to phone? |
 |---|---|---|---|
 | — | Version | 1 | yes |
@@ -133,6 +135,8 @@ never builds one itself.
 No database, migration or SignalR change.
 
 ## Server ↔ phone contract
+
+*Changed by FR2 — see `design/fr2-walk-session.md`: eleven phone fields, 19 settings (an `AutoEnd` group), version 2.*
 
 | C# `ClientRules` | JSON | Dart `GameRules` | Type |
 |---|---|---|---|
@@ -296,6 +300,8 @@ Every ID in `docs/scenarios.md`, answered for FR1 (game rules). The 2026-09-29 b
 after FR1 was first closed, which reopened it. The list was frozen on 2026-10-07: rows about code a later FR
 rebuilds moved to that FR (#228, #229), and nothing found later is added to FR1. The server rows were fixed in
 #229 and the phone rows in the PR after it; no row is left `open` with FR1 as owner.
+
+*Changed by FR2 — see `design/fr2-walk-session.md`: its LIFE-4 and GAME-15 rows supersede the ones below.*
 
 | ID | Status | Evidence |
 |---|---|---|

@@ -20,6 +20,7 @@ public sealed class GameRules
     public LoopRules Loop { get; init; } = new();
     public GpsRules Gps { get; init; } = new();
     public AntiCheatRules AntiCheat { get; init; } = new();
+    public AutoEndRules AutoEnd { get; init; } = new();
 }
 
 /// <summary>When a path counts as a closed loop, and which loops are big enough to capture.</summary>
@@ -47,7 +48,6 @@ public sealed class GpsRules
     /// <summary>Points with a reported accuracy worse than this are ignored.</summary>
     public double AccuracyThresholdMeters { get; init; }
 }
-
 
 /// <summary>Speed and plausibility checks. Server-only: never sent to the app (#15).</summary>
 public sealed class AntiCheatRules
@@ -79,4 +79,29 @@ public sealed class AntiCheatRules
 
     /// <summary>Minimum bearing spread (degrees); spoofed straight-line paths fall below it.</summary>
     public double MinBearingStdDev { get; init; }
+}
+
+/// <summary>
+/// When the phone ends a forgotten walk on its own (FR2, #34). Sent to the app; its own group, never inside
+/// <see cref="AntiCheatRules"/>, because these numbers are walk rules, not cheat checks.
+/// </summary>
+public sealed class AutoEndRules
+{
+    /// <summary>Average speed over <see cref="VehicleSeconds"/> above which the walk counts as a vehicle ride.</summary>
+    public double VehicleSpeedMetersPerSecond { get; init; }
+
+    /// <summary>How long the phone must move faster than <see cref="VehicleSpeedMetersPerSecond"/> to end the walk.</summary>
+    public int VehicleSeconds { get; init; }
+
+    /// <summary>Every fix within this distance of the fixes' average counts as standing still.</summary>
+    public double StillRadiusMeters { get; init; }
+
+    /// <summary>
+    /// Recorded path below this length over <see cref="StillSeconds"/> still counts as still, so GPS jitter doesn't
+    /// reset the count while slow laps inside the radius don't count as still.
+    /// </summary>
+    public double StillMaxWalkedMeters { get; init; }
+
+    /// <summary>How long the phone must stay still to end the walk.</summary>
+    public int StillSeconds { get; init; }
 }

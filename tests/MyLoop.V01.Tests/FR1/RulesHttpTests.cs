@@ -67,6 +67,12 @@ public sealed class RulesHttpTests : IAsyncLifetime
             ["GameRules:Loop:MinPoints"] = "21",
             ["GameRules:Loop:SkipNeighbors"] = "7",
             ["GameRules:Gps:AccuracyThresholdMeters"] = "33.5",
+            ["GameRules:Loop:MinAreaSquareMeters"] = "4321.5",
+            ["GameRules:AutoEnd:VehicleSpeedMetersPerSecond"] = "9.5",
+            ["GameRules:AutoEnd:VehicleSeconds"] = "150",
+            ["GameRules:AutoEnd:StillRadiusMeters"] = "55.5",
+            ["GameRules:AutoEnd:StillSeconds"] = "420",
+            ["GameRules:AutoEnd:StillMaxWalkedMeters"] = "275.5",
         };
         return new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)

@@ -68,18 +68,37 @@ void main() {
       File('../api/MyLoop.Api/appsettings.json').readAsStringSync(),
     ) as Map<String, dynamic>;
     final server = settings['GameRules'] as Map<String, dynamic>;
-    final loop = server['Loop'] as Map<String, dynamic>;
+    Object? setting(String path) =>
+        path.split(':').fold<Object?>(server, (group, name) => (group as Map<String, dynamic>)[name]);
+    // Where each app field lives in appsettings.json. Every field of the built-in copy must be listed, so a field
+    // added later can't be missed.
+    const serverPaths = {
+      'version': 'Version',
+      'loopClosureDistanceMeters': 'Loop:ClosureDistanceMeters',
+      'minLoopPoints': 'Loop:MinPoints',
+      'loopSkipNeighbors': 'Loop:SkipNeighbors',
+      'gpsAccuracyThresholdMeters': 'Gps:AccuracyThresholdMeters',
+      'minLoopAreaSquareMeters': 'Loop:MinAreaSquareMeters',
+      'autoEndVehicleSpeedMetersPerSecond': 'AutoEnd:VehicleSpeedMetersPerSecond',
+      'autoEndVehicleSeconds': 'AutoEnd:VehicleSeconds',
+      'autoEndStillRadiusMeters': 'AutoEnd:StillRadiusMeters',
+      'autoEndStillSeconds': 'AutoEnd:StillSeconds',
+      'autoEndStillMaxWalkedMeters': 'AutoEnd:StillMaxWalkedMeters',
+    };
+    final builtIn = defaultGameRules.toJson();
 
-    expect(defaultGameRules.version, server['Version']);
-    expect(defaultGameRules.loopClosureDistanceMeters, loop['ClosureDistanceMeters']);
-    expect(defaultGameRules.minLoopPoints, loop['MinPoints']);
-    expect(defaultGameRules.loopSkipNeighbors, loop['SkipNeighbors']);
-    expect(defaultGameRules.gpsAccuracyThresholdMeters,
-        (server['Gps'] as Map)['AccuracyThresholdMeters']);
+    expect(builtIn.keys.toSet(), serverPaths.keys.toSet());
+    for (final MapEntry(key: field, value: path) in serverPaths.entries) {
+      expect(builtIn[field], setting(path), reason: '$field must match GameRules:$path');
+    }
   });
 
   test('the app never knows anti-cheat numbers', () {
-    final keys = defaultGameRules.toJson().keys.join(',').toLowerCase();
+    // The auto-end vehicle speed is a walk rule above both anti-cheat speeds (FR2), the only speed the app may know.
+    final keys = defaultGameRules.toJson().keys
+        .where((key) => key != 'autoEndVehicleSpeedMetersPerSecond')
+        .join(',')
+        .toLowerCase();
 
     expect(keys, isNot(contains('speed')));
     expect(keys, isNot(contains('violation')));

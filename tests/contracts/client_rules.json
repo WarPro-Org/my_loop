@@ -3,5 +3,11 @@
   "loopClosureDistanceMeters": 42.5,
   "minLoopPoints": 21,
   "loopSkipNeighbors": 7,
-  "gpsAccuracyThresholdMeters": 33.5
+  "gpsAccuracyThresholdMeters": 33.5,
+  "minLoopAreaSquareMeters": 4321.5,
+  "autoEndVehicleSpeedMetersPerSecond": 9.5,
+  "autoEndVehicleSeconds": 150,
+  "autoEndStillRadiusMeters": 55.5,
+  "autoEndStillSeconds": 420,
+  "autoEndStillMaxWalkedMeters": 275.5
 }

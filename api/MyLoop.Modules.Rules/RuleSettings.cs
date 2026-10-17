@@ -37,5 +37,11 @@ internal sealed class RuleSettings : IRuleSettings
         LoopClosureDistanceMeters: rules.Loop.ClosureDistanceMeters,
         MinLoopPoints: rules.Loop.MinPoints,
         LoopSkipNeighbors: rules.Loop.SkipNeighbors,
-        GpsAccuracyThresholdMeters: rules.Gps.AccuracyThresholdMeters);
+        GpsAccuracyThresholdMeters: rules.Gps.AccuracyThresholdMeters,
+        MinLoopAreaSquareMeters: rules.Loop.MinAreaSquareMeters,
+        AutoEndVehicleSpeedMetersPerSecond: rules.AutoEnd.VehicleSpeedMetersPerSecond,
+        AutoEndVehicleSeconds: rules.AutoEnd.VehicleSeconds,
+        AutoEndStillRadiusMeters: rules.AutoEnd.StillRadiusMeters,
+        AutoEndStillSeconds: rules.AutoEnd.StillSeconds,
+        AutoEndStillMaxWalkedMeters: rules.AutoEnd.StillMaxWalkedMeters);
 }

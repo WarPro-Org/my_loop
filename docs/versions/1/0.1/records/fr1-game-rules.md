@@ -20,14 +20,14 @@ the design doc's "FR1 story in one page".
 
 | Area | What exists | Where |
 |---|---|---|
-| Settings | `GameRules` section in `appsettings.json`: `Version`, `Loop` (4), `Gps` (1), `AntiCheat` (8) | `api/MyLoop.Api/appsettings.json` |
-| Server module | Rules module; others use only `IRuleSettings` (`Current`, `GetClientRules()`, `ClientRulesTag`). Internals are internal | `api/MyLoop.Modules.Rules/` |
-| Startup check | Server refuses to start if any setting is missing or invalid (presence check + value check, upper limits, no `NaN`/`Infinity`); the rules are built at startup, never first on a request | `GameRulesPresenceValidator`, `GameRulesValidator`, `RulesStartupCheck` |
+| Settings | `GameRules` section in `appsettings.json`: `Version`, `Loop` (4), `Gps` (1), `AntiCheat` (8), and FR2's `AutoEnd` (5); version 2 since FR2 | `api/MyLoop.Api/appsettings.json` |
+| Server module | Rules module; others use only `IRuleSettings` (`Current`, `GetClientRules()`, `ClientRulesTag`). Public types: the interface, `GameRules` and its groups (`AutoEndRules` added by FR2), `ClientRules`, `RulesModuleExtensions`. Internals are internal | `api/MyLoop.Modules.Rules/` |
+| Startup check | Server refuses to start if any setting is missing or invalid (presence check + value check, upper limits, no `NaN`/`Infinity`; FR2 adds lower limits for `AutoEnd` and two combination checks); a test fails if a number setting has no value check; the rules are built at startup, never first on a request | `GameRulesPresenceValidator`, `GameRulesValidator`, `RulesStartupCheck` |
 | Server readers | Loop detection and anti-cheat read every `Loop` and `AntiCheat` number from the rules. The GPS accuracy threshold is phone-only until FR3 | `HexGridService`, `PathValidationService` |
-| API | `GET /api/rules` (signed-in): the 5 phone fields only, never anti-cheat numbers (#15); ETag = `{Version}-{hash}`, 304 when unchanged. The phone rejects a reply with a missing or wrongly typed field instead of half-applying it | `RulesController`; contract `tests/contracts/client_rules.json` |
+| API | `GET /api/rules` (signed-in): the 11 phone fields only (5 from FR1, 6 from FR2: the minimum loop area and the auto-end numbers), never anti-cheat numbers (#15); ETag = `{Version}-{hash}`, 304 when unchanged. The phone rejects a reply with a missing or wrongly typed field instead of half-applying it | `RulesController`; contract `tests/contracts/client_rules.json` |
 | Phone state | `gameRulesProvider`: built-in copy → saved copy → server copy; refresh on app start, walk start and every hydration (login, onboarding, after a walk, resume, reconnect); one request at a time | `mobile/lib/shared/rules/` |
 | Walks | A walk pins its rules as it goes live. Walk start waits for the saved copy to load, then at most 3 s (`walkStartRulesWait`) for the server, else starts on the rules it has | `journey_controller.dart` |
-| Saved copy | Written temp-then-rename; a broken or missing file falls back to built-in rules | `rules_store.dart` |
+| Saved copy | Written temp-then-rename; a broken or missing file falls back to built-in rules. A copy saved before version 2 keeps its server values, gets FR2's new fields from the built-in copy and loses its tag (FR2, O10) | `rules_store.dart` |
 
 ## Decisions that must stay true (or be changed on purpose)
 
@@ -38,7 +38,10 @@ the design doc's "FR1 story in one page".
   current rules. Old phones ignore fields they don't know (tested). So deploy the server before an app release that adds a
   field; until then new phones keep their current rules.
 - The server is the judge: after an app update the phone keeps the last rules the server sent, not newer built-in ones
-  (owner decision; newer built-in rules go wrong when the server is behind the app).
+  (owner decision; newer built-in rules go wrong when the server is behind the app). One exception (FR2, O10): fields
+  the saved copy doesn't have come from the built-in copy, and its tag is dropped so the next refresh is a full reply.
+- The minimum loop area is sent to the phone since FR2 (O11): FR1 kept it server-only because the phone didn't use it;
+  FR2's loop check needs it. It is a loop rule, not a cheat number.
 - Any refresh failure keeps the current rules; a bug (Dart `Error`) still reaches the crash reporter.
 - A rules request gives up after 30 s (`rulesRequestLimit`, sign-in token step included), so a stuck request never
   blocks later refreshes. A refused reply (any 4xx or 5xx) is asked again only at the next trigger, never in a loop.
@@ -49,7 +52,8 @@ the design doc's "FR1 story in one page".
 
 - **FR3:** the server drops GPS points below the accuracy threshold (today only the phone does).
 - **FR9:** each walk stores its rules version **and a fingerprint of the full rule set** (the version can stay while a
-  value changes; FR1's fingerprint covers only the 4 phone settings + version). Until then a redeploy mid-walk
+  value changes; the fingerprint covers every `ClientRules` field — 10 phone settings + version since FR2 — not the
+  server-only ones). Until then a redeploy mid-walk
   judges the rest of that walk by the new rules (D2).
 - **FR12:** guests can fetch the rules (`GET /api/rules` needs sign-in today).
 - **FR5:** the 20–25 km/h speed limit, set together with the hop limit, which must cover max speed × sampling
@@ -83,7 +87,10 @@ finite number above 0 (`SkipNeighbors` may be 0) and at most its upper limit, `M
 `DurationToleranceFactor` above 0 and at most 1, and the average-speed limit not below the per-point limit;
 otherwise the server won't start. Upper limits (`GameRulesValidator`, each at most 5× the shipped value): closure
 distance 200 m, loop points 100, `SkipNeighbors` 50, loop area 25,000 m², GPS accuracy 200 m, both speed limits
-15 m/s, drift 150 m, hop 300 m, sampling interval 25 s, bearing spread 10°. The rules are also built once at startup
+15 m/s, drift 150 m, hop 300 m, sampling interval 25 s, bearing spread 10°. FR2's `AutoEnd` has its own tighter
+limits (vehicle speed above 0 and at most 16.67 m/s, vehicle time 60–600 s, still radius at most 300 m, walked cap
+100–1000 m, still time 300–1800 s) and two combination checks: the vehicle speed above both anti-cheat speeds, and
+the still radius at least 1.5× the GPS accuracy threshold with the walked cap above the still radius. The rules are also built once at startup
 (`RulesStartupCheck`), so nothing fails later on the first request. The server checks the values at startup; phones pick the change up on their next refresh or walk start. If the built-in phone copy must
 change too, update `defaultGameRules` — a test fails when it drifts from `appsettings.json`.
 

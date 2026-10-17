@@ -13,7 +13,7 @@ public class RulesModuleBoundaryTests
     {
         var expected = new[]
         {
-            nameof(AntiCheatRules), nameof(ClientRules), nameof(GameRules), nameof(GpsRules),
+            nameof(AntiCheatRules), nameof(AutoEndRules), nameof(ClientRules), nameof(GameRules), nameof(GpsRules),
             nameof(IRuleSettings), nameof(LoopRules), nameof(RulesModuleExtensions),
         };
 
