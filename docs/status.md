@@ -13,7 +13,7 @@ Read this first in every session; the start-of-session hook prints it. Every PR 
 - **FR2** (walk session: start and stop), task #236: Gate 1 and Gate 2 done. Spec decisions (Pause dropped; walk
   diary #44, closed app ends the walk #45, sign-out #46; auto-end in a vehicle or after 10 minutes still, with
   warnings; each loop sent when it closes) and the approved design doc `design/fr2-walk-session.md` (owner decisions
-  O1–O10, early blind audit `audits/2026-10-14-fr2-early-blind-audit.md`) merged with PR 1/6.
+  O1–O11, early blind audit `audits/2026-10-14-fr2-early-blind-audit.md`) merged with PR 1/6.
 - **Next:** FR2 PR 2/6 (server `AutoEnd` settings) on `v0.1/fr2-server-settings`; the server deploys before the app.
   Load `myloop-tasks-and-prs` first.
 
