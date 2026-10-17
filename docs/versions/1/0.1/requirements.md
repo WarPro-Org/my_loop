@@ -102,7 +102,8 @@ Depends on: nothing.
     push). If the user says no, the walk still starts; warnings and walk-ended messages then show only inside the app.
   - A short screen explains why before the first system location prompt ("MyLoop uses your location only while you
     walk"). So that this is the first prompt, the sign-up screen that sets a home area no longer asks for location:
-    it uses location only if already allowed and is otherwise skipped (home location is removed in FR13, #23).
+    it uses location only if already allowed and is skipped when it isn't or no position comes back (home location is
+    removed in FR13, #23).
   - If location is denied for good, the app explains how to fix it. It never jumps to Settings on its own (scenario
     DEV-1; today `location_service.dart` does).
   - The app checks the permission again when it comes back to the front. GPS turned off mid-walk, even briefly, and
